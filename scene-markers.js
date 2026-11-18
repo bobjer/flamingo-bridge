@@ -15,11 +15,13 @@ export function sceneMarkers(view,project){
    if(!entry){
     const button=document.createElement('button'),line=document.createElementNS(svg.namespaceURI,'line');
     button.type='button';button.className='scene-marker '+item.kind;
-    layer.append(button);svg.append(line);entry={button,line};entries.set(item.key,entry);
+    const title=document.createElement('strong'),detail=document.createElement('small');
+    button.append(title,detail);layer.append(button);svg.append(line);entry={button,line,title,detail};entries.set(item.key,entry);
    }
    const {button,line}=entry,pos=project(item.point);
    button.hidden=!pos;line.style.display=pos?'':'none';if(!pos)continue;
-   if(button.textContent!==item.label)button.textContent=item.label;
+   if(entry.title.textContent!==item.label)entry.title.textContent=item.label;
+   if(entry.detail.textContent!==item.detail)entry.detail.textContent=item.detail;
    button.disabled=item.disabled;button.onclick=item.action;
    const w=button.offsetWidth,h=button.offsetHeight;
    const x=Math.max(2,Math.min(view.clientWidth-w-2,pos.x-w/2));

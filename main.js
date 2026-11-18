@@ -326,13 +326,14 @@ function updateMarkers(){
   const currency=tr(' млн ₽',' M RUB');
   for(const spot of damageSpots){
    const amount=Math.min(25,spot.loss),cost=price(PATCH*amount/25);
-   items.push({key:spot,kind:'deck',point:spot.point,label:tr('Латати +','Patch +')+amount+'% · '+cost+currency,disabled:paused||cash<cost,action:()=>patchDeck(spot)});
+   items.push({key:spot,kind:'deck',point:spot.point,label:tr('Латати +','Patch +')+amount+'%',detail:cost+currency,disabled:paused||cash<cost,action:()=>patchDeck(spot)});
   }
   for(const u of units){
    const capacity=magazine[u.k];if(!capacity||u.ammo>Math.ceil(capacity*.3))continue;
    const {amount,cost}=localAmmo(u);
-   const label=specs[u.k][0]+' '+u.ammo+'/'+capacity+' · '+(amount?'+'+amount:tr('Бракує коштів','Low funds'))+' · '+cost+currency;
-   items.push({key:u,kind:'ammo',point:u.m.position,label,disabled:paused||!amount,action:()=>refillUnit(u)});
+   const label=specs[u.k][0]+' · '+u.ammo+'/'+capacity;
+   const detail=(amount?tr('Поповнити +','Restock +')+amount:tr('Бракує коштів','Low funds'))+' · '+cost+currency;
+   items.push({key:u,kind:'ammo',point:u.m.position,label,detail,disabled:paused||!amount,action:()=>refillUnit(u)});
   }
  }
  drawMarkers(items);
