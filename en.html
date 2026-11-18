@@ -1,0 +1,70 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Pink Siege</title><link rel="icon" href="data:,"><link rel="stylesheet" href="./style.css"></head><body>
+<header class="top">
+ <div class="top-left"><span class="mark" aria-hidden="true">◈</span><span class="label">OPERATIONS HQ · SECTOR 07</span></div>
+ <div class="top-title"><strong>PINK SIEGE</strong><span>BRIDGE DEFENCE SIMULATOR</span></div>
+ <div class="top-status"><a class="lang" hreflang="uk" href="./" title="Українська · нова гра">Українська</a><span class="label">MODE</span><span class="chip"><i class="dot" aria-hidden="true"></i><span id="statusMirror">PROCUREMENT</span></span></div>
+</header>
+<main>
+ <aside id="hq-panel" class="col left">
+  <section class="panel br">
+   <div class="label">CURRENT PHASE</div>
+   <div class="phase-row"><b class="big" id="waveNo" aria-hidden="true">00</b><div><h1>Strait <i>defence</i></h1><div id="phase">● PROCUREMENT</div></div></div>
+   <label class="field">Difficulty <select id="difficulty"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select></label>
+  </section>
+  <section class="panel br">
+   <div class="label">SITUATION REPORT</div>
+   <div class="stat"><label>Cash</label><b id="cash"></b></div>
+   <div class="stat"><label>Arch hits</label><b id="hits"></b></div>
+   <div class="stat"><label>Media buzz</label><b id="hype"></b></div>
+   <div class="stat"><label>Casualties</label><b id="victims"></b></div>
+   <div class="stat"><label>R&D</label><b id="rp"></b></div>
+   <div class="stat"><label>Upkeep / wave</label><b id="upkeep"></b></div>
+   <div class="stat"><label>Road deck</label><b id="hp"></b></div>
+   <progress id="bar" max="100" value="100"></progress>
+  </section>
+  <section class="panel br">
+   <div class="label">CHECKPOINT</div>
+   <label class="field">Inspection <select id="inspection"><option value="0">Manual only</option><option value="25" selected>Every fourth</option><option value="50">Every second</option><option value="100">Every truck</option></select></label>
+   <small id="traffic"></small>
+   <small id="signals"></small>
+  </section>
+  <section class="panel br log">
+   <div class="label">EVENT LOG</div>
+   <p id="info" aria-live="polite">Assemble a garrison. Damage grants come from a classified reserve.</p>
+   <ol id="log" aria-label="Previous events"></ol>
+  </section>
+  <section class="panel br brief">
+   <div class="label">BRIEFING</div>
+   <details><summary>Checkpoint rules</summary>Click a truck before it reaches the checkpoint. Suspicious trucks wobble more often. Inspections stop traffic. Queues cost money and increase casualties if hit.</details>
+   <details><summary>Barges and placement</summary><p>Barges intercept the dolls. Sinking one in the channel blocks shipping and drains the treasury.</p><p>Place turrets on either span. To move a cruiser, click it and then the water. The third flamingo hit brings down the arch. Fully patch the road by the end of the wave to receive funding. Small repairs cost less.</p></details>
+   <details><summary>Funding</summary>All sums are in millions of rubles. Damage and publicity influence grants. Blockades, queues, outages and casualties drain the treasury. The garrison draws wages. Repelled targets earn research points ⚙.</details>
+   <details><summary>Signal outages</summary>Without GPS, attackers turn back. Without internet, they head for an imprecise remembered point and may collide. When service returns, they can pick a live target again.</details>
+  </section>
+ </aside>
+ <section id="view" class="br br-accent">
+  <div class="hud hud-tl"><b><i class="dot" aria-hidden="true"></i>REC</b> CAM 01 / VHS</div>
+  <div class="hud hud-tr">SP ▸ · GRID 50 M</div>
+  <nav class="panel-toggles"><button aria-controls="hq-panel" aria-expanded="true">HQ</button><button aria-controls="arsenal-panel" aria-expanded="true">Arsenal</button></nav><div class="reticle" aria-hidden="true"></div>
+  <div class="hud hud-bl" id="caption">SITE OVERVIEW</div>
+  <div class="zoom"><button id="minus" aria-label="Zoom out">−</button><button id="plus" aria-label="Zoom in">+</button></div>
+ </section>
+ <aside id="arsenal-panel" class="col right">
+  <section class="panel br">
+   <div class="label">ARSENAL</div>
+   <div id="shop"></div>
+  </section>
+  <section class="panel br">
+   <div class="label">TECHNOLOGY</div>
+   <div id="tech"></div>
+  </section>
+  <button id="start">Start siege →</button>
+ </aside>
+</main>
+<footer class="strip">
+ <button id="pause" aria-label="Pause">Ⅱ</button>
+ <div class="timeline" id="timeline" aria-label="Siege timeline"></div>
+ <div class="hints"><span>↔ Drag to rotate</span><span>⊕ Scroll / pinch to zoom</span></div>
+ <b id="clock" class="big">00:00</b>
+</footer>
+<script type="module" src="./hud.js"></script>
+<script type="module" src="./main.js"></script></body></html>

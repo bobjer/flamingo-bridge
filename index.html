@@ -1,69 +1,69 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Розовая осада</title><link rel="icon" href="data:,"><link rel="stylesheet" href="./style.css"></head><body>
+<!doctype html><html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Рожева облога</title><link rel="icon" href="data:,"><link rel="stylesheet" href="./style.css"></head><body>
 <header class="top">
- <div class="top-left"><span class="mark" aria-hidden="true">◈</span><span class="label">ОПЕРАТИВНЫЙ ШТАБ · СЕКТОР 07</span></div>
- <div class="top-title"><strong>РОЗОВАЯ ОСАДА</strong><span>СИМУЛЯТОР ОБОРОНЫ МОСТА</span></div>
- <div class="top-status"><span class="label">РЕЖИМ</span><span class="chip"><i class="dot" aria-hidden="true"></i><span id="statusMirror">ФАЗА ЗАКУПКИ</span></span></div>
+ <div class="top-left"><span class="mark" aria-hidden="true">◈</span><span class="label">ОПЕРАТИВНИЙ ШТАБ · СЕКТОР 07</span></div>
+ <div class="top-title"><strong>РОЖЕВА ОБЛОГА</strong><span>СИМУЛЯТОР ОБОРОНИ МОСТУ</span></div>
+ <div class="top-status"><a class="lang" hreflang="en" href="./en.html" title="English · new session">English</a><span class="label">РЕЖИМ</span><span class="chip"><i class="dot" aria-hidden="true"></i><span id="statusMirror">ЗАКУПІВЛЯ</span></span></div>
 </header>
 <main>
- <aside class="col left">
+ <aside id="hq-panel" class="col left">
   <section class="panel br">
-   <div class="label">ТЕКУЩАЯ ФАЗА</div>
-   <div class="phase-row"><b class="big" id="waveNo" aria-hidden="true">00</b><div><h1>Оборона <i>пролива</i></h1><div id="phase">● ФАЗА ЗАКУПКИ</div></div></div>
-   <label class="field">Сложность <select id="difficulty"><option value="easy">Лёгкая</option><option value="normal" selected>Обычная</option><option value="hard">Тяжёлая</option></select></label>
+   <div class="label">ПОТОЧНА ФАЗА</div>
+   <div class="phase-row"><b class="big" id="waveNo" aria-hidden="true">00</b><div><h1>Оборона <i>протоки</i></h1><div id="phase">● ЗАКУПІВЛЯ</div></div></div>
+   <label class="field">Складність <select id="difficulty"><option value="easy">Легка</option><option value="normal" selected>Звичайна</option><option value="hard">Важка</option></select></label>
   </section>
   <section class="panel br">
-   <div class="label">СВОДКА</div>
-   <div class="stat"><label>В кассе</label><b id="cash"></b></div>
-   <div class="stat"><label>Удары по арке</label><b id="hits"></b></div>
-   <div class="stat"><label>Хайп в СМИ</label><b id="hype"></b></div>
-   <div class="stat"><label>Жертвы</label><b id="victims"></b></div>
-   <div class="stat"><label>НИОКР</label><b id="rp"></b></div>
-   <div class="stat"><label>Содержание / волна</label><b id="upkeep"></b></div>
+   <div class="label">ЗВЕДЕННЯ</div>
+   <div class="stat"><label>У касі</label><b id="cash"></b></div>
+   <div class="stat"><label>Удари по арці</label><b id="hits"></b></div>
+   <div class="stat"><label>Розголос у ЗМІ</label><b id="hype"></b></div>
+   <div class="stat"><label>Втрати</label><b id="victims"></b></div>
+   <div class="stat"><label>НДДКР</label><b id="rp"></b></div>
+   <div class="stat"><label>Утримання / хвиля</label><b id="upkeep"></b></div>
    <div class="stat"><label>Полотно</label><b id="hp"></b></div>
    <progress id="bar" max="100" value="100"></progress>
   </section>
   <section class="panel br">
    <div class="label">КПП</div>
-   <label class="field">Досмотр <select id="inspection"><option value="0">Только вручную</option><option value="25" selected>Каждую четвёртую</option><option value="50">Каждую вторую</option><option value="100">Каждую машину</option></select></label>
+   <label class="field">Огляд <select id="inspection"><option value="0">Лише вручну</option><option value="25" selected>Кожну четверту</option><option value="50">Кожну другу</option><option value="100">Кожну машину</option></select></label>
    <small id="traffic"></small>
    <small id="signals"></small>
   </section>
   <section class="panel br log">
-   <div class="label">ЖУРНАЛ СОБЫТИЙ</div>
-   <p id="info" aria-live="polite">Соберите гарнизон. Компенсация за ущерб приходит из закрытого резерва.</p>
-   <ol id="log" aria-label="Предыдущие события"></ol>
+   <div class="label">ЖУРНАЛ ПОДІЙ</div>
+   <p id="info" aria-live="polite">Зберіть гарнізон. Збитки компенсують із закритого резерву.</p>
+   <ol id="log" aria-label="Попередні події"></ol>
   </section>
   <section class="panel br brief">
-   <div class="label">ИНСТРУКТАЖ</div>
-   <details><summary>Как работает КПП</summary>Кликните по грузовику до КПП. Подозрительные машины чаще раскачиваются. Досмотр задерживает навозовоз до арки. Каждый досмотр останавливает машину, за ней собирается пробка. Пробка душит экономику, а удар рядом со скоплением машин уносит больше жизней.</details>
-   <details><summary>Баржи и размещение</summary><p>Баржи задерживают карапузов, но баржа в фарватере останавливает судоходство и бьёт по экономике страны.</p><p>Турель: выберите площадку на краю моста. Крейсер: нажмите на корабль, затем на воду. Третий удар фламинго обрушит арку. Для выплаты полностью залатайте полотно к концу волны.</p></details>
-   <details><summary>Откуда деньги</summary>Деньги приходят на ремонт: чем больше разрушений и хайпа, тем щедрее штаб. Но платит он из бюджета страны, а его размер засекречен. Блокада, пробки, отключения связи и жертвы его истощают, цены растут, гарнизон требует жалованья. Сбитые цели дают ⚙ НИОКР — технологии совершенствуются бесконечно.</details>
-   <details><summary>Что дают перебои связи</summary>Без GPS атакующие разворачиваются к границе зоны. Без интернета они летят или плывут к запомненной точке с ошибкой и могут столкнуться. Когда связь возвращается, они снова выбирают живую цель.</details>
+   <div class="label">ІНСТРУКТАЖ</div>
+   <details><summary>Як працює КПП</summary>Натисніть на вантажівку перед КПП. Підозрілі машини частіше розхитуються. Огляд затримує машину, за нею утворюється затор. Затори шкодять економіці й збільшують втрати під час удару.</details>
+   <details><summary>Баржі та розміщення</summary><p>Баржі затримують малюків. Баржа у фарватері перекриває судноплавство й виснажує скарбницю.</p><p>Турелі можна ставити на обох прольотах. Щоб перемістити крейсер, натисніть на корабель, потім на воду. Третій удар фламінго обвалить арку. Для виплати повністю залатайте полотно до кінця хвилі. Ціна ремонту залежить від пошкодження.</p></details>
+   <details><summary>Звідки гроші</summary>Усі суми в мільйонах рублів. Пошкодження та розголос впливають на виплати зі скарбниці. Блокада, затори, перебої зв’язку й втрати виснажують її. Гарнізон потребує платні. За збиті цілі отримуєте ⚙ для досліджень.</details>
+   <details><summary>Перебої зв’язку</summary>Без GPS нападники розвертаються до межі зони. Без інтернету вони рухаються до запам’ятованої точки з похибкою й можуть зіткнутися. Коли зв’язок відновлено, вони знову обирають живу ціль.</details>
   </section>
  </aside>
  <section id="view" class="br br-accent">
   <div class="hud hud-tl"><b><i class="dot" aria-hidden="true"></i>REC</b> CAM 01 / VHS</div>
-  <div class="hud hud-tr">SP ▸ · СЕТКА 50 М</div>
-  <div class="reticle" aria-hidden="true"></div>
-  <div class="hud hud-bl" id="caption">ОБЗОР ОБЪЕКТА</div>
-  <div class="zoom"><button id="minus" aria-label="Отдалить">−</button><button id="plus" aria-label="Приблизить">+</button></div>
+  <div class="hud hud-tr">SP ▸ · СІТКА 50 М</div>
+  <nav class="panel-toggles"><button aria-controls="hq-panel" aria-expanded="true">Штаб</button><button aria-controls="arsenal-panel" aria-expanded="true">Арсенал</button></nav><div class="reticle" aria-hidden="true"></div>
+  <div class="hud hud-bl" id="caption">ОГЛЯД ОБ’ЄКТА</div>
+  <div class="zoom"><button id="minus" aria-label="Віддалити">−</button><button id="plus" aria-label="Наблизити">+</button></div>
  </section>
- <aside class="col right">
+ <aside id="arsenal-panel" class="col right">
   <section class="panel br">
    <div class="label">АРСЕНАЛ</div>
    <div id="shop"></div>
   </section>
   <section class="panel br">
-   <div class="label">ТЕХНОЛОГИИ</div>
+   <div class="label">ТЕХНОЛОГІЇ</div>
    <div id="tech"></div>
   </section>
-  <button id="start">Начать осаду　→</button>
+  <button id="start">Почати облогу →</button>
  </aside>
 </main>
 <footer class="strip">
  <button id="pause" aria-label="Пауза">Ⅱ</button>
- <div class="timeline" id="timeline" aria-label="Ход осады"></div>
- <div class="hints"><span>↔ Тянуть — вращение</span><span>⊕ Колесо / щипок — масштаб</span></div>
+ <div class="timeline" id="timeline" aria-label="Перебіг облоги"></div>
+ <div class="hints"><span>↔ Тягніть для обертання</span><span>⊕ Коліщатко / щипок — масштаб</span></div>
  <b id="clock" class="big">00:00</b>
 </footer>
 <script type="module" src="./hud.js"></script>

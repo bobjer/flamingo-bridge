@@ -102,14 +102,14 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
 /* arsenal cards (buttons are built by main.js: name text, <small> description, <span> price) */
 #shop,#tech{display:grid;gap:6px}
 .unit{display:grid;grid-template-columns:38px minmax(0,1fr) auto;grid-auto-rows:auto;column-gap:10px;row-gap:2px;align-items:center;width:100%;padding:9px 10px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);text-align:left;font:600 13.5px/1.25 var(--display);letter-spacing:.01em;transition:border-color .15s,background .15s}
-.unit::before{grid-column:1;grid-row:1/span 2;align-self:stretch;display:grid;place-items:center;min-height:34px;border:1px solid var(--line-2);background:var(--bg);color:var(--accent);font:700 9.5px var(--mono);letter-spacing:.06em;content:'ОПС'}
-#shop .unit:nth-child(1)::before{content:'ЗРК'}
-#shop .unit:nth-child(2)::before{content:'ТУР'}
-#shop .unit:nth-child(3)::before{content:'КРС'}
-#shop .unit:nth-child(4)::before{content:'ДЛФ'}
-#shop .unit:nth-child(5)::before,#shop .unit:nth-child(6)::before{content:'БРЖ'}
-#shop .unit:last-child:nth-child(n+8)::before{content:'РЕМ'}
-#tech .unit::before{content:'НИР'}
+.unit::before{grid-column:1;grid-row:1/span 2;align-self:stretch;display:grid;place-items:center;min-height:34px;border:1px solid var(--line-2);background:var(--bg);color:var(--accent);font:700 9.5px var(--mono);letter-spacing:.06em;content:'OPS'}
+#shop .unit:nth-child(1)::before{content:'SAM'}
+#shop .unit:nth-child(2)::before{content:'TUR'}
+#shop .unit:nth-child(3)::before{content:'CRS'}
+#shop .unit:nth-child(4)::before{content:'DOL'}
+#shop .unit:nth-child(5)::before,#shop .unit:nth-child(6)::before{content:'BRG'}
+#shop .unit:last-child:nth-child(n+8)::before{content:'REP'}
+#tech .unit::before{content:'R&D'}
 .unit span{grid-column:3;grid-row:1;font-size:11px;color:var(--accent);border:1px solid rgba(255,154,31,.4);padding:2px 6px;white-space:nowrap;font-weight:500}
 .unit small{grid-column:2/span 2;grid-row:2;font-size:10.5px;letter-spacing:0}
 .unit:hover:enabled{border-color:var(--accent);background:#121b25}
@@ -152,3 +152,15 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
 }
 @media(max-width:480px){.hud-tr{display:none}.top-status .label{display:none}.chip{font-size:10px;padding:5px 8px}.phase-row .big{font-size:40px}}
 @media(prefers-reduced-motion:reduce){.node.now::before{animation:none}.unit{transition:none}}
+
+.lang{color:var(--accent,#ffa524);padding:.35rem;text-decoration:underline;font:600 12px monospace}.unit span{white-space:nowrap}
+.panel-toggles{position:absolute;left:14px;top:54px;display:flex;gap:4px;z-index:4}
+.panel-toggles button{background:#101922dc;color:var(--fg);border:1px solid var(--line-2);font:11px var(--mono);padding:6px 8px}
+.panel-toggles button::before{content:'− ';color:var(--accent)}
+.panel-toggles button[aria-expanded=false]::before{content:'+ '}
+.col[hidden]{display:none}
+@media(min-width:901px){
+ main.hide-hq-panel{grid-template-columns:minmax(0,1fr) clamp(280px,24vw,340px)}
+ main.hide-arsenal-panel{grid-template-columns:clamp(250px,22vw,310px) minmax(0,1fr)}
+ main.hide-hq-panel.hide-arsenal-panel{grid-template-columns:minmax(0,1fr)}
+}
