@@ -1,4 +1,5 @@
 import * as T from 'three';
+import {oilTex} from './effects.js';
 
 export const DAY_SECONDS = 120;
 
@@ -29,9 +30,10 @@ export function tankerTraffic(scene) {
   const x=r*Math.cos(a),y=r*Math.sin(a);
   if(i===0)outline.moveTo(x,y);else outline.lineTo(x,y);
  }
- const geometry=new T.ShapeGeometry(outline);
+ const geometry=new T.ShapeGeometry(outline),uv=geometry.attributes.uv;
+ for(let i=0;i<uv.count;i++)uv.setXY(i,uv.getX(i)*.42+.5,uv.getY(i)*.42+.5);
  function add(x,z,start){
-  const mesh=new T.Mesh(geometry,new T.MeshBasicMaterial({color:0x302136,transparent:true,depthWrite:false,side:T.DoubleSide}));
+  const mesh=new T.Mesh(geometry,new T.MeshBasicMaterial({map:oilTex,color:0xc8bcc8,transparent:true,depthWrite:false,side:T.DoubleSide}));
   mesh.rotation.x=-Math.PI/2;mesh.position.set(x,.095,z);mesh.renderOrder=4;
   scene.add(mesh);slicks.push({mesh,start});
  }

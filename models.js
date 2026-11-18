@@ -234,7 +234,56 @@ function roadVehicle(){
  }
  return truckMesh.clone();
 }
+// Passenger cars: a few body styles in realistic paint, merged into one glossy mesh each.
+const CAR_PAINTS=[0xf2f2ef,0xb8bcc0,0x1b1d21,0x1f3557,0x8e1a1a,0x4b5a4f,0xcbb796,0x2f6a8f,0xe0b21c,0x5c5f63];
+const CAR_STYLES=['sedan','hatch','suv','van','wagon'];
+function car(p,style,paint){
+ const glass=0x1c262e,tire=0x141414,trim=0x26272a,lamp=0xfff3d2,tail=0xa3121a,chrome=0xc4c8cc;
+ const S={sedan:{L:1.95,H:.26,y:.33,cab:[-.1,.95,.24],r:.16},hatch:{L:1.6,H:.28,y:.34,cab:[-.15,.95,.26],r:.16},
+  suv:{L:2.0,H:.36,y:.42,cab:[-.1,1.25,.3],r:.21},van:{L:2.1,H:.42,y:.44,cab:[-.03,1.8,.36],r:.19},wagon:{L:2.05,H:.26,y:.33,cab:[-.2,1.4,.25],r:.16}}[style];
+ const W=.86,{L,H,y,r}=S,[cx,cl,ch]=S.cab,top=y+H/2,lo=ch*.5,hi=ch-lo;
+ box(p,paint,0,y,0,L,H,W);                                   // body
+ box(p,paint,L*.03,top+.012,0,L*.96,.024,W*.97);             // shoulder line
+ box(p,trim,0,y-H/2+.035,0,L+.02,.07,W+.02);                 // sills
+ box(p,glass,cx,top+lo/2,0,cl,lo,W-.08);                     // lower glasshouse
+ box(p,glass,cx-.02,top+lo+hi/2,0,cl*.74,hi,W-.12);          // upper glasshouse (raked pillars)
+ for(const z of [-1,1])box(p,paint,cx-.02,top+ch/2,z*(W/2-.045),.045,ch,.03); // B-pillars
+ box(p,paint,cx-.02,top+ch+.018,0,cl*.72,.036,W-.12);        // roof
+ box(p,trim,L/2+.005,y-.06,0,.04,.12,W*.92);                 // front bumper
+ box(p,trim,-L/2-.005,y-.06,0,.04,.12,W*.92);                // rear bumper
+ for(const z of [-1,1]){
+  box(p,lamp,L/2+.01,y+.06,z*W*.33,.03,.07,.16);             // headlights
+  box(p,tail,-L/2-.01,y+.07,z*W*.36,.03,.08,.13);            // tail lights
+  box(p,chrome,L*.12,top+.01,z*(W/2+.04),.05,.05,.08);       // mirrors
+  for(const x of [L*.32,-L*.32]){
+   rod(p,tire,[x,r,z*(W/2-.1)],[x,r,z*(W/2+.03)],r);
+   rod(p,chrome,[x,r,z*(W/2+.031)],[x,r,z*(W/2+.036)],r*.55);
+  }
+ }
+}
+const carMeshes=new Map();
+function mergedVehicle(name,build,mat){
+ const parts=new THREE.Group();build(parts);
+ const meshes=parts.children.map(part=>{
+  part.updateMatrix();
+  const g=part.geometry.toNonIndexed().applyMatrix4(part.matrix);
+  const colors=new Float32Array(g.attributes.position.count*3);
+  for(let i=0;i<colors.length;i+=3)part.material.color.toArray(colors,i);
+  g.setAttribute('color',new THREE.BufferAttribute(colors,3));return g;
+ });
+ const m=new THREE.Mesh(mergeGeometries(meshes),mat);m.name=name;return m;
+}
+const carMaterial=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.32,metalness:.35,envMapIntensity:1.4});
+export function randomCarType(){return 'car:'+CAR_STYLES[Math.floor(Math.random()*CAR_STYLES.length)]+':'+Math.floor(Math.random()*CAR_PAINTS.length)}
+function carModel(type){
+ if(!carMeshes.has(type)){
+  const [,style,paint]=type.split(':');
+  carMeshes.set(type,mergedVehicle(type,p=>car(p,CAR_STYLES.includes(style)?style:'sedan',CAR_PAINTS[+paint]??CAR_PAINTS[0]),carMaterial));
+ }
+ return carMeshes.get(type).clone();
+}
 export function model(type) {
+  if(type.startsWith('car:'))return carModel(type);
   if(type==='truck')return roadVehicle();
   const group = new THREE.Group();
   group.name = type;

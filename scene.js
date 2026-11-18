@@ -355,6 +355,41 @@ export function landscape(view) {
  }
  const daySun=new T.Color(0xfff0dc),sunset=new T.Color(0xffa56d),nightHaze=new T.Color(0x162a49),nightWater=new T.Color(0x163d51),dayWater=new T.Color(0x2aa3ad);
  let collapse = false, prevDist = camera.position.distanceTo(controls.target);
+ // Bullet-time: fly in to an impact, sweep around it in slow motion, fly back.
+ let cine = null, cineLast = 0, cineCooldown = 0;
+ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+ const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+ function endCine() {
+  if (!cine) return;
+  camera.position.copy(cine.fromPos); controls.target.copy(cine.fromTarget);
+  controls.enabled = true; controls.update(); prevDist = camera.position.distanceTo(controls.target);
+  view.classList.remove('cinematic'); cine = null;
+ }
+ renderer.domElement.addEventListener('pointerdown', () => { if (cine && cine.age > .25) endCine(); });
+ function cineStep() {
+  const now = performance.now(), dt = Math.min(.05, (now - (cineLast || now)) / 1000); cineLast = now;
+  cineCooldown = Math.max(0, cineCooldown - dt);
+  if (!cine) return false;
+  const c = cine; c.age += dt;
+  if (c.follow) c.point.copy(c.follow.position).add(c.lift);
+  // bomb shots wait for the blast; give up if it never comes
+  if (c.bomb && c.boomAt == null && c.age > 5) { c.boomAt = c.age; c.end = c.age + .7; }
+  if (c.end != null && c.age >= c.end) { endCine(); return false; }
+  const end = c.end ?? c.age + 3, inDur = c.bomb ? .7 : .2 * c.duration, outDur = c.bomb ? .8 : .2 * c.duration;
+  const prog = c.bomb ? c.age / 6 : ease(T.MathUtils.clamp(c.age / c.duration, 0, 1));
+  const ang = c.angle + c.sweep * prog, r = c.radius * (1 - .2 * Math.sin(Math.PI * Math.min(1, prog)));
+  const shot = new T.Vector3(c.point.x + Math.cos(ang) * r, c.point.y + c.height + 1.1 * Math.sin(Math.PI * Math.min(1, prog)), c.point.z + Math.sin(ang) * r);
+  if (shot.y < .8) shot.y = .8;
+  let w = ease(Math.min(1, c.age / inDur));
+  if (c.end != null && c.age > end - outDur) w = Math.min(w, 1 - ease((c.age - (end - outDur)) / outDur));
+  camera.position.copy(c.fromPos).lerp(shot, w);
+  controls.target.copy(c.fromTarget).lerp(c.point, w);
+  const since = c.boomAt != null ? c.age - c.boomAt : c.bomb ? 9 : c.age;
+  const shake = Math.max(0, .55 - since) * (c.bomb ? .22 : .12);
+  camera.position.x += (Math.random() - .5) * shake; camera.position.y += (Math.random() - .5) * shake;
+  camera.lookAt(controls.target);
+  return true;
+ }
  return {
   scene, zoom, pick, deckTop,
   cameraPosition:()=>camera.position.toArray(),
@@ -367,6 +402,39 @@ export function landscape(view) {
   },
   onScreen(point){const p=point.clone().project(camera);return Math.abs(p.x)<=1&&Math.abs(p.y)<=1&&Math.abs(p.z)<=1},
   waterPoint(event) { aim(event); return ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), 0), new T.Vector3()); },
+  cinematic(point, strength = 1, opts = {}) {
+   if (reduceMotion.matches || (cineCooldown > 0 && !opts.bomb) || (cine && (cine.bomb || cine.strength >= strength) && !opts.bomb)) return false;
+   const fromPos = cine ? cine.fromPos : camera.position.clone(), fromTarget = cine ? cine.fromTarget : controls.target.clone();
+   const rel = fromPos.clone().sub(point);
+   const duration = 2.4 + .8 * strength;
+   cine = {point: point.clone(), age: 0, duration, end: opts.bomb ? null : duration, strength, fromPos, fromTarget,
+    follow: opts.follow ?? null, lift: new T.Vector3(0, opts.lift ?? 0, 0), bomb: !!opts.bomb, boomAt: null,
+    angle: Math.atan2(rel.z, rel.x) + (Math.random() - .5) * .6, sweep: (Math.random() < .5 ? -1 : 1) * (opts.bomb ? 1.5 : 1.6 + .6 * strength),
+    radius: opts.radius ?? 7 + 2.5 * strength, height: opts.height ?? 2.4 + 1.2 * strength};
+   cineCooldown = 9; controls.enabled = false; view.classList.add('cinematic');
+   return true;
+  },
+  // Detonation inside a bomb shot: freeze-frame, then a very slow release.
+  cinematicBoom(point) {
+   if (!cine || !cine.bomb || cine.boomAt != null) return false;
+   if (point) cine.point.copy(point);
+   cine.follow = null; cine.boomAt = cine.age; cine.end = cine.age + 4.6;
+   return true;
+  },
+  timeScale() {
+   if (!cine) return 1;
+   const c = cine;
+   if (c.bomb) {
+    if (c.boomAt == null) return Math.max(.3, 1 - c.age * 1.2);            // approach: crawl toward the blast
+    const s = c.age - c.boomAt;
+    if (s < .35) return .006;                                              // near freeze-frame
+    if (s < 3.3) return .006 + .06 * ((s - .35) / 2.95) ** 2;              // bullet-time release
+    return Math.min(1, .066 + (s - 3.3) / 1.3);                          // back to real time
+   }
+   const t = c.age / c.duration;
+   return t < .08 ? 1 - t / .08 * .85 : t > .82 ? .15 + .85 * (t - .82) / .18 : .15;
+  },
+  cinematicActive: () => !!cine,
   setHits(hits) {
    collapse = hits >= 3;
    if (!hits) { falling.position.y = 0; falling.rotation.z = 0; }
@@ -389,13 +457,14 @@ export function landscape(view) {
     falling.position.y = T.MathUtils.lerp(falling.position.y, -6.5, .045);
     falling.rotation.z = T.MathUtils.lerp(falling.rotation.z, -.26, .045);
    }
+   const filming = cineStep();
    const dist = camera.position.distanceTo(controls.target);
    // any zoom-out (buttons, wheel, trackpad pinch) also tilts the camera toward straight-down, like climbing to orbit
-   if (dist > prevDist + .01 && dist > 120) {
+   if (!filming && dist > prevDist + .01 && dist > 120) {
     const off = camera.position.clone().sub(controls.target).normalize().lerp(UP, Math.min(.12, (dist - prevDist) / dist * 1.5)).normalize();
     camera.position.copy(controls.target).addScaledVector(off, dist);
    }
-   prevDist = dist;
+   if (!filming) prevDist = dist;
    // sea haze swallows the far ends of the viaduct; it thins out from high orbit so the whole sea is visible
    scene.fog.density = .0019 * Math.min(1, 140 / dist) ** 1.6;
    scene.fog.density += smoke ? .028 : 0;
@@ -407,7 +476,7 @@ export function landscape(view) {
    boat.rotation.z = Math.sin(performance.now() * .0009) * .05;
    water.material.uniforms.time.value = performance.now() * .00035;
    land.update(performance.now() * .001);
-   controls.update();
+   if (!filming) controls.update();
    renderer.render(scene, camera);
   }
  };

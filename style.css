@@ -211,3 +211,59 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
 .scene-marker strong{font-size:11px}.scene-marker small{font-size:10px;color:var(--pin)}.scene-marker:enabled:hover,.scene-marker:focus-visible{border-color:var(--pin)}
 
 .sinking-banner{top:17%;white-space:nowrap;letter-spacing:.04em}
+
+/* ---- Scene labels v2: glass HUD markers anchored to 3D points ---- */
+.scene-markers line.marker-line{stroke:var(--pin-line,#ffd08a);stroke-width:1.25;stroke-dasharray:2 3;stroke-linecap:round;opacity:.85;filter:drop-shadow(0 0 2px #000a)}
+.scene-markers line.marker-line.deck{--pin-line:#ff9d82}
+.marker-dot .core{fill:#ffd08a;stroke:#1a120a;stroke-width:1.2}
+.marker-dot .pulse{fill:none;stroke:#ffd08a;stroke-width:1.5;transform-box:fill-box;transform-origin:center;animation:marker-pulse 1.6s ease-out infinite}
+.marker-dot.deck .core{fill:#ff9d82}.marker-dot.deck .pulse{stroke:#ff9d82}
+@keyframes marker-pulse{0%{transform:scale(.6);opacity:.9}100%{transform:scale(2.6);opacity:0}}
+.scene-marker{
+ --pin:#ffc65c;--pin-rgb:255,198,92;
+ display:flex;align-items:center;gap:8px;padding:6px 10px 6px 6px;min-width:0;
+ border:1px solid rgba(255,255,255,.14);border-left:1px solid rgba(255,255,255,.14);border-radius:11px;
+ background:linear-gradient(180deg,rgba(28,36,48,.70),rgba(10,14,20,.82));
+ -webkit-backdrop-filter:blur(12px) saturate(1.5);backdrop-filter:blur(12px) saturate(1.5);
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 8px 22px rgba(0,0,0,.38),0 0 0 1px rgba(0,0,0,.25);
+ color:#f6f3ec;cursor:pointer;
+ animation:marker-in .26s cubic-bezier(.2,.9,.3,1.25) both;
+ transition:border-color .15s,box-shadow .15s,translate .15s,filter .2s;
+}
+.scene-marker.deck{--pin:#ff8f72;--pin-rgb:255,143,114;border-color:rgba(255,255,255,.14);color:#fff4ee}
+.scene-marker::before{
+ content:'';flex:none;width:26px;height:26px;border-radius:50%;grid-row:auto;
+ background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.35),transparent 55%),rgba(var(--pin-rgb),.22);
+ box-shadow:inset 0 0 0 1px rgba(var(--pin-rgb),.55);
+}
+.scene-marker::after{
+ content:'';position:absolute;left:11px;top:50%;width:16px;height:16px;margin-top:-8px;background:var(--pin);
+ -webkit-mask:var(--icon) center/contain no-repeat;mask:var(--icon) center/contain no-repeat;
+}
+.scene-marker{position:absolute;--icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2c2.5 2 4 5 4 9v6l2 3h-3l-1-2h-4l-1 2H6l2-3v-6c0-4 1.5-7 4-9zm0 6a1.6 1.6 0 100 3.2A1.6 1.6 0 0012 8z'/%3E%3C/svg%3E")}
+.scene-marker.deck{--icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M21.7 6.3l-3.2 3.2-2.8-.7-.7-2.8 3.2-3.2a6 6 0 00-7.6 7.6L3 18.1a2 2 0 102.9 2.9l7.7-7.6a6 6 0 008.1-7.1z'/%3E%3C/svg%3E")}
+.scene-marker .marker-text{display:flex;flex-direction:column;align-items:flex-start;gap:3px;line-height:1.05}
+.scene-marker strong{font:650 12px/1.1 system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:.01em;color:inherit;white-space:nowrap;font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #0008}
+.scene-marker small{font:600 10.5px/1 var(--mono);color:var(--pin);padding:3px 6px;border-radius:999px;background:rgba(var(--pin-rgb),.16);box-shadow:inset 0 0 0 1px rgba(var(--pin-rgb),.32);font-variant-numeric:tabular-nums;white-space:nowrap}
+.scene-marker:enabled:hover,.scene-marker:focus-visible{translate:0 -2px;border-color:rgba(var(--pin-rgb),.75);box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 10px 26px rgba(0,0,0,.45),0 0 18px rgba(var(--pin-rgb),.35)}
+.scene-marker:enabled:active{translate:0 0;filter:brightness(1.15)}
+.scene-marker:disabled{opacity:1;cursor:not-allowed;filter:saturate(.25) brightness(.85)}
+.scene-marker:disabled small{color:#c9c4bb;background:rgba(255,255,255,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+@keyframes marker-in{from{opacity:0;scale:.82;filter:blur(4px)}to{opacity:1;scale:1;filter:none}}
+
+/* ---- Bullet-time letterbox ---- */
+#view::before{content:'';position:absolute;left:0;right:0;top:0;z-index:4;height:0;background:#000;pointer-events:none;transition:height .45s cubic-bezier(.5,0,.2,1);box-shadow:0 0 0 0 #000}
+#view.cinematic::before{height:10%}
+.scene-marker.deck::before{content:''}
+#view .cine-bottom{position:absolute;left:0;right:0;bottom:0;height:0;background:#000;z-index:4;pointer-events:none;transition:height .45s cubic-bezier(.5,0,.2,1)}
+#view.cinematic .cine-bottom{height:10%}
+#view .cine-tag{position:absolute;z-index:5;left:16px;top:calc(10% + 12px);display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:6px;background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);color:#fff;font:700 11px/1 var(--mono);letter-spacing:.18em;opacity:0;translate:-8px 0;transition:opacity .3s .15s,translate .3s .15s;pointer-events:none}
+#view .cine-tag::before{content:'';width:8px;height:8px;border-radius:50%;background:#ff3b30;box-shadow:0 0 8px #ff3b30;animation:rec-blink 1s steps(2) infinite}
+#view.cinematic .cine-tag{opacity:1;translate:0 0}
+#view .cine-hint{position:absolute;z-index:5;right:16px;bottom:calc(10% + 10px);color:#fffc;font:500 10px var(--mono);letter-spacing:.08em;opacity:0;transition:opacity .3s .4s;pointer-events:none}
+#view.cinematic .cine-hint{opacity:.8}
+#view.cinematic::after{background:radial-gradient(ellipse at center,transparent 45%,rgba(4,8,12,.65))}
+#view.cinematic .scene-markers{opacity:0;transition:opacity .2s}
+.scene-markers{transition:opacity .3s}
+@keyframes rec-blink{to{opacity:.25}}
+@media(prefers-reduced-motion:reduce){.scene-marker,.marker-dot .pulse{animation:none}}

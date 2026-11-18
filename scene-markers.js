@@ -7,22 +7,24 @@ export function sceneMarkers(view,project){
  return function render(items){
   const present=new Set(items.map(item=>item.key));
   for(const [key,entry] of entries){
-   if(!present.has(key)){entry.button.remove();entry.line.remove();entries.delete(key)}
+   if(!present.has(key)){entry.button.remove();entry.line.remove();entry.dot.remove();entries.delete(key)}
   }
   const occupied=[];
   for(const item of items){
    let entry=entries.get(item.key);
    if(!entry){
-    const button=document.createElement('button'),line=document.createElementNS(svg.namespaceURI,'line');
+    const button=document.createElement('button'),line=document.createElementNS(svg.namespaceURI,'line'),dot=document.createElementNS(svg.namespaceURI,'g');
+    dot.setAttribute('class','marker-dot '+item.kind);dot.innerHTML='<circle class="pulse" r="5"/><circle class="core" r="3.2"/>';line.setAttribute('class','marker-line '+item.kind);
     button.type='button';button.className='scene-marker '+item.kind;
     const title=document.createElement('strong'),detail=document.createElement('small');
-    button.append(title,detail);layer.append(button);svg.append(line);entry={button,line,title,detail};entries.set(item.key,entry);
+    const text=document.createElement('span');text.className='marker-text';text.append(title,detail);button.append(text);layer.append(button);svg.append(line,dot);entry={button,line,dot,title,detail};entries.set(item.key,entry);
    }
-   const {button,line}=entry,pos=project(item.point);
-   button.hidden=!pos;line.style.display=pos?'':'none';if(!pos)continue;
+   const {button,line,dot}=entry,pos=project(item.point);
+   button.hidden=!pos;line.style.display=dot.style.display=pos?'':'none';if(!pos)continue;
+   dot.setAttribute('transform','translate('+pos.x.toFixed(1)+','+pos.y.toFixed(1)+')');
    if(entry.title.textContent!==item.label)entry.title.textContent=item.label;
    if(entry.detail.textContent!==item.detail)entry.detail.textContent=item.detail;
-   button.disabled=item.disabled;button.onclick=item.action;
+   button.disabled=item.disabled;button.title=item.label+' · '+item.detail;button.onclick=item.action;
    const w=button.offsetWidth,h=button.offsetHeight;
    const x=Math.max(2,Math.min(view.clientWidth-w-2,pos.x-w/2));
    let y=Math.max(2,pos.y-h-15);
@@ -32,7 +34,7 @@ export function sceneMarkers(view,project){
    }
    y=Math.min(y,view.clientHeight-h-2);occupied.push({x,y,w,h});
    button.style.transform='translate('+Math.round(x)+'px,'+Math.round(y)+'px)';
-   line.setAttribute('x1',pos.x);line.setAttribute('y1',pos.y);line.setAttribute('x2',x+w/2);line.setAttribute('y2',y+h/2);
+   line.setAttribute('x1',pos.x);line.setAttribute('y1',pos.y);const ly=y+h/2<pos.y?y+h:y;line.setAttribute('x2',x+w/2);line.setAttribute('y2',ly);
   }
  };
 }
