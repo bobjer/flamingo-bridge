@@ -309,3 +309,11 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
 
 .rooster-banner{top:48px;right:12px;left:auto;transform:none;max-width:calc(100% - 24px);padding:6px 10px}
 .rooster-banner .cartoon-rooster{width:clamp(42px,6vw,78px)}
+
+#loading-screen{width:min(340px,80vw);padding:24px;border:1px solid var(--line);border-top:3px solid var(--accent);background:var(--panel);color:var(--fg);border-radius:8px}
+#loading-screen::backdrop{background:#0b1119}
+#loading-title{font:700 22px var(--display)}
+#loading-status{margin:10px 0 16px}
+#loading-screen progress{width:100%;height:6px;accent-color:var(--accent);appearance:auto}
+#loading-screen button{padding:8px 12px;background:var(--accent);color:#111;border:0;border-radius:4px}
+@media(pointer:coarse) and (max-width:600px) and (orientation:portrait){#loading-screen{transform:rotate(90deg)}}

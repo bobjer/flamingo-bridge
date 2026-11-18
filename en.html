@@ -1,4 +1,25 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Pop Season</title><link rel="icon" href="data:,"><link rel="stylesheet" href="./style.css"></head><body>
+<dialog id="loading-screen" aria-labelledby="loading-title" aria-describedby="loading-status">
+ <strong id="loading-title">Pop Season</strong>
+ <p id="loading-status" role="status" data-error="The game could not load.">Preparing the bridge and loading the 3D scene…</p>
+ <progress aria-labelledby="loading-status"></progress>
+ <button type="button" hidden>Try again</button>
+</dialog>
+<script>
+{
+ const screen=document.getElementById('loading-screen');
+ screen.showModal();
+ screen.addEventListener('cancel',event=>event.preventDefault());
+ const status=document.getElementById('loading-status'),retry=screen.querySelector('button');
+ retry.onclick=()=>location.reload();
+ function failed(event){
+  if(!screen.open||!(event instanceof ErrorEvent||event.target instanceof HTMLScriptElement))return;
+  status.textContent=status.dataset.error;screen.querySelector('progress').hidden=true;retry.hidden=false;
+ }
+ window.addEventListener('error',failed,true);
+ window.addEventListener('game-ready',()=>{window.removeEventListener('error',failed,true);screen.close();screen.remove()},{once:true});
+}
+</script>
 <header class="top">
  <div class="top-left"><span class="mark" aria-hidden="true">◈</span><span class="label">OPERATIONS HQ · SECTOR 07</span></div>
  <div class="top-title"><strong>POP SEASON</strong><span>BRIDGE DEFENCE SIMULATOR</span></div>

@@ -742,4 +742,7 @@ function pauseAway(){
 }
 window.addEventListener('blur',pauseAway);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseAway()});
-requestAnimationFrame(frame);
+requestAnimationFrame(now=>{
+ frame(now);
+ requestAnimationFrame(()=>window.dispatchEvent(new Event('game-ready')));
+});
