@@ -117,22 +117,22 @@ function layer(scene,map,{additive=false,capacity=1800,lit=false,order=5}={}){
  const col=new T.Color();
  return {
   live,
-  emit(o){if(live.length>=capacity)live.shift();const p={age:0,rot:rnd()*6.28,spin:(rnd()-.5)*1.4,drag:0,gravity:0,alpha:1,fadeIn:.08,...o};live.push(p);return p},
+  emit(o){if(live.length>=capacity)return null;const p={age:0,rot:rnd()*6.28,spin:(rnd()-.5)*1.4,drag:0,gravity:0,alpha:1,fadeIn:.08,...o};live.push(p);return p},
   update(dt){
    let n=0;
    for(let i=live.length-1;i>=0;i--){
     const p=live[i];p.age+=dt;
-    if(p.age>=p.life){live.splice(i,1);continue}
+    if(p.age>=p.life){live[i]=live[live.length-1];live.pop();continue}
     const t=p.age/p.life;
     p.v.y-=p.gravity*dt;p.v.multiplyScalar(Math.max(0,1-p.drag*dt));p.pos.addScaledVector(p.v,dt);p.rot+=p.spin*dt;
     if(p.floor!=null&&p.pos.y<p.floor){p.pos.y=p.floor;p.v.y*=-.25;p.v.x*=.6;p.v.z*=.6}
     col.copy(p.c0);if(p.c1)col.lerp(p.c1,Math.min(1,t*(p.cRate??1)));
     const a=p.alpha*Math.min(1,t/p.fadeIn)*Math.pow(1-t,p.fadePow??1.4);
-    pos.set([p.pos.x,p.pos.y,p.pos.z],n*3);tint.set([col.r,col.g,col.b,a],n*4);
+    const i3=n*3,i4=n*4;pos[i3]=p.pos.x;pos[i3+1]=p.pos.y;pos[i3+2]=p.pos.z;tint[i4]=col.r;tint[i4+1]=col.g;tint[i4+2]=col.b;tint[i4+3]=a;
     size[n]=p.s0+(p.s1-p.s0)*(1-Math.pow(1-t,p.grow??2));rot[n]=p.rot;n++;
    }
-   geo.setDrawRange(0,n);
-   for(const k of ['position','tint','size','rot'])geo.attributes[k].needsUpdate=true;
+   geo.setDrawRange(0,n);points.visible=n>0;
+   if(n)for(const k of ['position','tint','size','rot']){const at=geo.attributes[k];at.clearUpdateRanges();at.addUpdateRange(0,n*at.itemSize);at.needsUpdate=true}
   },
   reset(){live.length=0;geo.setDrawRange(0,0)}
  };
@@ -147,18 +147,19 @@ const orange=new T.MeshStandardMaterial({color:0xd8551d,roughness:.5});
 const flame=new T.MeshBasicMaterial({color:0xffe9a0,transparent:true,opacity:.85,blending:T.AdditiveBlending,depthWrite:false});
 const crumbMaterial=new T.MeshStandardMaterial({color:0xe9ad65,roughness:.95});
 const up=new T.Vector3(0,1,0);
-const C=hex=>new T.Color(hex);
+const colorCache=new Map();
+const C=(hex,mult=1)=>{const key=hex+'*'+mult;let c=colorCache.get(key);if(!c){c=new T.Color(hex).multiplyScalar(mult);colorCache.set(key,c)}return c};
 const v3=(x,y,z)=>new T.Vector3(x,y,z);
 const around=(s=1)=>v3((rnd()-.5)*2*s,(rnd()-.5)*2*s,(rnd()-.5)*2*s);
 
 export function fireworks(scene){
  const flights=[],bursts=[],decals=[],flashes=[];
- const smoke=layer(scene,puffTex,{lit:true,order:5,capacity:2600});
+ const smoke=layer(scene,puffTex,{lit:true,order:5,capacity:1800});
  const spray=layer(scene,puffTex,{lit:true,order:6,capacity:1600});
  const fire=layer(scene,fireTex,{additive:true,order:7,capacity:900});
  const glow=layer(scene,glowTex,{additive:true,order:8,capacity:1400});
  // A small pool of point lights, created once so materials never recompile mid-game.
- const lights=Array.from({length:4},()=>{const l=new T.PointLight(0xff9a45,0,22,1.6);l.position.set(0,-50,0);scene.add(l);return l});
+ const lights=Array.from({length:2},()=>{const l=new T.PointLight(0xff9a45,0,22,1.6);l.position.set(0,-50,0);scene.add(l);return l});
  let nextLight=0;
  function lightFlash(p,power){const l=lights[nextLight++%lights.length];l.position.copy(p);l.position.y+=.6;flashes.push({l,age:0,life:.55,power})}
 
@@ -166,21 +167,21 @@ export function fireworks(scene){
   for(let i=0;i<Math.round(10*k);i++){
    const g=dark+rnd()*.18;
    smoke.emit({pos:p.clone().add(around(.5*k)),v:around(1.6*k).add(v3(0,1.4+rnd()*1.6,0)),drag:1.2,gravity:-.5,life:2.4+rnd()*2.2,
-    s0:.6*k,s1:(3+rnd()*2.4)*k,grow:2.4,c0:C(0x2a201a).multiplyScalar(1+g),c1:C(0x77726c).multiplyScalar(.9+g),cRate:1.4,alpha:.62,fadeIn:.05,fadePow:1.6});
+    s0:.6*k,s1:(3+rnd()*2.4)*k,grow:2.4,c0:C(0x2a201a,Math.round((1+g)*10)/10),c1:C(0x77726c,Math.round((.9+g)*10)/10),cRate:1.4,alpha:.62,fadeIn:.05,fadePow:1.6});
   }
  }
  function sparks(p,k,n=18,col=0xffd27a){
   for(let i=0;i<Math.round(n*k);i++){
    const v=around(1).normalize().multiplyScalar((4+rnd()*8)*Math.sqrt(k));v.y=Math.abs(v.y)*1.2+1;
-   glow.emit({pos:p.clone(),v,gravity:9,drag:.6,life:.45+rnd()*.7,s0:.22*k,s1:.06,c0:C(col).multiplyScalar(6),c1:C(0xff4a10).multiplyScalar(3),alpha:1,fadeIn:.01,fadePow:.8});
+   glow.emit({pos:p.clone(),v,gravity:9,drag:.6,life:.45+rnd()*.7,s0:.22*k,s1:.06,c0:C(col,6),c1:C(0xff4a10,3),alpha:1,fadeIn:.01,fadePow:.8});
   }
  }
  function explosion(p,k=1){
   p=p.clone();
-  glow.emit({pos:p.clone(),v:v3(0,0,0),life:.14,s0:3.6*k,s1:5*k,c0:C(0xfff2d6).multiplyScalar(2.6),alpha:.8,fadeIn:.01,fadePow:1});
+  glow.emit({pos:p.clone(),v:v3(0,0,0),life:.14,s0:3.6*k,s1:5*k,c0:C(0xfff2d6,2.6),alpha:.8,fadeIn:.01,fadePow:1});
   for(let i=0;i<Math.round(12*k);i++){
    fire.emit({pos:p.clone().add(around(.35*k)),v:around(2.4*k).add(v3(0,1.3,0)),drag:3,gravity:-1.5,life:.45+rnd()*.45,
-    s0:.7*k,s1:(1.7+rnd()*1.2)*k,grow:3,c0:C(0xffd890).multiplyScalar(3.2),c1:C(0xff4a10).multiplyScalar(1.5),cRate:1,alpha:.32,fadeIn:.02,fadePow:1.2});
+    s0:.7*k,s1:(1.7+rnd()*1.2)*k,grow:3,c0:C(0xffd890,3.2),c1:C(0xff4a10,1.5),cRate:1,alpha:.32,fadeIn:.02,fadePow:1.2});
   }
   sparks(p,k);
   for(let i=0;i<Math.round(8*k);i++){ // dark debris
@@ -196,10 +197,10 @@ export function fireworks(scene){
   for(let i=0;i<Math.round(46*k);i++){ // spray column
    const a=rnd()*Math.PI*2,r=rnd()*1.6*k,up=6+rnd()*7*Math.sqrt(k);
    spray.emit({pos:p.clone().add(v3(Math.cos(a)*.3*k,0,Math.sin(a)*.3*k)),v:v3(Math.cos(a)*r,up*(1-r/(2.2*k)),Math.sin(a)*r),gravity:12,drag:.4,
-    life:1+rnd()*.5,s0:.35*k,s1:(.9+rnd())*k,grow:1.5,c0:C(0xf3fbff).multiplyScalar(1.5),c1:C(0xc9e4ee).multiplyScalar(1.2),alpha:.75,fadeIn:.03,fadePow:1.8});
+    life:1+rnd()*.5,s0:.35*k,s1:(.9+rnd())*k,grow:1.5,c0:C(0xf3fbff,1.5),c1:C(0xc9e4ee,1.2),alpha:.75,fadeIn:.03,fadePow:1.8});
   }
   for(let i=0;i<Math.round(10*k);i++) // drifting mist
-   spray.emit({pos:p.clone().add(around(.8*k)).setY(.4+rnd()*k),v:around(.8).add(v3(0,.6,0)),drag:1,life:1.8+rnd()*1.4,s0:1*k,s1:3.4*k,c0:C(0xffffff).multiplyScalar(1.4),alpha:.35,fadeIn:.15});
+   spray.emit({pos:p.clone().add(around(.8*k)).setY(.4+rnd()*k),v:around(.8).add(v3(0,.6,0)),drag:1,life:1.8+rnd()*1.4,s0:1*k,s1:3.4*k,c0:C(0xffffff,1.4),alpha:.35,fadeIn:.15});
   ring(p,k,0);ring(p,k*.7,.25);ring(p,k*.5,.55);
  }
  const ringGeo=new T.PlaneGeometry(1,1);
@@ -216,7 +217,7 @@ export function fireworks(scene){
  function dust(p,k=1){
   for(let i=0;i<Math.round(12*k);i++)
    smoke.emit({pos:p.clone().add(around(.6*k)).setY(3.3+rnd()*.3),v:around(2.2*k).setY(.6+rnd()*1.2),drag:2,gravity:-.15,life:1.6+rnd()*1.4,
-    s0:.7*k,s1:(2.6+rnd()*1.6)*k,c0:C(0xcfc3ae).multiplyScalar(1.3),c1:C(0xa59b8c).multiplyScalar(1.1),alpha:.55,fadeIn:.04});
+    s0:.7*k,s1:(2.6+rnd()*1.6)*k,c0:C(0xcfc3ae,1.3),c1:C(0xa59b8c,1.1),alpha:.55,fadeIn:.04});
  }
  // Damaged deck: steady smoke and a few embers from each wound.
  let smolderClock=0;
@@ -227,19 +228,19 @@ export function fireworks(scene){
    const k=Math.min(1.6,.6+loss/20);
    smoke.emit({pos:point.clone().add(around(.4)).setY(3.3),v:v3(.35+(rnd()-.5)*.3,1.2+rnd()*.8,(rnd()-.5)*.3),drag:.4,gravity:-.25,life:3+rnd()*2.5,
     s0:.4*k,s1:(2.6+rnd()*1.4)*k,c0:C(0x1d1916),c1:C(0x6d6a66),cRate:1.2,alpha:.5,fadeIn:.1,fadePow:1.5});
-   if(rnd()<.35)glow.emit({pos:point.clone().add(around(.4)).setY(3.32),v:v3((rnd()-.5)*.6,1+rnd()*1.6,(rnd()-.5)*.6),drag:.5,gravity:-.4,life:.6+rnd()*.8,s0:.12,s1:.04,c0:C(0xffa040).multiplyScalar(5),alpha:1,fadeIn:.02,fadePow:.8});
-   if(rnd()<.5)fire.emit({pos:point.clone().add(around(.25)).setY(3.36),v:v3(0,.8+rnd(),0),drag:1,life:.35+rnd()*.3,s0:.5*k,s1:.15,c0:C(0xffb050).multiplyScalar(2.6),c1:C(0x9a1e06),alpha:.6,fadeIn:.05});
+   if(rnd()<.35)glow.emit({pos:point.clone().add(around(.4)).setY(3.32),v:v3((rnd()-.5)*.6,1+rnd()*1.6,(rnd()-.5)*.6),drag:.5,gravity:-.4,life:.6+rnd()*.8,s0:.12,s1:.04,c0:C(0xffa040,5),alpha:1,fadeIn:.02,fadePow:.8});
+   if(rnd()<.5)fire.emit({pos:point.clone().add(around(.25)).setY(3.36),v:v3(0,.8+rnd(),0),drag:1,life:.35+rnd()*.3,s0:.5*k,s1:.15,c0:C(0xffb050,2.6),c1:C(0x9a1e06),alpha:.6,fadeIn:.05});
   }
  }
  function tracer(from,to){
   const v=to.clone().sub(from).divideScalar(.11);
-  glow.emit({pos:from.clone(),v:v3(0,0,0),life:.07,s0:.9,s1:.6,c0:C(0xffd890).multiplyScalar(6),alpha:1,fadeIn:.01,fadePow:1}); // muzzle flash
-  for(let i=0;i<3;i++)glow.emit({pos:from.clone().addScaledVector(v,-.012*i),v:v.clone(),life:.11,s0:.28-.07*i,s1:.2,c0:C(0xffe7a8).multiplyScalar(5-i),alpha:1,fadeIn:.01,fadePow:.5});
+  glow.emit({pos:from.clone(),v:v3(0,0,0),life:.07,s0:.9,s1:.6,c0:C(0xffd890,6),alpha:1,fadeIn:.01,fadePow:1}); // muzzle flash
+  for(let i=0;i<3;i++)glow.emit({pos:from.clone().addScaledVector(v,-.012*i),v:v.clone(),life:.11,s0:.28-.07*i,s1:.2,c0:C(0xffe7a8,5-i),alpha:1,fadeIn:.01,fadePow:.5});
   setTimeout(()=>sparks(to,.35,6,0xfff0c0),110);
  }
  function feathers(p,color,n=10){
   for(let i=0;i<n;i++)
-   smoke.emit({pos:p.clone().add(around(.3)),v:around(2.2).add(v3(0,1.2,0)),drag:2.2,gravity:1.2,life:2.2+rnd()*1.4,s0:.32,s1:.26,c0:C(color).multiplyScalar(1.6),alpha:.95,fadeIn:.01,fadePow:.6,spin:(rnd()-.5)*9});
+   smoke.emit({pos:p.clone().add(around(.3)),v:around(2.2).add(v3(0,1.2,0)),drag:2.2,gravity:1.2,life:2.2+rnd()*1.4,s0:.32,s1:.26,c0:C(color,1.6),alpha:.95,fadeIn:.01,fadePow:.6,spin:(rnd()-.5)*9});
  }
  // Wreckage: real meshes thrown by a blast (the cab door is the star of the shot).
  const chunks=[];
@@ -253,6 +254,24 @@ export function fireworks(scene){
    [new T.Mesh(panelGeo,panelMat),v3(-dir*2,9,1.4),v3(3,6,-4)],[new T.Mesh(panelGeo,panelMat),v3(dir*3.5,5,-1),v3(-5,3,2)],[new T.Mesh(panelGeo,doorMat),v3(0,10,-.8),v3(4,-4,6)]];
   for(const [m,v,spin] of parts){m.position.copy(p).add(around(.25));m.traverse(o=>{if(o.isMesh)o.castShadow=true});scene.add(m);
    chunks.push({m,v:v.add(around(.8)),spin,age:0,life:9,smoke:0,landed:false});}
+ }
+ // Aircraft breaks apart: detach parts of the model and throw them burning.
+ function breakup(group,vel=v3(0,0,0)){
+  group.updateMatrixWorld(true);
+  const centre=group.getWorldPosition(v3(0,0,0));
+  const kids=[...group.children].slice(1).filter(()=>rnd()<.7);
+  for(const k of kids){
+   scene.attach(k);const out=k.getWorldPosition(v3(0,0,0)).sub(centre);if(out.lengthSq()<1e-4)out.copy(around(1));out.normalize();
+   chunks.push({m:k,v:vel.clone().add(out.multiplyScalar(3+rnd()*5)).add(v3(0,2+rnd()*3,0)),spin:around(7),age:0,life:10,smoke:0,landed:false,burn:rnd()<.65});
+  }
+  explosion(centre,1.9);sparks(centre,1.2,30,0xfff0c0);
+ }
+ // Fire and smoke streaming from a falling hulk.
+ let trailClock=0;
+ function burnTrail(p,dt,k=1){
+  trailClock-=dt;if(trailClock>0)return;trailClock=.02;
+  fire.emit({pos:p.clone().add(around(.2)),v:around(.6),drag:2,life:.35+rnd()*.3,s0:.9*k,s1:.3,c0:C(0xffd890,3),c1:C(0xff4a10,1.4),alpha:.5,fadeIn:.02});
+  smoke.emit({pos:p.clone().add(around(.2)),v:around(.4).add(v3(0,.6,0)),drag:.8,gravity:-.3,life:2.2+rnd()*1.6,s0:.6*k,s1:(2.4+rnd())*k,c0:C(0x1e1915),c1:C(0x5f5b57),cRate:1.2,alpha:.6,fadeIn:.04});
  }
  function kill(p,kind){
   const k=kind==='neptune'?2.4:.7;
@@ -280,8 +299,8 @@ export function fireworks(scene){
   }
   rocket.position.copy(origin);scene.add(rocket);
   // launch blast
-  glow.emit({pos:origin.clone(),v:v3(0,0,0),life:.18,s0:2.4,s1:3.2,c0:C(0xffd29a).multiplyScalar(4),alpha:1,fadeIn:.01,fadePow:1});
-  for(let i=0;i<6;i++)smoke.emit({pos:origin.clone().add(around(.3)),v:around(1.6).setY(.4+rnd()),drag:1.6,gravity:-.3,life:1.6+rnd(),s0:.6,s1:2.2+rnd(),c0:C(0xe6e2dc).multiplyScalar(1.2),alpha:.55,fadeIn:.03});
+  glow.emit({pos:origin.clone(),v:v3(0,0,0),life:.18,s0:2.4,s1:3.2,c0:C(0xffd29a,4),alpha:1,fadeIn:.01,fadePow:1});
+  for(let i=0;i<6;i++)smoke.emit({pos:origin.clone().add(around(.3)),v:around(1.6).setY(.4+rnd()),drag:1.6,gravity:-.3,life:1.6+rnd(),s0:.6,s1:2.2+rnd(),c0:C(0xe6e2dc,1.2),alpha:.55,fadeIn:.03});
   const f={rocket,origin,target,damage,age:0,trail:0,duration:T.MathUtils.clamp(origin.distanceTo(target.m.position)/20,.5,1.9)};flights.push(f);return f;
  }
  const marker=new T.Object3D(),tail=new T.Vector3();
@@ -294,8 +313,8 @@ export function fireworks(scene){
    tail.set(0,-.75,0).applyQuaternion(f.rocket.quaternion).add(pos);
    f.trail-=dt;
    if(f.trail<=0){f.trail=.018;
-    smoke.emit({pos:tail.clone(),v:around(.25),drag:1.4,gravity:-.25,life:1.1+rnd()*.7,s0:.22,s1:.95+rnd()*.5,grow:2.5,c0:C(0xf4efe8).multiplyScalar(1.25),c1:C(0xb9b6b0),alpha:.5,fadeIn:.04,fadePow:1.7});
-    glow.emit({pos:tail.clone(),v:v3(0,0,0),life:.09,s0:.75,s1:.3,c0:C(0xffc070).multiplyScalar(4),alpha:1,fadeIn:.01,fadePow:1});
+    smoke.emit({pos:tail.clone(),v:around(.25),drag:1.4,gravity:-.25,life:1.1+rnd()*.7,s0:.22,s1:.95+rnd()*.5,grow:2.5,c0:C(0xf4efe8,1.25),c1:C(0xb9b6b0),alpha:.5,fadeIn:.04,fadePow:1.7});
+    glow.emit({pos:tail.clone(),v:v3(0,0,0),life:.09,s0:.75,s1:.3,c0:C(0xffc070,4),alpha:1,fadeIn:.01,fadePow:1});
    }
    if(t===1){
     if(enemies.includes(f.target)&&f.target.hp>0){f.target.hp-=f.damage;explosion(pos,.75)}
@@ -325,8 +344,8 @@ export function fireworks(scene){
    const deck=Math.abs(p.z)<2.6&&Math.abs(p.x)<40,floor=deck?3.3:-.4;
    if(!c.landed){
     c.v.y-=9.8*dt;p.addScaledVector(c.v,dt);c.m.rotation.x+=c.spin.x*dt;c.m.rotation.y+=c.spin.y*dt;c.m.rotation.z+=c.spin.z*dt;
-    c.smoke-=dt;if(c.smoke<=0){c.smoke=.03;smoke.emit({pos:p.clone(),v:around(.2),drag:1,gravity:-.3,life:1.6+rnd(),s0:.25,s1:1.1,c0:C(0x2a2522),c1:C(0x6e6a66),alpha:.55,fadeIn:.03});
-     if(c.age<1.2)glow.emit({pos:p.clone(),v:v3(0,0,0),life:.12,s0:.5,s1:.2,c0:C(0xffa040).multiplyScalar(4),alpha:1,fadeIn:.01,fadePow:1})}
+    c.smoke-=dt;if(c.smoke<=0){c.smoke=.04;if(c.burn&&c.age<6)fire.emit({pos:p.clone(),v:around(.3),drag:2,life:.35+rnd()*.2,s0:.6,s1:.2,c0:C(0xffc070,3),c1:C(0xff4a10),alpha:.5,fadeIn:.02});smoke.emit({pos:p.clone(),v:around(.2),drag:1,gravity:-.3,life:1.6+rnd(),s0:.5,s1:1.5,grow:3,c0:C(0x2a2522),c1:C(0x6e6a66),alpha:.55,fadeIn:.03});
+     if(c.age<(c.burn?5:1.2))glow.emit({pos:p.clone(),v:v3(0,0,0),life:.12,s0:.5,s1:.2,c0:C(0xffa040,4),alpha:1,fadeIn:.01,fadePow:1})}
     if(p.y<floor+.12&&c.v.y<0){
      if(deck&&Math.abs(c.v.y)>1.6){c.v.y*=-.32;c.v.x*=.55;c.v.z*=.55;c.spin.multiplyScalar(.5);sparks(p,.4,8);}
      else if(!deck){splash(v3(p.x,0,p.z),.45);c.landed=true;c.life=c.age+3;}
@@ -349,7 +368,7 @@ export function fireworks(scene){
   reset();for(const d of decals){d.m.removeFromParent();d.m.material.dispose()}decals.length=0;for(const c of chunks)c.m.removeFromParent();chunks.length=0;
   for(const f of flashes)f.l.intensity=0;flashes.length=0;smoke.reset();spray.reset();fire.reset();glow.reset();
  }
- return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,kill,feathers,wreck,
+ return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,kill,feathers,wreck,breakup,burnTrail,
   burst:p=>explosion(p,1.5),
   pendingDamage(target){return flights.reduce((sum,f)=>sum+(f.target===target?f.damage:0),0)},
   snapshot(enemies){return flights.filter(f=>enemies.includes(f.target)).map(f=>({origin:f.origin.toArray(),target:enemies.indexOf(f.target),damage:f.damage,age:f.age,duration:f.duration,position:f.rocket.position.toArray()}))},

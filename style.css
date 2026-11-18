@@ -317,3 +317,6 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
 #loading-screen progress{width:100%;height:6px;accent-color:var(--accent);appearance:auto}
 #loading-screen button{padding:8px 12px;background:var(--accent);color:#111;border:0;border-radius:4px}
 @media(pointer:coarse) and (max-width:600px) and (orientation:portrait){#loading-screen{transform:rotate(90deg)}}
+
+/* ---- Disclaimer ---- */
+.legal{margin:0 auto;padding:10px 16px 14px;max-width:880px;text-align:center;font:500 10.5px/1.5 var(--mono);color:#8b96a3;letter-spacing:.01em;opacity:.85}

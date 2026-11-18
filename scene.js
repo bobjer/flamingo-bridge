@@ -62,10 +62,23 @@ function waterNormals(renderer) {
 
 export function landscape(view) {
  const renderer = new T.WebGLRenderer({antialias: true, logarithmicDepthBuffer: true});
- renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
+ const maxRatio = Math.min(devicePixelRatio, 1.6);
+ let pixelRatio = maxRatio;
+ renderer.setPixelRatio(pixelRatio);
+ // Adaptive resolution: drop render scale when frames run long, recover when there is headroom.
+ let frameAvg = 16.7, lastFrame = 0, slowFor = 0, fastFor = 0, shadowTick = 0;
+ function adapt(now) {
+  const ms = lastFrame ? Math.min(100, now - lastFrame) : 16.7; lastFrame = now;
+  if (document.hidden || ms > 90) return;
+  frameAvg += (ms - frameAvg) * .08;
+  if (frameAvg > 21) { slowFor += ms; fastFor = 0; } else if (frameAvg < 14.5) { fastFor += ms; slowFor = 0; } else { slowFor = fastFor = 0; }
+  if (slowFor > 900 && pixelRatio > .7) { pixelRatio = Math.max(.7, pixelRatio - .15); renderer.setPixelRatio(pixelRatio); slowFor = 0; }
+  if (fastFor > 4000 && pixelRatio < maxRatio) { pixelRatio = Math.min(maxRatio, pixelRatio + .1); renderer.setPixelRatio(pixelRatio); fastFor = 0; }
+ }
  renderer.toneMapping = T.ACESFilmicToneMapping;
  renderer.toneMappingExposure = .42;
  renderer.shadowMap.enabled = true;
+ renderer.shadowMap.autoUpdate = false; // refreshed every other frame in draw()
  renderer.shadowMap.type = T.PCFSoftShadowMap;
  view.prepend(renderer.domElement);
 
@@ -397,6 +410,7 @@ export function landscape(view) {
   if (c.follow) c.point.copy(c.follow.position).add(c.lift);
   // bomb shots wait for the blast; give up if it never comes
   if (c.bomb && c.boomAt == null && c.age > 7) { c.boomAt = c.age; c.end = c.age + .7; }
+  if (c.boomAt != null && c.end == null && c.age - c.boomAt > 12) c.end = c.age + .8;
   if (c.end != null && c.age >= c.end) { endCine(); return false; }
   const end = c.end ?? c.age + 3, inDur = c.bomb ? .7 : .2 * c.duration, outDur = c.bomb ? .8 : .2 * c.duration;
   const prog = c.bomb ? c.age / 6 : ease(T.MathUtils.clamp(c.age / c.duration, 0, 1));
@@ -438,12 +452,15 @@ export function landscape(view) {
    return true;
   },
   // Detonation inside a bomb shot: freeze-frame, then a very slow release.
-  cinematicBoom(point) {
+  cinematicBoom(point, opts = {}) {
    if (!cine || !cine.bomb || cine.boomAt != null) return false;
    if (point) cine.point.copy(point);
-   cine.follow = null; cine.boomAt = cine.age; cine.end = cine.age + 4.6;
+   cine.follow = opts.follow ?? null; cine.lift.set(0, 0, 0); cine.boomAt = cine.age;
+   cine.end = opts.hold ? null : cine.age + 4.6;
    return true;
   },
+  // Let a held shot (e.g. following a falling wreck) wind down.
+  cinematicRelease(extra = 1.4) { if (cine) cine.end = cine.age + extra; },
   timeScale() {
    if (!cine) return 1;
    const c = cine;
@@ -500,6 +517,8 @@ export function landscape(view) {
    water.material.uniforms.time.value = performance.now() * .00035;
    land.update(performance.now() * .001);
    if (!filming) controls.update();
+   adapt(performance.now());
+   renderer.shadowMap.needsUpdate = (shadowTick++ & 1) === 0 || !!cine;
    renderer.render(scene, camera);
   }
  };
