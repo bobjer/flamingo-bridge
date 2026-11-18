@@ -1,3 +1,4 @@
+import {roadArt} from './road-art.js';
 import {sceneMarkers} from './scene-markers.js';
 import {arenaRadar} from './radar.js';
 import {tr,writeMessage} from './language.js';
@@ -7,8 +8,9 @@ import {model} from './models.js';
 import {landscape} from './scene.js';
 const $=id=>document.getElementById(id),world=landscape($('view'));
 const drawRadar=arenaRadar($('arena-radar'));
+const road=roadArt(world.scene);
 const fx=fireworks(world.scene);
-const getSpecs=()=>({sam:[tr("С-400 «Хлопавка»","S-400 Party Popper"),320,6,1.15],turret:[tr("Кулеметна турель","Machine-gun turret"),180,1,.45],cruiser:[tr("Ракетний крейсер","Missile cruiser"),480,8,1.25],dolphin:[tr("Бойовий дельфін","Combat dolphin"),140,2,.9],pantsir:[tr("Панцир-міні","Mini Pantsir"),210,2,.8]});
+const getSpecs=()=>({sam:[tr("С-400 «Хлопавка»","S-400 Party Popper"),320,6,1.15],turret:[tr("Кулеметна турель","Machine-gun turret"),160,1,.45],cruiser:[tr("Ракетний крейсер","Missile cruiser"),420,8,1.25],dolphin:[tr("Бойовий дельфін","Combat dolphin"),120,2,.9],pantsir:[tr("Панцир-міні","Mini Pantsir"),200,2,.8]});
 let specs=getSpecs();
 const units=[],enemies=[],effects=[],scouts=[];
 let cash,hp,time,wave,phase,paused,untilSpawn,score,foam,rp,unpaid,last=performance.now();
@@ -29,8 +31,8 @@ function headline(){
 const getTechs=()=>({dmg:[tr("Калібр","Calibre"),tr("шкода +30%","damage +30%")],rate:[tr("Автозаряджання","Autoloader"),tr("темп +15%","fire rate +15%")],range:[tr("Радар","Radar"),tr("дальність +12%","range +12%")],armor:[tr("Броня","Armour"),tr("корпус +1 · шкода мосту −12%","hull +1 · bridge damage −12%")],logi:[tr("Логістика","Logistics"),tr("ціни −7% · утримання −20%","prices −7% · upkeep −20%")]});
 let techs=getTechs();
 const tech={};
-const techCost=L=>Math.round(10*Math.pow(2.3,L));
-const upkeep={pantsir:8,sam:14,turret:6,cruiser:20,dolphin:5};
+const techCost=L=>Math.round(10*Math.pow(2,L));
+const upkeep={pantsir:6,sam:10,turret:4,cruiser:14,dolphin:4};
 // Arcade magazine sizes and prices, in millions of rubles.
 const magazine={sam:10,cruiser:9,pantsir:12};
 const bombTruckChance=.003;
@@ -38,7 +40,7 @@ function supplyQuote(){
  const launchers=units.filter(u=>magazine[u.k]);
  const capacity=launchers.reduce((sum,u)=>sum+magazine[u.k],0);
  const stock=launchers.reduce((sum,u)=>sum+u.ammo,0);
- const each=Math.max(1,price(12));
+ const each=Math.max(1,price(MISSILE));
  const amount=Math.min(8,capacity-stock,Math.floor(cash/each));
  return {launchers,capacity,stock,each,amount};
 }
@@ -61,12 +63,15 @@ $('resupply').onclick=()=>{
  cash-=amount*each;ui();
 };
 const research={loaf:2,baby:1,flamingo:1,bird:1,neptune:8};
-const infl=()=>Math.pow(1.04,Math.max(0,wave-1))*(1+.8*(1-reserve/reserve0))*Math.pow(.93,tech.logi);
+const infl=()=>Math.pow(1.03,Math.max(0,wave-1))*(1+.3*(1-reserve/reserve0))*Math.pow(.93,tech.logi);
+const MISSILE=6,PATCH=70;
+const bounty={loaf:7,baby:7,flamingo:9,bird:6,neptune:80};
+const bountyMul={easy:1.2,normal:1,hard:.85};
 const price=base=>Math.round(base*infl());
 const armored=x=>Math.min(hp,Math.round(x*Math.pow(.88,tech.armor)));
-function reward(k){rp+=research[k]}
+function reward(k){rp+=research[k];const b=Math.round(bounty[k]*bountyMul[$('difficulty').value]);cash+=b;drain(b*.25)}
 function upkeepBill(){return Math.round((units.reduce((s,u)=>s+upkeep[u.k],0)*Math.pow(.8,tech.logi)+barges.length*4)*infl())}
-function repairCost(){return price(90*Math.min(25,100-hp)/25)}
+function repairCost(){return price(PATCH*Math.min(25,100-hp)/25)}
 function researchTech(k){
  rp-=techCost(tech[k]);tech[k]++;
  if(k==='armor')for(const u of units)u.hull++;
@@ -219,7 +224,7 @@ function roadStep(dt){
  showTraffic();
 }
 function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);m.traverse(o=>{if(o.isMesh)o.castShadow=true});world.scene.add(m);return m}
-function reset(){damageSpots.length=0;breakLeft=waveElapsed=0;fx.reset();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
+function reset(){road.reset();clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.reset();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
@@ -239,15 +244,16 @@ function damageDeck(amount,position){
  const point=new T.Vector3(position.x,3.23,T.MathUtils.clamp(position.z,-2,2));
  let spot=damageSpots.find(s=>s.point.distanceTo(point)<2.2);
  if(!spot){spot={point,loss:0};damageSpots.push(spot)}
- spot.loss+=loss;hp-=loss;waveDamage+=loss;hype+=loss;return loss;
+ road.impact(spot,time);spot.loss+=loss;hp-=loss;waveDamage+=loss;hype+=loss;return loss;
 }
 function patchDeck(spot){
  if(phase!=='live'||paused||hp>=100||(spot&&!damageSpots.includes(spot)))return;
- const amount=Math.min(25,spot?.loss??100-hp),cost=price(90*amount/25);
+ const amount=Math.min(25,spot?.loss??100-hp),cost=price(PATCH*amount/25);
  if(cash<cost)return;
  let left=amount;
  for(const site of spot?[spot]:[...damageSpots]){
   const fill=Math.min(left,site.loss);site.loss-=fill;left-=fill;
+  if(fill)road.repair(site,time);
   if(!site.loss)damageSpots.splice(damageSpots.indexOf(site),1);
   if(!left)break;
  }
@@ -255,7 +261,7 @@ function patchDeck(spot){
 }
 function repairDeck(){patchDeck(null)}
 function localAmmo(u){
- const each=Math.max(1,price(12)),missing=magazine[u.k]-u.ammo;
+ const each=Math.max(1,price(MISSILE)),missing=magazine[u.k]-u.ammo;
  const amount=Math.min(8,missing,Math.floor(cash/each));
  return {amount,cost:(amount||1)*each};
 }
@@ -270,7 +276,7 @@ function updateMarkers(){
  if(phase==='live'){
   const currency=tr(' млн ₽',' M RUB');
   for(const spot of damageSpots){
-   const amount=Math.min(25,spot.loss),cost=price(90*amount/25);
+   const amount=Math.min(25,spot.loss),cost=price(PATCH*amount/25);
    items.push({key:spot,kind:'deck',point:spot.point,label:tr('Латати +','Patch +')+amount+'% · '+cost+currency,disabled:paused||cash<cost,action:()=>patchDeck(spot)});
   }
   for(const u of units){
@@ -289,7 +295,7 @@ function arcadeHud(){
  $('arch-life').textContent=tr('Арка ','Arch ')+('◆'.repeat(life))+('◇'.repeat(hits))+' '+life+'/3';
  $('arcade').dataset.danger=hits>=2||poor?'high':hits?'medium':'low';
  $('arcade-cash').textContent=money(cash);
- $('reserve-trend').textContent=!reserve?tr('Казна порожня','Treasury empty'):poor?tr('Казна майже порожня','Treasury running dry'):tr('Базова виплата ↓ ','Base grant ↓ ')+money(grant(Math.max(1,wave)));
+ $('reserve-trend').textContent=!reserve?tr('Казна порожня','Treasury empty'):poor?tr('Казна майже порожня','Treasury running dry'):tr('Базова виплата ','Base grant ')+money(grant(Math.max(1,wave)));
  const act=$('order-act'),msg=$('order-copy');
  function order(text,label,action){
   if(msg.textContent!==text)msg.textContent=text;
@@ -306,7 +312,7 @@ function arcadeHud(){
  const low=capacity&&stock<=Math.ceil(capacity*.3);
  const canPatch=hp<100&&cash>=repairCost();
  if(canPatch&&(!low||breakLeft>0||!amount)){
-  return order(tr('Полотно ','Deck ')+hp+tr('%. Для виплати відновіть до 100%.','%. Restore to 100% for the grant.'),tr('Латати · ','Repair · ')+money(repairCost()),repairDeck);
+  return order(tr('Полотно ','Deck ')+hp+tr('%. Відновіть до 100% для повної виплати.','%. Restore to 100% for the full grant.'),tr('Латати · ','Repair · ')+money(repairCost()),repairDeck);
  }
  if(low&&amount)return order(tr('Ракет залишилось: ','Missiles remaining: ')+stock+'/'+capacity,tr('Поповнити +','Restock +')+amount+' · '+money(each*amount),()=>$('resupply').click());
  if(low&&!amount)return order(tr('Ракет залишилось: ','Missiles remaining: ')+stock+'/'+capacity+tr('. На наступну потрібно ','. Next missile costs ')+money(each));
@@ -319,20 +325,21 @@ function purchase(k,pad){const cost=price(specs[k][1]);cash-=cost;const n=units.
  const marine=k==='dolphin'||k==='cruiser';const x=side*(2+Math.floor(n/2)*2.7)+(k==='turret'?1:0);const z=marine?(k==='cruiser'?-10:6)+side*(n%3):k==='sam'?-1.2:1.2;
  if(k==='cruiser'&&barges.some(b=>Math.hypot(x-b.m.position.x,z-b.m.position.z)<4.1)){cash+=cost;writeMessage(()=>tr("Місце спуску зайняте баржею.","A barge blocks the launch site."));return}
  const m=pad?put(k,pad.position.x,3.32,pad.position.z):(k==='sam'||k==='pantsir')?put(k,side*(20+Math.floor(n/2)%5),1.0,(k==='pantsir'?-4.2:3.7)+Math.floor(n/10)*1.4):put(k,x,marine?.24:3.2,z);m.scale.setScalar(k==='cruiser'?1.2:.78);units.push({k,m,pad,ammo:magazine[k],cd:0,hull:(k==='cruiser'?4:2)+tech.armor});ui()}
-const grant=w=>Math.round(160*Math.pow(.85,w-1));
+const grant=w=>Math.round(110+10*w);
 function nextWave(){
  if(wave===0){
   reserve=reserve0=reserves[$('difficulty').value];
   writeMessage(()=>tr("Перша виплата надійде після хвилі. Бухгалтер уже рахує тріщини.","First payment after the wave. Accounting is already counting cracks."));
  }else{
   // Planned funding fades; repair money is damage x hype. Then the economy erodes on its own.
-  const pay=hp<100?0:Math.min(Math.floor(reserve),Math.round(grant(wave)+waveDamage*8*(1+hype/40)));
+  const pay=Math.min(Math.floor(reserve),Math.round(hp<100?grant(wave)*.5:grant(wave)+waveDamage*8*(1+hype/40)));
   reserve-=pay;
   cash+=pay;
-  drain(reserve*.03+20+signalPenalty+jamLoss);
+  drain(reserve*.02+20+signalPenalty+jamLoss);
   const bill=upkeepBill(),paid=Math.min(cash,bill);
+  const regen=wave%3===0&&hits>0&&hits<3;if(regen){hits--;world.setHits(hits)}
   cash-=paid;unpaid=bill?Math.max(.5,paid/bill):1;
-  writeMessage(()=>tr("Хвиля ","Wave ")+wave+tr(" · пошкодження "," · damage ")+waveDamage+tr(" од. · втрати "," pts · casualties ")+waveVictims+tr(" · розголос "," · publicity ")+Math.round(hype)+tr(" · на ремонт і оборону "," · repair and defence grant ")+pay+tr(" млн ₽ · утримання −"," M RUB · upkeep −")+paid+tr(" млн ₽."," M RUB.")+(unpaid<1?tr(" Платню затримано. Темп стрільби гарнізону впав на "," Payroll shortfall. Garrison fire rate down ")+Math.round(100*(1-unpaid))+tr("%.","%."):'')+' '+headline());
+  writeMessage(()=>tr("Хвиля ","Wave ")+wave+tr(" · пошкодження "," · damage ")+waveDamage+tr(" од. · втрати "," pts · casualties ")+waveVictims+tr(" · розголос "," · publicity ")+Math.round(hype)+tr(" · на ремонт і оборону "," · repair and defence grant ")+pay+tr(" млн ₽ · утримання −"," M RUB · upkeep −")+paid+tr(" млн ₽."," M RUB.")+(unpaid<1?tr(" Платню затримано. Темп стрільби гарнізону впав на "," Payroll shortfall. Garrison fire rate down ")+Math.round(100*(1-unpaid))+tr("%.","%."):'')+(regen?tr(" Інженери підсилили арку: +1 життя."," Engineers reinforced the arch: +1 life."):'')+' '+headline());
   hype*=.55;
  }
  signalPenalty=seaCosts=jamLoss=waveVictims=0;arrivals=checks=caught=0;showTraffic();
@@ -346,7 +353,7 @@ function spawn(k){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x
  if(k==='bird'||k==='flamingo'||k==='loaf')y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
  const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.4);const stats={loaf:[3,2.2],baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=gameTargets(k);
  const target=Math.random()<.65?candidates[Math.floor(Math.random()*candidates.length)]:null;
- enemies.push({m,k,y,target,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:stats[0]+Math.floor(wave/3),speed:stats[1]*(1+wave*.026),angle:a});}
+ enemies.push({m,k,y,target,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:stats[0]+Math.floor((wave-1)/4),speed:stats[1]*(1+wave*.018),angle:a});}
 function gameTargets(kind){
  return units.filter(u=>(u.k==='cruiser'&&(kind==='baby'||kind==='bird'))||((u.k==='sam'||u.k==='pantsir')&&kind==='bird'));
 }
@@ -369,17 +376,27 @@ function destination(e,offline){
 const shotGeo=new T.SphereGeometry(.12,5,4),shotMat=new T.MeshBasicMaterial({color:0xffee8e});
 function showSignals(){ $('signals').textContent=Object.values(orders).filter(o=>o.end>time).map(o=>o.name+tr(" вимк. · "," off · ")+Math.ceil(o.end-time)+tr(" с"," s")).join(' / ');
 }
+let flyby=null,tributeUntil=0;
+const tribute=document.createElement('div');tribute.className='tribute';tribute.hidden=true;
+tribute.innerHTML='<span class="cartoon-rooster" aria-hidden="true">🐓</span><span>«вечного полета братья»</span>';$('view').append(tribute);
+function clearFlyby(){flyby?.m.removeFromParent();flyby=null;tributeUntil=0;tribute.hidden=true}
+function jetStep(dt){
+ if(!flyby)return;
+ const j=flyby;j.m.position.x+=dt*6;
+ if(j.hp<=0){j.m.removeFromParent();flyby=null;tributeUntil=time+4;tribute.hidden=false}
+ else if(j.m.position.x>30){j.m.removeFromParent();flyby=null}
+}
 function step(dt){
  if(breakLeft>0){
   const elapsed=Math.min(dt,breakLeft);
   for(const order of Object.values(orders))if(order.end>time)order.end+=elapsed;
   time+=elapsed;breakLeft=Math.max(0,breakLeft-elapsed);
   moveShips(elapsed);showBreak();showSignals();
-  if(breakLeft===0){nextWave();if(wave%4===0)spawn('neptune')}
+  if(breakLeft===0){nextWave();if(wave%4===0)spawn('neptune');if(wave>=4&&Math.random()<.3)flyby={m:put('jet',-29,13,4),hp:1,confused:Math.random()<.45}}
   return;
  }
  waveElapsed+=dt;
- fx.tick(dt,enemies);
+ fx.tick(dt,flyby?[...enemies,flyby]:enemies);jetStep(dt);
  const blocked=barges.filter(b=>b.channel).length;
  const before=time,elapsed=Math.floor(time);time+=dt;
  for(const o of Object.values(orders)){
@@ -389,8 +406,9 @@ function step(dt){
  showSignals();
  moveShips(dt);
  if(Math.floor(time)>elapsed){const loss=Math.min(reserve,blocked*4);reserve-=loss;seaCosts+=loss}
- roadStep(dt);untilSpawn-=dt;if(waveElapsed<=17&&untilSpawn<=0){const pool=['flamingo','flamingo','bird','baby','loaf'];spawn(pool[Math.floor(Math.random()*pool.length)]);untilSpawn=Math.max(.19,1.9/(1+.2*wave))}
+ roadStep(dt);untilSpawn-=dt;if(waveElapsed<=17&&untilSpawn<=0){const pool=['flamingo','flamingo','bird','baby','loaf'];spawn(pool[Math.floor(Math.random()*pool.length)]);untilSpawn=Math.max(.32,1.9/(1+.12*wave))}
  for(const u of units){u.cd-=dt;if(u.cd>0||u.ammo===0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.hp>fx.pendingDamage(e)&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range))){closest=d;target=e}}
+ if(flyby?.confused&&u.k==='sam'&&!fx.pendingDamage(flyby)&&world.onScreen(flyby.m.position))target=flyby;
  if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);const damage=specs[u.k][2]*(1+.3*tech.dmg);u.cd=specs[u.k][3]*Math.pow(.85,tech.rate)/unpaid;if(magazine[u.k]){u.ammo--;arcadeHud();supplyHud();fx.launch(u.m,target,damage);continue}target.hp-=damage;const m=new T.Mesh(shotGeo,shotMat);m.position.copy(p);m.position.y+=.9;world.scene.add(m);effects.push({m,to:to.clone(),life:.16})}}
  const offline=orders.net.end>time,retreat=orders.gps.end>time;
  const crashed=new Set();
@@ -450,10 +468,10 @@ function step(dt){
   for(const e of enemies)e.m.removeFromParent();
   enemies.length=0;fx.reset();breakLeft=BREAK_SECONDS;ui();
  }
- if(hits===3){world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));phase='over';selectedShip=null;setPlacement(false);writeMessage(()=>tr("Третій фламінго обвалив арку. Хвиль протрималися: ","A third flamingo brought down the arch. Waves reached: ")+wave+tr(". Відбито цілей: ",". Targets repelled: ")+score+'.');ui()}}
+ if(hits===3){world.carryDown(road.patchedMeshes());world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));phase='over';selectedShip=null;setPlacement(false);writeMessage(()=>tr("Третій фламінго обвалив арку. Хвиль протрималися: ","A third flamingo brought down the arch. Waves reached: ")+wave+tr(". Відбито цілей: ",". Targets repelled: ")+score+'.');ui()}}
 function flap(m,t){for(const wing of m.userData.wings||[])wing.rotation.x=wing.scale.z*Math.sin(t*6)*.32}
 function frame(now){const dt=Math.min((now-last)/1000,.08);last=now;if(phase==='live'&&!paused&&!$('restart').open)step(dt);if(selectedShip)ring.position.copy(selectedShip.m.position);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
- $('clock').textContent=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');world.draw(time);updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
+ $('clock').textContent=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;world.draw(time);updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
 document.addEventListener('siege-language',()=>{
  specs=getSpecs();techs=getTechs();ui();showTraffic();showSignals();
 });
@@ -474,7 +492,7 @@ function unpackEntity(item){
 function saveMatch(){
  try{
   const state={waveElapsed,breakLeft,cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught};
-  localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,state,tech,damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss})),difficulty:$('difficulty').value,inspection:$('inspection').value,
+  localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,state,tech,patches:road.patchedMeshes().map(m=>m.position.toArray()),damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss})),difficulty:$('difficulty').value,inspection:$('inspection').value,
    orders:[orders.gps.end,orders.net.end],units:units.map(packEntity),enemies:enemies.map(packEntity),vehicles:vehicles.map(packEntity),
    barges:barges.map(packEntity),flights:fx.snapshot(enemies),camera:world.cameraPosition(),selectedShip:units.indexOf(selectedShip),placing}));
  }catch(err){console.warn('Could not save match',err)}
@@ -488,6 +506,8 @@ function restoreMatch(){
  ({cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught}=state);
  for(const s of data.damageSpots??[])damageSpots.push({point:new T.Vector3(...s.point),loss:s.loss});
  if(!damageSpots.length&&hp<100)damageSpots.push({point:new T.Vector3(0,3.23,0),loss:100-hp});
+ for(const pos of data.patches??[])road.repair({point:new T.Vector3(...pos)},time-1);
+ for(const site of damageSpots)road.impact(site,time-6);
  waveElapsed=state.waveElapsed??Math.max(0,time-(wave-1)*17);breakLeft=state.breakLeft??0;
  $('difficulty').value=data.difficulty;$('inspection').value=data.inspection;
  if(phase!=='buy'){for(const s of scouts)s.m.removeFromParent();scouts.length=0}

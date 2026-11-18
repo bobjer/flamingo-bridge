@@ -182,7 +182,16 @@ function loaf(p){
    for(const x of [-.03,.15])oval(p,0xffdd87,x,.05,side*.687,.027,.047,.015);
   }
 }
-const builders = { loaf,barge, sam,pantsir,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
+function jet(p){
+ oval(p,0x849ba8,0,0,0,2.3,.27,.35);
+ oval(p,0x39516a,.85,.21,0,.55,.17,.25);
+ for(const side of [-1,1]){
+  const wing=plate([[.7,0,0],[-.9,0,side*2.3],[-1.35,0,side*2.2],[-.8,0,0]]);
+  add(p,wing,0x8ba4b3,0,0,0,1,1,1);
+  rod(p,0x647986,[-1.6,.1,side*.27],[-1.94,.78,side*.46],.16,true);
+ }
+}
+const builders = { jet, loaf,barge, sam,pantsir,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
 export function model(type) {
   const group = new THREE.Group();
   group.name = type;
