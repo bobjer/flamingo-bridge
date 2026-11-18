@@ -4,7 +4,24 @@ import {landscape} from './scene.js';
 const $=id=>document.getElementById(id),world=landscape($('view'));
 const specs={sam:['ЗРК «Хлопушка»',320,4,1.7],turret:['Пулемётная турель',180,1,.45],cruiser:['Ракетный крейсер',480,7,2.1],dolphin:['Боевой дельфин',140,2,.9]};
 const units=[],enemies=[],effects=[],scouts=[];
-let cash,hp,time,wave,phase,paused,untilSpawn,score,level,foam,last=performance.now();
+let cash,hp,time,wave,phase,paused,untilSpawn,score,foam,rp,unpaid,waveBounty,last=performance.now();
+// Economy: money shrinks (decaying grants and trophies, inflation, upkeep); research points grow with every kill.
+const techs={dmg:['Калибр','урон +30%'],rate:['Автомат заряжания','темп +15%'],range:['Радар','дальность +12%'],armor:['Броня','корпус +1 · мосту −12% урона'],logi:['Логистика','цены −7% · содержание −20%']};
+const tech={};
+const techCost=L=>Math.round(10*Math.pow(2.3,L));
+const upkeep={sam:14,turret:6,cruiser:20,dolphin:5};
+const bounty={baby:6,flamingo:8,bird:5,neptune:80};
+const research={baby:1,flamingo:1,bird:1,neptune:8};
+const infl=()=>Math.pow(1.06,Math.max(0,wave-1))*Math.pow(.93,tech.logi);
+const price=base=>Math.round(base*infl());
+const armored=x=>Math.min(hp,Math.round(x*Math.pow(.88,tech.armor)));
+function reward(k){const b=Math.round(bounty[k]*Math.pow(.88,Math.max(0,wave-1)));cash+=b;waveBounty+=b;rp+=research[k]}
+function upkeepBill(){return Math.round((units.reduce((s,u)=>s+upkeep[u.k],0)*Math.pow(.8,tech.logi)+barges.length*4)*infl())}
+function researchTech(k){
+ rp-=techCost(tech[k]);tech[k]++;
+ if(k==='armor')for(const u of units)u.hull++;
+ $('info').textContent=techs[k][0]+' · ур. '+tech[k]+': '+techs[k][1]+'.';ui();
+}
 const reserves = {easy: 4500, normal: 2400, hard: 1100};
 let reserve, waveDamage;
 const vehicles = [], barges=[];
@@ -26,7 +43,7 @@ function clearCourse(a,b){
  return barges.every(v=>line.closestPointToPoint(v.m.position,true,new T.Vector3()).distanceTo(v.m.position)>4.1);
 }
 function issueOrder(key){
- const o=orders[key];cash-=o.cost;o.end=time+10;ui();
+ const o=orders[key];cash-=price(o.cost);o.end=time+10;ui();
 }
 function moveShips(dt){
  for(const u of units){
@@ -46,7 +63,7 @@ canvas.addEventListener('pointerup',e=>{
  if(drag>6||phase==='over'||paused)return;
  if(placing){
   const pad=world.pick(e,pads.filter(p=>p.visible));
-  if(pad&&cash>=specs.turret[1]){setPlacement(false);purchase('turret',pad)}
+  if(pad&&cash>=price(specs.turret[1])){setPlacement(false);purchase('turret',pad)}
   return;
  }
  const ships=units.filter(u=>u.k==='cruiser');
@@ -71,7 +88,7 @@ function buyBarge(channel){
  const m=put('barge',channel?0:(count%2?11:-11),-.27,(2+Math.floor(count/(channel?1:2))*3)*(count%2?1:-1));
  if(units.some(u=>u.k==='cruiser'&&u.m.position.distanceTo(m.position)<4.1)){world.scene.remove(m);$('info').textContent='Сначала отведите крейсер от места затопления.';return}
  m.rotation.z=.13;m.rotation.y=channel?.15:.6;
- barges.push({m,channel});cash-=110;ui();
+ barges.push({m,channel});cash-=price(110);ui();
 }
 let roadTimer, inspectionCredit, arrivals, checks, caught;
 function throughput(){
@@ -106,41 +123,43 @@ function roadStep(dt){
   }
   const hit=v.manure&&!v.stopped&&along>=0;
   if(hit||along>25||(v.stopped&&v.hold<=0)){
-   if(hit){const loss=Math.min(hp,6);hp-=loss;waveDamage+=loss}
+   if(hit){const loss=armored(6);hp-=loss;waveDamage+=loss}
    if(v.stopped)score++;
    world.scene.remove(v.m);vehicles.splice(i,1);ui();
   }
  }
 }
-function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);world.scene.add(m);return m}
-function reset(){for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])world.scene.remove(x.m);units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=level=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
+function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);m.traverse(o=>{if(o.isMesh)o.castShadow=true});world.scene.add(m);return m}
+function reset(){for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])world.scene.remove(x.m);units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=waveBounty=0;unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  $('info').textContent='Выше сложность — меньше закрытый резерв. Из него штаб оплачивает каждую волну и компенсирует повреждения.';ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
-function ui(){const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?'Ⅱ ПАУЗА':buy?'● ФАЗА ЗАКУПКИ':live?'● ВОЛНА '+wave:'■ АРКА ЗАКРЫТА';$('hits').textContent=hits+' / 3';$('cash').textContent=cash+' ₽';$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
- for(const [k,[name,cost]] of Object.entries(specs)){const count=units.filter(u=>u.k===k).length;button(name+(count?' ×'+count:'')+'<span>'+cost+' ₽</span>',()=>{if(k==='turret'){selectedShip=null;setPlacement(!placing);$('info').textContent=placing?'Выберите жёлтую площадку. Для отмены снова нажмите кнопку турели.':'Размещение отменено.'}else purchase(k)},paused||phase==='over'||cash<cost||(k==='turret'&&count===pads.length))}
- for(const channel of [false,true])button('Баржа · '+(channel?'фарватер':'у края')+' ×'+barges.filter(b=>b.channel===channel).length+'<span>110 ₽</span>',()=>buyBarge(channel),paused||phase==='over'||cash<110||barges.filter(b=>b.channel===channel).length>=4);
+function ui(){const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?'Ⅱ ПАУЗА':buy?'● ФАЗА ЗАКУПКИ':live?'● ВОЛНА '+wave:'■ АРКА ЗАКРЫТА';$('hits').textContent=hits+' / 3';$('cash').textContent=cash+' ₽';$('rp').textContent=rp+' ⚙';$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+' ₽'+(unpaid<1?' · долг':'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
+ for(const [k,[name,base]] of Object.entries(specs)){const cost=price(base),count=units.filter(u=>u.k===k).length;button(name+(count?' ×'+count:'')+'<span>'+cost+' ₽</span>',()=>{if(k==='turret'){selectedShip=null;setPlacement(!placing);$('info').textContent=placing?'Выберите жёлтую площадку. Для отмены снова нажмите кнопку турели.':'Размещение отменено.'}else purchase(k)},paused||phase==='over'||cash<cost||(k==='turret'&&count===pads.length))}
+ for(const channel of [false,true])button('Баржа · '+(channel?'фарватер':'у края')+' ×'+barges.filter(b=>b.channel===channel).length+'<span>'+price(110)+' ₽</span>',()=>buyBarge(channel),paused||phase==='over'||cash<price(110)||barges.filter(b=>b.channel===channel).length>=4);
  if(live){
- for(const [key,o] of Object.entries(orders))button('Отключить '+o.name+' · 10 с<span>'+o.cost+' ₽</span>',()=>issueOrder(key),paused||o.end>time||cash<o.cost);
- button('Латать полотно +25%<span>90 ₽</span>',()=>{cash-=90;hp=Math.min(100,hp+25);ui()},paused||hp===100||cash<90);
- const cost=100+level*50;button('Усилить гарнизон · ур. '+(level+1)+'<span>'+cost+' ₽</span>',()=>{cash-=cost;level++;ui()},paused||cash<cost)}
+ for(const [key,o] of Object.entries(orders))button('Отключить '+o.name+' · 10 с<span>'+price(o.cost)+' ₽</span>',()=>issueOrder(key),paused||o.end>time||cash<price(o.cost));
+ const patch=price(90);button('Латать полотно +25%<span>'+patch+' ₽</span>',()=>{cash-=patch;hp=Math.min(100,hp+25);ui()},paused||hp===100||cash<patch)}
+ for(const [k,[name,effect]] of Object.entries(techs)){const c=techCost(tech[k]),b=document.createElement('button');b.className='unit';b.innerHTML=name+(tech[k]?' · ур. '+tech[k]:'')+'<small>'+effect+'</small><span>'+c+' ⚙</span>';b.disabled=paused||phase==='over'||rp<c;b.onclick=()=>researchTech(k);$('tech').append(b)}
  $('start').textContent=buy?'Начать осаду　→':live?(paused?'Продолжить　▸':'Пауза　Ⅱ'):'Новая смена　↻';$('start').disabled=buy&&!units.length;$('pause').disabled=!live;$('pause').textContent=paused?'▸':'Ⅱ';$('caption').textContent=buy?'ОБЗОР ОБЪЕКТА':live?'ОТБИТО: '+score:'ЭФИР ОКОНЧЕН'}
-function purchase(k,pad){const [,cost]=specs[k];cash-=cost;const n=units.filter(u=>u.k===k).length;const side=n%2?1:-1;
+function purchase(k,pad){const cost=price(specs[k][1]);cash-=cost;const n=units.filter(u=>u.k===k).length;const side=n%2?1:-1;
  const marine=k==='dolphin'||k==='cruiser';const x=side*(2+Math.floor(n/2)*2.7)+(k==='turret'?1:0);const z=marine?(k==='cruiser'?-10:6)+side*(n%3):k==='sam'?-1.2:1.2;
  if(k==='cruiser'&&barges.some(b=>Math.hypot(x-b.m.position.x,z-b.m.position.z)<4.1)){cash+=cost;$('info').textContent='Место спуска занято баржей.';return}
- const m=pad?put(k,pad.position.x,3.32,pad.position.z):k==='sam'?put(k,side*(20+Math.floor(n/2)%5),1.0,3.7+Math.floor(n/10)*1.4):put(k,x,marine?.24:3.2,z);m.scale.setScalar(k==='cruiser'?1.2:.78);units.push({k,m,pad,cd:0,hull:k==='cruiser'?4:2});ui()}
-const grant=w=>Math.max(8,Math.round(300/(1+w*.3)));
+ const m=pad?put(k,pad.position.x,3.32,pad.position.z):k==='sam'?put(k,side*(20+Math.floor(n/2)%5),1.0,3.7+Math.floor(n/10)*1.4):put(k,x,marine?.24:3.2,z);m.scale.setScalar(k==='cruiser'?1.2:.78);units.push({k,m,pad,cd:0,hull:(k==='cruiser'?4:2)+tech.armor});ui()}
+const grant=w=>Math.round(240*Math.pow(.85,w-1));
 function nextWave(){
  if(wave===0){
   reserve=reserves[$('difficulty').value];
   $('info').textContent='Первая выплата поступит после волны. Бухгалтер уже считает трещины.';
  }else{
-  const pay=hp<100?0:Math.min(reserve,Math.max(0,Math.round((grant(wave)+waveDamage*6)*throughput()-signalPenalty)));
+  const pay=hp<100?0:Math.min(reserve,Math.max(0,Math.round((grant(wave)+waveDamage*6*Math.pow(.9,wave-1))*throughput()-signalPenalty)));
   reserve-=pay;
   cash+=pay;
-  $('info').textContent='Волна '+wave+' · ущерб '+waveDamage+' ед. · поток '+Math.round(100*throughput())+'% · выплата '+pay+' ₽.'+(hp<100?' Полотно не залатано.':'')+' Удержано за связь: '+Math.round(signalPenalty)+' ₽. Издержки судоходства: '+seaCosts+' ₽.'+(reserve===0?' Резерв исчерпан.':'');
+  const bill=upkeepBill(),paid=Math.min(cash,bill);
+  cash-=paid;unpaid=bill?Math.max(.5,paid/bill):1;
+  $('info').textContent='Волна '+wave+' · ущерб '+waveDamage+' ед. · поток '+Math.round(100*throughput())+'% · выплата '+pay+' ₽ · трофеи '+waveBounty+' ₽ · содержание −'+paid+' ₽.'+(unpaid<1?' Жалованье недоплачено: гарнизон стреляет на '+Math.round(100*(1-unpaid))+'% медленнее.':'')+(hp<100?' Полотно не залатано.':'')+' Удержано за связь: '+Math.round(signalPenalty)+' ₽. Издержки судоходства: '+seaCosts+' ₽.'+(reserve===0?' Резерв исчерпан.':'')+' Цены выросли до ×'+(infl()*1.06).toFixed(2)+'.';
  }
- signalPenalty=seaCosts=0;arrivals=checks=caught=0;showTraffic();
+ signalPenalty=seaCosts=waveBounty=0;arrivals=checks=caught=0;showTraffic();
  waveDamage=0;
  wave++;
  ui();
@@ -148,9 +167,28 @@ function nextWave(){
 function toggle(){if(phase==='live'){paused=!paused;ui()}}
 $('pause').onclick=toggle;$('start').onclick=()=>{if(phase==='over')reset();else if(phase==='buy'){for(const s of scouts)world.scene.remove(s.m);scouts.length=0;phase='live';nextWave()}else toggle()};$('plus').onclick=()=>world.zoom(.83);$('minus').onclick=()=>world.zoom(1.2);
 function spawn(k){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x=Math.cos(a)*r,z=Math.sin(a)*r,y=.35;if(k==='bird'||k==='flamingo')y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
- const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.4);const stats={baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=units.filter(u=>(u.k==='cruiser'&&(k==='baby'||k==='bird'))||(u.k==='sam'&&k==='bird'));
+ const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.4);const stats={baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=gameTargets(k);
  const target=Math.random()<.65?candidates[Math.floor(Math.random()*candidates.length)]:null;
- enemies.push({m,k,y,target,hp:stats[0]+Math.floor(wave/3),speed:stats[1]*(1+wave*.026),angle:a});}
+ enemies.push({m,k,y,target,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:stats[0]+Math.floor(wave/3),speed:stats[1]*(1+wave*.026),angle:a});}
+function gameTargets(kind){
+ return units.filter(u=>(u.k==='cruiser'&&(kind==='baby'||kind==='bird'))||(u.k==='sam'&&kind==='bird'));
+}
+function destination(e,offline){
+ if(offline){
+  if(!e.oldPoint){
+   e.oldPoint=e.target?.m.position.clone()??new T.Vector3();
+   e.oldPoint.x+=(Math.random()-.5)*5;
+   e.oldPoint.z+=(Math.random()-.5)*5;
+  }
+  return e.oldPoint;
+ }
+ e.oldPoint=null;
+ if(e.target&&!units.includes(e.target)){
+  const choices=gameTargets(e.k);
+  e.target=choices[Math.floor(Math.random()*choices.length)]??null;
+ }
+ return e.target?.m.position;
+}
 const shotGeo=new T.SphereGeometry(.12,5,4),shotMat=new T.MeshBasicMaterial({color:0xffee8e});
 function step(dt){
  const blocked=barges.filter(b=>b.channel).length;
@@ -162,25 +200,45 @@ function step(dt){
  $('signals').textContent=Object.values(orders).filter(o=>o.end>time).map(o=>o.name+' выкл. · '+Math.ceil(o.end-time)+' с').join(' / ');
  moveShips(dt);
  if(Math.floor(time)>elapsed){const loss=Math.min(reserve,blocked*3);reserve-=loss;seaCosts+=loss}
- if(time>=wave*17){nextWave();if(wave%4===0)spawn('neptune')}roadStep(dt);untilSpawn-=dt;if(untilSpawn<=0){const pool=['flamingo','flamingo','bird','baby'];spawn(pool[Math.floor(Math.random()*pool.length)]);untilSpawn=Math.max(.19,1.9/(1+.2*wave))*(orders.net.end>time?1.65:1)}
- for(const u of units){u.cd-=dt;if(u.cd>0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.hp>0&&d<closest&&u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:17)){closest=d;target=e}}
- if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);target.hp-=specs[u.k][2]*(1+level*.35);u.cd=specs[u.k][3];const m=new T.Mesh(shotGeo,shotMat);m.position.copy(p);m.position.y+=.9;world.scene.add(m);effects.push({m,to:to.clone(),life:.16})}}
+ if(time>=wave*17){nextWave();if(wave%4===0)spawn('neptune')}roadStep(dt);untilSpawn-=dt;if(untilSpawn<=0){const pool=['flamingo','flamingo','bird','baby'];spawn(pool[Math.floor(Math.random()*pool.length)]);untilSpawn=Math.max(.19,1.9/(1+.2*wave))}
+ for(const u of units){u.cd-=dt;if(u.cd>0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.hp>0&&d<closest&&u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:17)*(1+.12*tech.range)){closest=d;target=e}}
+ if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);target.hp-=specs[u.k][2]*(1+.3*tech.dmg);u.cd=specs[u.k][3]*Math.pow(.85,tech.rate)/unpaid;const m=new T.Mesh(shotGeo,shotMat);m.position.copy(p);m.position.y+=.9;world.scene.add(m);effects.push({m,to:to.clone(),life:.16})}}
+ const offline=orders.net.end>time,retreat=orders.gps.end>time;
+ const crashed=new Set();
+ if(offline){
+  for(let i=0;i<enemies.length;i++){
+   const first=enemies[i];
+   if(first.hp<=0||crashed.has(first))continue;
+   for(let j=i+1;j<enemies.length;j++){
+    const second=enemies[j];
+    if(second.hp>0&&!crashed.has(second)&&first.m.position.distanceToSquared(second.m.position)<.85){
+     crashed.add(first);crashed.add(second);break;
+    }
+   }
+  }
+ }
  for(let i=enemies.length-1;i>=0;i--){const e=enemies[i],p=e.m.position;
-  if(e.target&&!units.includes(e.target))e.target=null;
-  const dest=e.target?.m.position;
+  const aim=destination(e,offline),dest=retreat?e.exitPoint:aim;
   const dx=(dest?.x??0)-p.x,dz=(dest?.z??0)-p.z,d=Math.hypot(dx,dz);
+  const actual=e.target?.m.position;
+  const missed=offline&&((e.target&&!units.includes(e.target))||Math.hypot(p.x-(actual?.x??0),p.z-(actual?.z??0))>1.3);
+  if(crashed.has(e)||(e.hp>0&&d<1.3&&(retreat||missed))){
+   world.scene.remove(e.m);enemies.splice(i,1);
+   $('caption').textContent=crashed.has(e)?'СТОЛКНОВЕНИЕ':retreat?'ЦЕЛЬ ПОКИНУЛА ЗОНУ':'ПРОМАХ';
+   continue;
+  }
   const intercepted=e.k==='baby'&&barges.some(b=>Math.abs(p.x-b.m.position.x)<2.3&&Math.abs(p.z-b.m.position.z)<1.25);
   if(e.hp<=0||intercepted||d<1.3){
-   if(e.hp<=0||intercepted)score++;
+   if(e.hp<=0||intercepted){score++;reward(e.k)}
    else if(e.target){
     const u=e.target;
     if(--u.hull===0){world.scene.remove(u.m);units.splice(units.indexOf(u),1)}
     $('info').textContent=specs[u.k][0]+(u.hull?' · прочность '+u.hull:' выбыл из строя');
    }else if(e.k==='flamingo'){hits=Math.min(3,hits+1);world.setHits(hits)}
-   else{const loss=Math.min(hp,e.k==='neptune'?23:6);hp-=loss;waveDamage+=loss}
+   else{const loss=armored(e.k==='neptune'?23:6);hp-=loss;waveDamage+=loss}
    world.scene.remove(e.m);enemies.splice(i,1);ui();continue;
   }
-  e.m.rotation.y=Math.atan2(-dz,dx);const travel=dt*e.speed*(orders.gps.end>time?.58:1);p.x+=dx/d*travel;p.z+=dz/d*travel;
+  e.m.rotation.y=Math.atan2(-dz,dx);const travel=dt*e.speed;p.x+=dx/d*travel;p.z+=dz/d*travel;
   p.y=(dest&&e.k==='bird'?T.MathUtils.lerp(dest.y+.65,e.y,Math.min(1,d/7)):e.y)+Math.sin(time*3+e.angle)*.18;
   flap(e.m,time+e.angle)}
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.m.position.lerp(e.to,Math.min(1,dt/e.life));e.life-=dt;if(e.life<=0){world.scene.remove(e.m);effects.splice(i,1)}}
