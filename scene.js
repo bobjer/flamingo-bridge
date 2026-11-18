@@ -1,3 +1,4 @@
+import {DAY_SECONDS} from './tanker-traffic.js';
 import * as T from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
@@ -372,7 +373,7 @@ export function landscape(view) {
    span.scale.y = 1 - .035 * hits;
   },
   draw(gameTime=0,trafficTime=0,smoke=false) {
-   const angle=2*Math.PI*gameTime/120,altitude=Math.cos(angle);
+   const angle=2*Math.PI*gameTime/DAY_SECONDS,altitude=Math.cos(angle);
    const day=T.MathUtils.smoothstep(altitude,-.32,.6),dusk=1-Math.min(1,Math.abs(altitude)*3);
    sun.position.set(35*Math.cos(angle),13+40*Math.abs(altitude),46+20*Math.sin(angle));
    sun.intensity=.32+2.68*day;
