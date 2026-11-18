@@ -56,6 +56,7 @@ export function fireworks(scene){
  }
  function reset(){for(const f of flights)f.rocket.removeFromParent();for(const b of bursts){b.cloud.removeFromParent();b.cloud.dispose()}flights.length=bursts.length=0}
  return {launch,tick,reset,
+  pendingDamage(target){return flights.reduce((sum,f)=>sum+(f.target===target?f.damage:0),0)},
   snapshot(enemies){return flights.filter(f=>enemies.includes(f.target)).map(f=>({origin:f.origin.toArray(),target:enemies.indexOf(f.target),damage:f.damage,age:f.age,duration:f.duration,position:f.rocket.position.toArray()}))},
   restore(saved,enemies){for(const item of saved){const f=launchAt(new T.Vector3(...item.origin),enemies[item.target],item.damage);f.age=item.age;f.duration=item.duration;f.rocket.position.fromArray(item.position)}},
   crumbs:p=>scatter(new T.Vector3(p.x,3.27,p.z),true)};

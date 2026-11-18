@@ -250,5 +250,13 @@
  [
   "Радар нападників",
   "Attacker radar"
+ ],
+ [
+  "Запас ракет",
+  "Missile stock"
+ ],
+ [
+  "Запас витрачається з кожним пуском. На порожньому складі пуск зупиняється. Після тихих хвиль виплати скорочуються.",
+  "Each launch consumes a missile. Empty launchers stop firing. Grants shrink after quiet waves."
  ]
 ]

@@ -7,7 +7,7 @@ import {landscape} from './scene.js';
 const $=id=>document.getElementById(id),world=landscape($('view'));
 const drawRadar=arenaRadar($('arena-radar'));
 const fx=fireworks(world.scene);
-const getSpecs=()=>({sam:[tr("С-400 «Хлопавка»","S-400 Party Popper"),320,4,1.7],turret:[tr("Кулеметна турель","Machine-gun turret"),180,1,.45],cruiser:[tr("Ракетний крейсер","Missile cruiser"),480,7,2.1],dolphin:[tr("Бойовий дельфін","Combat dolphin"),140,2,.9],pantsir:[tr("Панцир-міні","Mini Pantsir"),210,2,.8]});
+const getSpecs=()=>({sam:[tr("С-400 «Хлопавка»","S-400 Party Popper"),320,6,1.15],turret:[tr("Кулеметна турель","Machine-gun turret"),180,1,.45],cruiser:[tr("Ракетний крейсер","Missile cruiser"),480,8,1.25],dolphin:[tr("Бойовий дельфін","Combat dolphin"),140,2,.9],pantsir:[tr("Панцир-міні","Mini Pantsir"),210,2,.8]});
 let specs=getSpecs();
 const units=[],enemies=[],effects=[],scouts=[];
 let cash,hp,time,wave,phase,paused,untilSpawn,score,foam,rp,unpaid,last=performance.now();
@@ -30,6 +30,35 @@ let techs=getTechs();
 const tech={};
 const techCost=L=>Math.round(10*Math.pow(2.3,L));
 const upkeep={pantsir:8,sam:14,turret:6,cruiser:20,dolphin:5};
+// Arcade magazine sizes and prices, in millions of rubles.
+const magazine={sam:10,cruiser:9,pantsir:12};
+const bombTruckChance=.003;
+function supplyQuote(){
+ const launchers=units.filter(u=>magazine[u.k]);
+ const capacity=launchers.reduce((sum,u)=>sum+magazine[u.k],0);
+ const stock=launchers.reduce((sum,u)=>sum+u.ammo,0);
+ const each=Math.max(1,price(12));
+ const amount=Math.min(8,capacity-stock,Math.floor(cash/each));
+ return {launchers,capacity,stock,each,amount};
+}
+function supplyHud(){
+ const {capacity,stock,each,amount}=supplyQuote();
+ $('ammo-panel').hidden=!capacity;
+ $('ammo-count').textContent=stock+' / '+capacity;
+ $('ammo-panel').classList.toggle('low-ammo',capacity>0&&stock<=capacity*.25);
+ $('resupply').textContent=amount?tr('Поповнити +','Restock +')+amount+' · '+amount*each+tr(' млн ₽',' M RUB'):
+  stock===capacity?tr('Повний запас','Fully stocked'):tr('Бракує коштів · ','Insufficient funds · ')+each+tr(' млн ₽ / ракета',' M RUB / missile');
+ $('resupply').disabled=!amount||paused||phase==='over';
+}
+$('resupply').onclick=()=>{
+ const {launchers,amount,each}=supplyQuote();
+ if(!amount||paused||phase==='over')return;
+ for(let i=0;i<amount;i++){
+  const least=launchers.reduce((a,b)=>a.ammo/magazine[a.k]<=b.ammo/magazine[b.k]?a:b);
+  least.ammo++;
+ }
+ cash-=amount*each;ui();
+};
 const research={loaf:2,baby:1,flamingo:1,bird:1,neptune:8};
 const infl=()=>Math.pow(1.04,Math.max(0,wave-1))*(1+.8*(1-reserve/reserve0))*Math.pow(.93,tech.logi);
 const price=base=>Math.round(base*infl());
@@ -155,7 +184,7 @@ function roadStep(dt){
   else{
    const m=put('truck',-22*direction,3.22,direction*.8);
    m.rotation.y=direction===1?0:Math.PI;
-   const manure=Math.random()<Math.min(.55,.25+wave*.012);
+   const manure=Math.random()<bombTruckChance;
    vehicles.push({m,direction,manure,wobbles:Math.random()<(manure?.85:.16),marked:false,checked:false,hold:0,stopped:false,queued:false});
    roadTimer=Math.max(.9,1.8-wave*.04);
   }
@@ -193,7 +222,7 @@ function reset(){breakLeft=waveElapsed=0;fx.reset();for(const x of [...units,...
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
-function ui(){showBreak();helm();$('phase').dataset.wave=wave;const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?tr("Ⅱ ПАУЗА · ХВИЛЯ ","Ⅱ PAUSED · WAVE ")+wave:buy?tr("● ЗАКУПІВЛЯ","● PROCUREMENT"):live&&breakLeft>0?tr('◷ ПЕРЕРВА','◷ INTERMISSION'):live?tr("● ХВИЛЯ ","● WAVE ")+wave:tr("■ АРКУ ЗАКРИТО","■ ARCH CLOSED");$('hits').textContent=hits+' / 3';$('cash').textContent=cash+tr(" млн ₽"," M RUB");$('rp').textContent=rp+' ⚙';$('hype').textContent=Math.round(hype)+(hype>60?tr(" · ЕФІР"," · ON AIR"):hype>20?tr(" · СЮЖЕТ"," · NEWS"):'');$('victims').textContent=victims;$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+tr(" млн ₽"," M RUB")+(unpaid<1?tr(" · борг"," · debt"):'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
+function ui(){supplyHud();showBreak();helm();$('phase').dataset.wave=wave;const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?tr("Ⅱ ПАУЗА · ХВИЛЯ ","Ⅱ PAUSED · WAVE ")+wave:buy?tr("● ЗАКУПІВЛЯ","● PROCUREMENT"):live&&breakLeft>0?tr('◷ ПЕРЕРВА','◷ INTERMISSION'):live?tr("● ХВИЛЯ ","● WAVE ")+wave:tr("■ АРКУ ЗАКРИТО","■ ARCH CLOSED");$('hits').textContent=hits+' / 3';$('cash').textContent=cash+tr(" млн ₽"," M RUB");$('rp').textContent=rp+' ⚙';$('hype').textContent=Math.round(hype)+(hype>60?tr(" · ЕФІР"," · ON AIR"):hype>20?tr(" · СЮЖЕТ"," · NEWS"):'');$('victims').textContent=victims;$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+tr(" млн ₽"," M RUB")+(unpaid<1?tr(" · борг"," · debt"):'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
  for(const [k,[name,base]] of Object.entries(specs)){const cost=price(base),count=units.filter(u=>u.k===k).length;const detail=k==='sam'?tr('Важкий · весь екран','Heavy · screen-wide'):k==='pantsir'?tr('Компактний · швидкий вогонь зблизька','Compact · rapid short-range fire'):'';button(name+(count?' ×'+count:'')+(detail?'<small>'+detail+'</small>':'')+'<span>'+cost+tr(" млн ₽</span>"," M RUB</span>"),()=>{if(k==='turret'){selectedShip=null;helm();setPlacement(!placing);writeMessage(()=>placing?tr("Оберіть жовтий майданчик на будь-якому прольоті. Повторне натискання скасовує вибір.","Choose a yellow pad on either span. Press the turret button again to cancel."):tr("Розміщення скасовано.","Placement cancelled."))}else purchase(k)},paused||phase==='over'||cash<cost||(k==='turret'&&count===pads.length))}
  for(const channel of [false,true])button(tr("Баржа · ","Barge · ")+(channel?tr("фарватер","channel"):tr("біля краю","edge"))+' ×'+barges.filter(b=>b.channel===channel).length+'<span>'+price(110)+tr(" млн ₽</span>"," M RUB</span>"),()=>buyBarge(channel),paused||phase==='over'||cash<price(110)||barges.filter(b=>b.channel===channel).length>=4);
  if(live){
@@ -204,7 +233,7 @@ function ui(){showBreak();helm();$('phase').dataset.wave=wave;const buy=phase===
 function purchase(k,pad){const cost=price(specs[k][1]);cash-=cost;const n=units.filter(u=>u.k===k).length;const side=n%2?1:-1;
  const marine=k==='dolphin'||k==='cruiser';const x=side*(2+Math.floor(n/2)*2.7)+(k==='turret'?1:0);const z=marine?(k==='cruiser'?-10:6)+side*(n%3):k==='sam'?-1.2:1.2;
  if(k==='cruiser'&&barges.some(b=>Math.hypot(x-b.m.position.x,z-b.m.position.z)<4.1)){cash+=cost;writeMessage(()=>tr("Місце спуску зайняте баржею.","A barge blocks the launch site."));return}
- const m=pad?put(k,pad.position.x,3.32,pad.position.z):(k==='sam'||k==='pantsir')?put(k,side*(20+Math.floor(n/2)%5),1.0,(k==='pantsir'?-4.2:3.7)+Math.floor(n/10)*1.4):put(k,x,marine?.24:3.2,z);m.scale.setScalar(k==='cruiser'?1.2:.78);units.push({k,m,pad,cd:0,hull:(k==='cruiser'?4:2)+tech.armor});ui()}
+ const m=pad?put(k,pad.position.x,3.32,pad.position.z):(k==='sam'||k==='pantsir')?put(k,side*(20+Math.floor(n/2)%5),1.0,(k==='pantsir'?-4.2:3.7)+Math.floor(n/10)*1.4):put(k,x,marine?.24:3.2,z);m.scale.setScalar(k==='cruiser'?1.2:.78);units.push({k,m,pad,ammo:magazine[k],cd:0,hull:(k==='cruiser'?4:2)+tech.armor});ui()}
 const grant=w=>Math.round(160*Math.pow(.85,w-1));
 function nextWave(){
  if(wave===0){
@@ -276,8 +305,8 @@ function step(dt){
  moveShips(dt);
  if(Math.floor(time)>elapsed){const loss=Math.min(reserve,blocked*4);reserve-=loss;seaCosts+=loss}
  roadStep(dt);untilSpawn-=dt;if(waveElapsed<=17&&untilSpawn<=0){const pool=['flamingo','flamingo','bird','baby','loaf'];spawn(pool[Math.floor(Math.random()*pool.length)]);untilSpawn=Math.max(.19,1.9/(1+.2*wave))}
- for(const u of units){u.cd-=dt;if(u.cd>0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.hp>0&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range))){closest=d;target=e}}
- if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);const damage=specs[u.k][2]*(1+.3*tech.dmg);u.cd=specs[u.k][3]*Math.pow(.85,tech.rate)/unpaid;if(u.k==='sam'||u.k==='pantsir'||u.k==='cruiser'){fx.launch(u.m,target,damage);continue}target.hp-=damage;const m=new T.Mesh(shotGeo,shotMat);m.position.copy(p);m.position.y+=.9;world.scene.add(m);effects.push({m,to:to.clone(),life:.16})}}
+ for(const u of units){u.cd-=dt;if(u.cd>0||u.ammo===0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.hp>fx.pendingDamage(e)&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range))){closest=d;target=e}}
+ if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);const damage=specs[u.k][2]*(1+.3*tech.dmg);u.cd=specs[u.k][3]*Math.pow(.85,tech.rate)/unpaid;if(magazine[u.k]){u.ammo--;supplyHud();fx.launch(u.m,target,damage);continue}target.hp-=damage;const m=new T.Mesh(shotGeo,shotMat);m.position.copy(p);m.position.y+=.9;world.scene.add(m);effects.push({m,to:to.clone(),life:.16})}}
  const offline=orders.net.end>time,retreat=orders.gps.end>time;
  const crashed=new Set();
  if(offline){
@@ -352,6 +381,7 @@ function packEntity(entity){
 }
 function unpackEntity(item){
  const {type,position,rotation,scale,pad,target,lostTarget,destination,oldPoint,exitPoint,...state}=item;
+ if(magazine[type]&&state.ammo==null)state.ammo=magazine[type];
  const m=put(type,...position);m.quaternion.fromArray(rotation);m.scale.fromArray(scale);
  return {...state,m,pad:pads[pad],target:units[target]??(lostTarget?{m:{position:new T.Vector3(...lostTarget)}}:null),
   destination:destination&&new T.Vector3(...destination),oldPoint:oldPoint&&new T.Vector3(...oldPoint),exitPoint:exitPoint&&new T.Vector3(...exitPoint)};
