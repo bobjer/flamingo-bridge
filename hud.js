@@ -29,32 +29,44 @@ function syncPhase() {
  renderTimeline();
 }
 
-let last = info.textContent, lastTime = clock.textContent;
-function logInfo() {
- const text = info.textContent;
- if (!text || text === last) return;
- const li = document.createElement('li');
- const t = document.createElement('time');
- t.textContent = lastTime;
- li.append(t, last);
- log.prepend(li);
- while (log.children.length > 6) log.lastChild.remove();
- last = text;
- lastTime = clock.textContent;
-}
-
-new MutationObserver(syncPhase).observe(phase, {childList: true, characterData: true, subtree: true});
-new MutationObserver(logInfo).observe(info, {childList: true, characterData: true, subtree: true});
-syncPhase();
-
-for(const button of document.querySelectorAll('.panel-toggles button')){
- const panel=document.getElementById(button.getAttribute('aria-controls'));
- const key='pink-siege:'+panel.id;
- function toggle(open){
-  panel.hidden=!open;
-  document.querySelector('main').classList.toggle('hide-'+panel.id,!open);
-  button.setAttribute('aria-expanded',String(open));
+let previous, previousTime;
+function logInfo(){
+ const lang=document.documentElement.lang;
+ const current={uk:info.dataset.uk,en:info.dataset.en};
+ if(!current[lang]||previous?.[lang]===current[lang])return;
+ if(previous){
+  const li=document.createElement('li'),stamp=document.createElement('time'),text=document.createElement('span');
+  Object.assign(text.dataset,previous);text.textContent=previous[lang];stamp.textContent=previousTime;
+  li.append(stamp,text);log.prepend(li);
+  while(log.children.length>6)log.lastChild.remove();
  }
- toggle(localStorage.getItem(key)!=='closed');
- button.onclick=()=>{toggle(panel.hidden);localStorage.setItem(key,panel.hidden?'closed':'open')};
+ previous=current;previousTime=clock.textContent;
+}
+new MutationObserver(syncPhase).observe(phase,{childList:true,characterData:true,subtree:true});
+new MutationObserver(logInfo).observe(info,{childList:true,characterData:true,subtree:true});
+syncPhase();
+document.addEventListener('siege-language',()=>{
+ const lang=document.documentElement.lang;
+ if(info.dataset[lang])info.textContent=info.dataset[lang];
+ for(const item of log.querySelectorAll('[data-uk]'))item.textContent=item.dataset[lang];
+ syncPhase();
+});
+for(const restore of document.querySelectorAll('.panel-toggles button')){
+ const panel=document.getElementById(restore.getAttribute('aria-controls'));
+ const fold=panel.querySelector('.fold'),hq=panel.id==='hq-panel';
+ const key='pink-siege:'+panel.id;
+ function render(){
+  const open=!panel.hidden;
+  restore.hidden=open;
+  restore.textContent=hq?tr('Відкрити штаб','Open HQ'):tr('Відкрити арсенал','Open arsenal');
+  for(const button of [restore,fold])button.setAttribute('aria-expanded',String(open));
+  document.querySelector('main').classList.toggle('hide-'+panel.id,!open);
+ }
+ function toggle(open){
+  panel.hidden=!open;render();localStorage.setItem(key,open?'open':'closed');
+  (open?fold:restore).focus({preventScroll:true});
+ }
+ fold.onclick=()=>toggle(false);restore.onclick=()=>toggle(true);
+ panel.hidden=localStorage.getItem(key)==='closed';render();
+ document.addEventListener('siege-language',render);
 }

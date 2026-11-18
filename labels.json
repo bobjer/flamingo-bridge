@@ -1,0 +1,230 @@
+[
+ [
+  "Рожева облога",
+  "Pink Siege"
+ ],
+ [
+  "ОПЕРАТИВНИЙ ШТАБ · СЕКТОР 07",
+  "OPERATIONS HQ · SECTOR 07"
+ ],
+ [
+  "РОЖЕВА ОБЛОГА",
+  "PINK SIEGE"
+ ],
+ [
+  "СИМУЛЯТОР ОБОРОНИ МОСТУ",
+  "BRIDGE DEFENCE SIMULATOR"
+ ],
+ [
+  "English",
+  "Українська"
+ ],
+ [
+  "РЕЖИМ",
+  "MODE"
+ ],
+ [
+  "ЗАКУПІВЛЯ",
+  "PROCUREMENT"
+ ],
+ [
+  "Згорнути штаб ‹",
+  "Hide HQ ‹"
+ ],
+ [
+  "ПОТОЧНА ФАЗА",
+  "CURRENT PHASE"
+ ],
+ [
+  "Оборона",
+  "Strait"
+ ],
+ [
+  "протоки",
+  "defence"
+ ],
+ [
+  "● ЗАКУПІВЛЯ",
+  "● PROCUREMENT"
+ ],
+ [
+  "Складність",
+  "Difficulty"
+ ],
+ [
+  "Легка",
+  "Easy"
+ ],
+ [
+  "Звичайна",
+  "Normal"
+ ],
+ [
+  "Важка",
+  "Hard"
+ ],
+ [
+  "ЗВЕДЕННЯ",
+  "SITUATION REPORT"
+ ],
+ [
+  "У касі",
+  "Cash"
+ ],
+ [
+  "Удари по арці",
+  "Arch hits"
+ ],
+ [
+  "Розголос у ЗМІ",
+  "Media buzz"
+ ],
+ [
+  "Втрати",
+  "Casualties"
+ ],
+ [
+  "НДДКР",
+  "R&D"
+ ],
+ [
+  "Утримання / хвиля",
+  "Upkeep / wave"
+ ],
+ [
+  "Полотно",
+  "Road deck"
+ ],
+ [
+  "КПП",
+  "CHECKPOINT"
+ ],
+ [
+  "Огляд",
+  "Inspection"
+ ],
+ [
+  "Лише вручну",
+  "Manual only"
+ ],
+ [
+  "Кожну четверту",
+  "Every fourth"
+ ],
+ [
+  "Кожну другу",
+  "Every second"
+ ],
+ [
+  "Кожну машину",
+  "Every truck"
+ ],
+ [
+  "ЖУРНАЛ ПОДІЙ",
+  "EVENT LOG"
+ ],
+ [
+  "Зберіть гарнізон. Збитки компенсують із закритого резерву.",
+  "Assemble a garrison. Damage grants come from a classified reserve."
+ ],
+ [
+  "Попередні події",
+  "Previous events"
+ ],
+ [
+  "ІНСТРУКТАЖ",
+  "BRIEFING"
+ ],
+ [
+  "Як працює КПП",
+  "Checkpoint rules"
+ ],
+ [
+  "Натисніть на вантажівку перед КПП. Підозрілі машини частіше розхитуються. Огляд затримує машину, за нею утворюється затор. Затори шкодять економіці й збільшують втрати під час удару.",
+  "Click a truck before it reaches the checkpoint. Suspicious trucks wobble more often. Inspections stop traffic. Queues cost money and increase casualties if hit."
+ ],
+ [
+  "Баржі та розміщення",
+  "Barges and placement"
+ ],
+ [
+  "Баржі затримують малюків. Баржа у фарватері перекриває судноплавство й виснажує скарбницю.",
+  "Barges intercept the dolls. Sinking one in the channel blocks shipping and drains the treasury."
+ ],
+ [
+  "Турелі можна ставити на обох прольотах. Щоб перемістити крейсер, натисніть на корабель, потім на воду. Третій удар фламінго обвалить арку. Для виплати повністю залатайте полотно до кінця хвилі. Ціна ремонту залежить від пошкодження.",
+  "Place turrets on either span. To move a cruiser, click it and then the water. The third flamingo hit brings down the arch. Fully patch the road by the end of the wave to receive funding. Small repairs cost less."
+ ],
+ [
+  "Звідки гроші",
+  "Funding"
+ ],
+ [
+  "Усі суми в мільйонах рублів. Пошкодження та розголос впливають на виплати зі скарбниці. Блокада, затори, перебої зв’язку й втрати виснажують її. Гарнізон потребує платні. За збиті цілі отримуєте ⚙ для досліджень.",
+  "All sums are in millions of rubles. Damage and publicity influence grants. Blockades, queues, outages and casualties drain the treasury. The garrison draws wages. Repelled targets earn research points ⚙."
+ ],
+ [
+  "Перебої зв’язку",
+  "Signal outages"
+ ],
+ [
+  "Без GPS нападники розвертаються до межі зони. Без інтернету вони рухаються до запам’ятованої точки з похибкою й можуть зіткнутися. Коли зв’язок відновлено, вони знову обирають живу ціль.",
+  "Without GPS, attackers turn back. Without internet, they head for an imprecise remembered point and may collide. When service returns, they can pick a live target again."
+ ],
+ [
+  "SP ▸ · СІТКА 50 М",
+  "SP ▸ · GRID 50 M"
+ ],
+ [
+  "Штаб",
+  "HQ"
+ ],
+ [
+  "Арсенал",
+  "Arsenal"
+ ],
+ [
+  "ОГЛЯД ОБ’ЄКТА",
+  "SITE OVERVIEW"
+ ],
+ [
+  "Віддалити",
+  "Zoom out"
+ ],
+ [
+  "Наблизити",
+  "Zoom in"
+ ],
+ [
+  "Згорнути арсенал ‹",
+  "Hide arsenal ‹"
+ ],
+ [
+  "АРСЕНАЛ",
+  "ARSENAL"
+ ],
+ [
+  "ТЕХНОЛОГІЇ",
+  "TECHNOLOGY"
+ ],
+ [
+  "Почати облогу →",
+  "Start siege →"
+ ],
+ [
+  "Пауза",
+  "Pause"
+ ],
+ [
+  "Перебіг облоги",
+  "Siege timeline"
+ ],
+ [
+  "↔ Тягніть для обертання",
+  "↔ Drag to rotate"
+ ],
+ [
+  "⊕ Коліщатко / щипок — масштаб",
+  "⊕ Scroll / pinch to zoom"
+ ]
+]

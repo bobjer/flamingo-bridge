@@ -1,11 +1,12 @@
-import {tr} from './language.js';
+import {tr,writeMessage} from './language.js';
 import {fireworks} from './effects.js';
 import * as T from 'three';
 import {model} from './models.js';
 import {landscape} from './scene.js';
 const $=id=>document.getElementById(id),world=landscape($('view'));
 const fx=fireworks(world.scene);
-const specs={sam:[tr("ЗРК «Хлопавка»","Party Popper SAM"),320,4,1.7],turret:[tr("Кулеметна турель","Machine-gun turret"),180,1,.45],cruiser:[tr("Ракетний крейсер","Missile cruiser"),480,7,2.1],dolphin:[tr("Бойовий дельфін","Combat dolphin"),140,2,.9]};
+const getSpecs=()=>({sam:[tr("ЗРК «Хлопавка»","Party Popper SAM"),320,4,1.7],turret:[tr("Кулеметна турель","Machine-gun turret"),180,1,.45],cruiser:[tr("Ракетний крейсер","Missile cruiser"),480,7,2.1],dolphin:[tr("Бойовий дельфін","Combat dolphin"),140,2,.9]});
+let specs=getSpecs();
 const units=[],enemies=[],effects=[],scouts=[];
 let cash,hp,time,wave,phase,paused,untilSpawn,score,foam,rp,unpaid,last=performance.now();
 // Hidden national budget: player never sees it. All payouts come from it; time, blockade, jams, blackouts and victims drain it.
@@ -22,7 +23,8 @@ function headline(){
  return f>.75?tr("Мінфін: «Запас міцності великий».","Treasury: “We have plenty in reserve.”"):f>.5?tr("Аналітики фіксують уповільнення економіки.","Analysts report an economic slowdown."):f>.3?tr("Рубль оновив мінімум, судноплавство скорочується.","The ruble hits a new low as shipping shrinks."):f>.12?tr("Регіони скаржаться на затримки виплат.","Regional offices report late payments."):f>0?tr("Мінфін: «Кошти є».","Treasury: “The funds exist.”"):tr("Скарбниця порожня. Ремонт за власний кошт.","The treasury is empty. Repairs are on you.");
 }
 // Economy: money shrinks (decaying grants and trophies, inflation, upkeep); research points grow with every kill.
-const techs={dmg:[tr("Калібр","Calibre"),tr("шкода +30%","damage +30%")],rate:[tr("Автозаряджання","Autoloader"),tr("темп +15%","fire rate +15%")],range:[tr("Радар","Radar"),tr("дальність +12%","range +12%")],armor:[tr("Броня","Armour"),tr("корпус +1 · шкода мосту −12%","hull +1 · bridge damage −12%")],logi:[tr("Логістика","Logistics"),tr("ціни −7% · утримання −20%","prices −7% · upkeep −20%")]};
+const getTechs=()=>({dmg:[tr("Калібр","Calibre"),tr("шкода +30%","damage +30%")],rate:[tr("Автозаряджання","Autoloader"),tr("темп +15%","fire rate +15%")],range:[tr("Радар","Radar"),tr("дальність +12%","range +12%")],armor:[tr("Броня","Armour"),tr("корпус +1 · шкода мосту −12%","hull +1 · bridge damage −12%")],logi:[tr("Логістика","Logistics"),tr("ціни −7% · утримання −20%","prices −7% · upkeep −20%")]});
+let techs=getTechs();
 const tech={};
 const techCost=L=>Math.round(10*Math.pow(2.3,L));
 const upkeep={sam:14,turret:6,cruiser:20,dolphin:5};
@@ -36,13 +38,13 @@ function repairCost(){return price(90*Math.min(25,100-hp)/25)}
 function researchTech(k){
  rp-=techCost(tech[k]);tech[k]++;
  if(k==='armor')for(const u of units)u.hull++;
- $('info').textContent=techs[k][0]+tr(" · рів. "," · lvl ")+tech[k]+': '+techs[k][1]+'.';ui();
+ writeMessage(()=>getTechs()[k][0]+tr(" · рів. "," · lvl ")+tech[k]+': '+getTechs()[k][1]+'.');ui();
 }
 const reserves = {easy: 7000, normal: 4500, hard: 2600};
 let reserve, waveDamage;
 const vehicles = [], barges=[];
 let seaCosts=0, hits=0,selectedShip=null,placing=false,signalPenalty=0;
-const orders={gps:{name:'GPS',cost:75,end:0},net:{name:tr("Інтернет","Internet"),cost:100,end:0}};
+const orders={gps:{name:'GPS',cost:75,end:0},net:{get name(){return tr("Інтернет","Internet")},cost:100,end:0}};
 const pads=[];
 for(const z of [-2.05,2.05,-7.45,-4.55])for(const x of [-9,-5,0,5,9]){
  const pad=new T.Mesh(new T.CylinderGeometry(.7,.7,.14,16),new T.MeshBasicMaterial({color:0xffbd57}));
@@ -84,12 +86,12 @@ canvas.addEventListener('pointerup',e=>{
  }
  const ships=units.filter(u=>u.k==='cruiser');
  const picked=world.pick(e,ships.map(u=>u.m));
- if(picked){selectedShip=ships.find(u=>u.m===picked);$('info').textContent=tr("Оберіть точку на воді. Обходьте баржі проміжними точками.","Choose open water. Use intermediate stops to steer around barges.");return}
+ if(picked){selectedShip=ships.find(u=>u.m===picked);writeMessage(()=>tr("Оберіть точку на воді. Обходьте баржі проміжними точками.","Choose open water. Use intermediate stops to steer around barges."));return}
  if(selectedShip&&units.includes(selectedShip)){
   const point=world.waterPoint(e);
-  if(!clearCourse(selectedShip.m.position,point)){$('info').textContent=tr("Шлях перекрито. Оберіть вільну воду.","Route blocked. Choose open water.");return}
+  if(!clearCourse(selectedShip.m.position,point)){writeMessage(()=>tr("Шлях перекрито. Оберіть вільну воду.","Route blocked. Choose open water."));return}
   point.y=selectedShip.m.position.y;selectedShip.destination=point;selectedShip=null;
-  $('info').textContent=tr("Курс прийнято.","Course set.");return;
+  writeMessage(()=>tr("Курс прийнято.","Course set."));return;
  }
  if(phase!=='live')return;
  const mesh=world.pick(e,vehicles.map(v=>v.m));
@@ -102,7 +104,7 @@ canvas.addEventListener('pointerup',e=>{
 function buyBarge(channel){
  const count=barges.filter(b=>b.channel===channel).length;
  const m=put('barge',channel?0:(count%2?11:-11),-.27,(2+Math.floor(count/(channel?1:2))*3)*(count%2?1:-1));
- if(units.some(u=>u.k==='cruiser'&&u.m.position.distanceTo(m.position)<4.1)){world.scene.remove(m);$('info').textContent=tr("Спершу відведіть крейсер від місця затоплення.","Move the cruiser away before sinking the barge.");return}
+ if(units.some(u=>u.k==='cruiser'&&u.m.position.distanceTo(m.position)<4.1)){world.scene.remove(m);writeMessage(()=>tr("Спершу відведіть крейсер від місця затоплення.","Move the cruiser away before sinking the barge."));return}
  m.rotation.z=.13;m.rotation.y=channel?.15:.6;
  barges.push({m,channel});cash-=price(110);ui();
 }
@@ -157,10 +159,10 @@ function roadStep(dt){
 function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);m.traverse(o=>{if(o.isMesh)o.castShadow=true});world.scene.add(m);return m}
 function reset(){fx.reset();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
- $('info').textContent=tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified.");ui()}
+ writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
 function ui(){const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?tr("Ⅱ ПАУЗА","Ⅱ PAUSED"):buy?tr("● ЗАКУПІВЛЯ","● PROCUREMENT"):live?tr("● ХВИЛЯ ","● WAVE ")+wave:tr("■ АРКУ ЗАКРИТО","■ ARCH CLOSED");$('hits').textContent=hits+' / 3';$('cash').textContent=cash+tr(" млн ₽"," M RUB");$('rp').textContent=rp+' ⚙';$('hype').textContent=Math.round(hype)+(hype>60?tr(" · ЕФІР"," · ON AIR"):hype>20?tr(" · СЮЖЕТ"," · NEWS"):'');$('victims').textContent=victims;$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+tr(" млн ₽"," M RUB")+(unpaid<1?tr(" · борг"," · debt"):'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
- for(const [k,[name,base]] of Object.entries(specs)){const cost=price(base),count=units.filter(u=>u.k===k).length;button(name+(count?' ×'+count:'')+'<span>'+cost+tr(" млн ₽</span>"," M RUB</span>"),()=>{if(k==='turret'){selectedShip=null;setPlacement(!placing);$('info').textContent=placing?tr("Оберіть жовтий майданчик на будь-якому прольоті. Повторне натискання скасовує вибір.","Choose a yellow pad on either span. Press the turret button again to cancel."):tr("Розміщення скасовано.","Placement cancelled.")}else purchase(k)},paused||phase==='over'||cash<cost||(k==='turret'&&count===pads.length))}
+ for(const [k,[name,base]] of Object.entries(specs)){const cost=price(base),count=units.filter(u=>u.k===k).length;button(name+(count?' ×'+count:'')+'<span>'+cost+tr(" млн ₽</span>"," M RUB</span>"),()=>{if(k==='turret'){selectedShip=null;setPlacement(!placing);writeMessage(()=>placing?tr("Оберіть жовтий майданчик на будь-якому прольоті. Повторне натискання скасовує вибір.","Choose a yellow pad on either span. Press the turret button again to cancel."):tr("Розміщення скасовано.","Placement cancelled."))}else purchase(k)},paused||phase==='over'||cash<cost||(k==='turret'&&count===pads.length))}
  for(const channel of [false,true])button(tr("Баржа · ","Barge · ")+(channel?tr("фарватер","channel"):tr("біля краю","edge"))+' ×'+barges.filter(b=>b.channel===channel).length+'<span>'+price(110)+tr(" млн ₽</span>"," M RUB</span>"),()=>buyBarge(channel),paused||phase==='over'||cash<price(110)||barges.filter(b=>b.channel===channel).length>=4);
  if(live){
  for(const [key,o] of Object.entries(orders))button(tr("Вимкнути ","Disable ")+o.name+tr(" · 10 с<span>"," · 10 s<span>")+price(o.cost)+tr(" млн ₽</span>"," M RUB</span>"),()=>issueOrder(key),paused||o.end>time||cash<price(o.cost));
@@ -169,13 +171,13 @@ function ui(){const buy=phase==='buy',live=phase==='live';$('phase').textContent
  $('start').textContent=buy?tr("Почати облогу →","Start siege →"):live?(paused?tr("Продовжити ▸","Resume ▸"):tr("Пауза Ⅱ","Pause Ⅱ")):tr("Нова зміна ↻","New shift ↻");$('start').disabled=buy&&!units.length;$('pause').disabled=!live;$('pause').textContent=paused?'▸':'Ⅱ';$('caption').textContent=buy?tr("ОГЛЯД ОБ’ЄКТА","SITE OVERVIEW"):live?tr("ВІДБИТО: ","REPELLED: ")+score:tr("ЕФІР ЗАВЕРШЕНО","END OF BROADCAST")}
 function purchase(k,pad){const cost=price(specs[k][1]);cash-=cost;const n=units.filter(u=>u.k===k).length;const side=n%2?1:-1;
  const marine=k==='dolphin'||k==='cruiser';const x=side*(2+Math.floor(n/2)*2.7)+(k==='turret'?1:0);const z=marine?(k==='cruiser'?-10:6)+side*(n%3):k==='sam'?-1.2:1.2;
- if(k==='cruiser'&&barges.some(b=>Math.hypot(x-b.m.position.x,z-b.m.position.z)<4.1)){cash+=cost;$('info').textContent=tr("Місце спуску зайняте баржею.","A barge blocks the launch site.");return}
+ if(k==='cruiser'&&barges.some(b=>Math.hypot(x-b.m.position.x,z-b.m.position.z)<4.1)){cash+=cost;writeMessage(()=>tr("Місце спуску зайняте баржею.","A barge blocks the launch site."));return}
  const m=pad?put(k,pad.position.x,3.32,pad.position.z):k==='sam'?put(k,side*(20+Math.floor(n/2)%5),1.0,3.7+Math.floor(n/10)*1.4):put(k,x,marine?.24:3.2,z);m.scale.setScalar(k==='cruiser'?1.2:.78);units.push({k,m,pad,cd:0,hull:(k==='cruiser'?4:2)+tech.armor});ui()}
 const grant=w=>Math.round(160*Math.pow(.85,w-1));
 function nextWave(){
  if(wave===0){
   reserve=reserve0=reserves[$('difficulty').value];
-  $('info').textContent=tr("Перша виплата надійде після хвилі. Бухгалтер уже рахує тріщини.","First payment after the wave. Accounting is already counting cracks.");
+  writeMessage(()=>tr("Перша виплата надійде після хвилі. Бухгалтер уже рахує тріщини.","First payment after the wave. Accounting is already counting cracks."));
  }else{
   // Planned funding fades; repair money is damage x hype. Then the economy erodes on its own.
   const pay=hp<100?0:Math.min(Math.floor(reserve),Math.round(grant(wave)+waveDamage*8*(1+hype/40)));
@@ -184,7 +186,7 @@ function nextWave(){
   drain(reserve*.03+20+signalPenalty+jamLoss);
   const bill=upkeepBill(),paid=Math.min(cash,bill);
   cash-=paid;unpaid=bill?Math.max(.5,paid/bill):1;
-  $('info').textContent=tr("Хвиля ","Wave ")+wave+tr(" · пошкодження "," · damage ")+waveDamage+tr(" од. · втрати "," pts · casualties ")+waveVictims+tr(" · розголос "," · publicity ")+Math.round(hype)+tr(" · на ремонт і оборону "," · repair and defence grant ")+pay+tr(" млн ₽ · утримання −"," M RUB · upkeep −")+paid+tr(" млн ₽."," M RUB.")+(unpaid<1?tr(" Платню затримано. Темп стрільби гарнізону впав на "," Payroll shortfall. Garrison fire rate down ")+Math.round(100*(1-unpaid))+tr("%.","%."):'')+' '+headline();
+  writeMessage(()=>tr("Хвиля ","Wave ")+wave+tr(" · пошкодження "," · damage ")+waveDamage+tr(" од. · втрати "," pts · casualties ")+waveVictims+tr(" · розголос "," · publicity ")+Math.round(hype)+tr(" · на ремонт і оборону "," · repair and defence grant ")+pay+tr(" млн ₽ · утримання −"," M RUB · upkeep −")+paid+tr(" млн ₽."," M RUB.")+(unpaid<1?tr(" Платню затримано. Темп стрільби гарнізону впав на "," Payroll shortfall. Garrison fire rate down ")+Math.round(100*(1-unpaid))+tr("%.","%."):'')+' '+headline());
   hype*=.55;
  }
  signalPenalty=seaCosts=jamLoss=waveVictims=0;arrivals=checks=caught=0;showTraffic();
@@ -219,6 +221,8 @@ function destination(e,offline){
  return e.target?.m.position;
 }
 const shotGeo=new T.SphereGeometry(.12,5,4),shotMat=new T.MeshBasicMaterial({color:0xffee8e});
+function showSignals(){ $('signals').textContent=Object.values(orders).filter(o=>o.end>time).map(o=>o.name+tr(" вимк. · "," off · ")+Math.ceil(o.end-time)+tr(" с"," s")).join(' / ');
+}
 function step(dt){
  fx.tick(dt,enemies);
  const blocked=barges.filter(b=>b.channel).length;
@@ -227,7 +231,7 @@ function step(dt){
   signalPenalty+=4*Math.max(0,Math.min(time,o.end)-before);
   if(before<o.end&&time>=o.end)ui();
  }
- $('signals').textContent=Object.values(orders).filter(o=>o.end>time).map(o=>o.name+tr(" вимк. · "," off · ")+Math.ceil(o.end-time)+tr(" с"," s")).join(' / ');
+ showSignals();
  moveShips(dt);
  if(Math.floor(time)>elapsed){const loss=Math.min(reserve,blocked*4);reserve-=loss;seaCosts+=loss}
  if(time>=wave*17){nextWave();if(wave%4===0)spawn('neptune')}roadStep(dt);untilSpawn-=dt;if(untilSpawn<=0){const pool=['flamingo','flamingo','bird','baby','loaf'];spawn(pool[Math.floor(Math.random()*pool.length)]);untilSpawn=Math.max(.19,1.9/(1+.2*wave))}
@@ -254,7 +258,7 @@ function step(dt){
    e.m.userData.trident.rotation.z=-1.08*Math.pow(Math.sin(Math.PI*e.swing/2.6),8);
    if(before<1.3&&e.swing>=1.3){
     const loss=armored(9);hp-=loss;waveDamage+=loss;hype+=loss;
-    $('info').textContent=tr("Нептун ударив тризубом по полотну: −","Neptune struck the deck: −")+loss+'%';ui();
+    writeMessage(()=>tr("Нептун ударив тризубом по полотну: −","Neptune struck the deck: −")+loss+'%');ui();
    }
    continue;
   }
@@ -274,11 +278,11 @@ function step(dt){
    else if(e.target){
     const u=e.target;
     if(--u.hull===0){world.scene.remove(u.m);units.splice(units.indexOf(u),1)}
-    $('info').textContent=specs[u.k][0]+(u.hull?tr(" · міцність "," · hull ")+u.hull:tr(" вибув із ладу"," out of action"));
+    writeMessage(()=>getSpecs()[u.k][0]+(u.hull?tr(" · міцність "," · hull ")+u.hull:tr(" вибув із ладу"," out of action")));
    }else if(e.k==='loaf'){
     fx.crumbs(p);
     for(const v of vehicles)v.hold=Math.max(v.hold,4);
-    $('info').textContent=tr("Паляниця розсипалася! Вантажівки стоять 4 секунди.","The loaf burst into crumbs! Trucks stop for 4 seconds.");
+    writeMessage(()=>tr("Паляниця розсипалася! Вантажівки стоять 4 секунди.","The loaf burst into crumbs! Trucks stop for 4 seconds."));
    }else if(e.k==='flamingo'){hits=Math.min(3,hits+1);world.setHits(hits);hype+=25;casualties(new T.Vector3())}
    else{const loss=armored(e.k==='neptune'?23:6);hp-=loss;waveDamage+=loss;hype+=loss;if(loss)casualties(e.m.position)}
    world.scene.remove(e.m);enemies.splice(i,1);ui();continue;
@@ -287,8 +291,11 @@ function step(dt){
   p.y=e.k==='loaf'&&!retreat?T.MathUtils.lerp(3.27,e.y,T.MathUtils.clamp((d-1.3)/7,0,1)):(dest&&e.k==='bird'?T.MathUtils.lerp(dest.y+.65,e.y,Math.min(1,d/7)):e.y)+Math.sin(time*3+e.angle)*.18;
   flap(e.m,time+e.angle)}
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.m.position.lerp(e.to,Math.min(1,dt/e.life));e.life-=dt;if(e.life<=0){world.scene.remove(e.m);effects.splice(i,1)}}
- if(hits===3){world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));phase='over';selectedShip=null;setPlacement(false);$('info').textContent=tr("Третій фламінго обвалив арку. Хвиль протрималися: ","A third flamingo brought down the arch. Waves reached: ")+wave+tr(". Відбито цілей: ",". Targets repelled: ")+score+'.';ui()}}
+ if(hits===3){world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));phase='over';selectedShip=null;setPlacement(false);writeMessage(()=>tr("Третій фламінго обвалив арку. Хвиль протрималися: ","A third flamingo brought down the arch. Waves reached: ")+wave+tr(". Відбито цілей: ",". Targets repelled: ")+score+'.');ui()}}
 function flap(m,t){for(const wing of m.userData.wings||[])wing.rotation.x=wing.scale.z*Math.sin(t*6)*.32}
 function frame(now){const dt=Math.min((now-last)/1000,.08);last=now;if(phase==='live'&&!paused)step(dt);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
  $('clock').textContent=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');world.draw();requestAnimationFrame(frame)}
+document.addEventListener('siege-language',()=>{
+ specs=getSpecs();techs=getTechs();ui();showTraffic();showSignals();
+});
 reset();requestAnimationFrame(frame);
