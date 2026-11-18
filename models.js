@@ -144,28 +144,81 @@ function truck(p) {
   for(let i=0;i<11;i++)oval(p,i%3===0?0x483724:0x604730,-.99+(i%4)*.34,1.01+Math.sin(i)*.05,(Math.floor(i/4)-1)*.27,.32,.19,.23);
   for(const s of [-1,1]) for(const x of [-.82,.78]) rod(p,ink,[x,.3,s*.45],[x,.3,s*.63],.28);
 }
+// Neptune: a weathered bronze sea god rising from a churning water column.
+const smooth=new THREE.SphereGeometry(1,24,16);
+const godMat={
+ bronze:new THREE.MeshStandardMaterial({color:0x6aa597,metalness:.55,roughness:.38,envMapIntensity:1.5}),
+ dark:new THREE.MeshStandardMaterial({color:0x3c6f66,metalness:.55,roughness:.45}),
+ gold:new THREE.MeshStandardMaterial({color:0xffc24d,metalness:1,roughness:.2,emissive:0x5a3300,emissiveIntensity:.35,envMapIntensity:2}),
+ foam:new THREE.MeshStandardMaterial({color:0xe6f4f2,roughness:.5,metalness:.1}),
+ eye:new THREE.MeshBasicMaterial({color:0xaafcff,toneMapped:false}),
+ water:new THREE.MeshStandardMaterial({color:0x3fb7b8,roughness:.06,metalness:.2,transparent:true,opacity:.62,side:THREE.DoubleSide,depthWrite:false}),
+ halo:new THREE.MeshBasicMaterial({color:0x7ff3ff,transparent:true,opacity:.16,blending:THREE.AdditiveBlending,depthWrite:false,toneMapped:false})
+};
+function godPart(p,geo,mat,x,y,z,a,b,c){const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);m.scale.set(a,b,c);m.castShadow=mat.transparent!==true;p.add(m);return m}
+function godLimb(p,mat,start,end,r,taper=false,r2){
+ const s=new THREE.Vector3(...start),axis=new THREE.Vector3(...end).sub(s),len=axis.length();
+ const geo=taper?geometry.cone:new THREE.CylinderGeometry(r2??r,r,1,14);
+ const m=godPart(p,geo,mat,0,0,0,taper?r:1,len,taper?r:1);
+ m.position.copy(s).addScaledVector(axis,.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),axis.normalize());return m;
+}
 function neptune(p) {
-  oval(p,0x67b5a2,0,.38,0,.65,.57,.56);
-  oval(p,skin,0,1,0,.55,.65,.5);
-  oval(p,skin,.05,1.92,0,.43,.52,.42);
-  oval(p,ivory,.29,1.7,0,.36,.48,.37);
-  add(p,'tube',gold,.02,2.34,0,.43,.21,.43);
-  for(let i=0;i<5;i++) {
-    const angle=i*Math.PI*2/5;
-    add(p,'cone',gold,.02+.33*Math.cos(angle),2.53,.33*Math.sin(angle),.12,.37,.12);
-  }
-  for(const s of [-1,1]) {
-    oval(p,ink,.41,2.03,s*.185,.05,.05,.04);
-    rod(p,skin,[0,1.34,s*.39],[.28,1.51,s*.81],.14);
-  }
-  const pivot=new THREE.Group();pivot.position.set(.28,1.51,.81);p.add(pivot);
-  const staff=new THREE.Group();staff.position.copy(pivot.position).multiplyScalar(-1);pivot.add(staff);
-  p.userData.trident=pivot;
-  rod(staff,gold,[.3,.12,.81],[.3,2.87,.81],.056);
-  for(const dz of [-.22,0,.22]) {
-    rod(staff,gold,[.3,2.47,.81],[.3,2.58,.81+dz],.052);
-    rod(staff,gold,[.3,2.55,.81+dz],[.3,2.98,.81+dz],.063,true);
-  }
+ const G=godMat;
+ // churning water column and foam collar
+ godPart(p,new THREE.CylinderGeometry(.5,1.15,1,32,1,true),G.water,0,.05,0,1,1,1);
+ godPart(p,new THREE.TorusGeometry(.62,.09,10,40),G.foam,0,.5,0,1,1,1).rotation.x=Math.PI/2;
+ const swirl=godPart(p,new THREE.TorusGeometry(.95,.035,6,64,Math.PI*1.6),G.water,0,.25,0,1,1,1);swirl.rotation.x=Math.PI/2;
+ const swirl2=godPart(p,new THREE.TorusGeometry(1.25,.025,6,64,Math.PI*1.2),G.foam,0,.08,0,1,1,1);swirl2.rotation.x=Math.PI/2;
+ swirl.onBeforeRender=()=>{const t=performance.now()*.001;swirl.rotation.z=t*1.6;swirl2.rotation.z=-t*1.1;swirl.position.y=.25+Math.sin(t*2)*.04};
+ // torso
+ godPart(p,smooth,G.bronze,0,.68,0,.34,.3,.36);
+ godPart(p,new THREE.CylinderGeometry(.62,.36,1,20),G.bronze,0,1.12,0,.68,.72,1);
+ godPart(p,smooth,G.bronze,0,1.42,0,.4,.26,.6);
+ for(const z of [-1,1]){
+  godPart(p,smooth,G.bronze,.27,1.38,z*.17,.2,.16,.22);          // pecs
+  godPart(p,smooth,G.bronze,0,1.56,z*.52,.25,.22,.25);           // shoulders
+  for(const [i,y] of [.82,.95,1.08].entries())godPart(p,smooth,G.dark,.36-i*.03,y,z*.1,.035,.055,.08); // abs
+ }
+ godLimb(p,G.bronze,[0,1.62,0],[.03,1.86,0],.17);                 // neck
+ // head
+ godPart(p,smooth,G.bronze,.04,2.02,0,.28,.34,.28);
+ godPart(p,geometry.box,G.dark,.27,2.1,0,.07,.05,.3);              // brow
+ godLimb(p,G.dark,[.28,2.06,0],[.38,1.95,0],.05,true);            // nose
+ for(const z of [-1,1]){
+  godPart(p,smooth,G.eye,.27,2.04,z*.1,.05,.035,.045);
+ }
+ // beard and hair of sea foam
+ for(let i=0;i<7;i++){const z=(i-3)*.065,len=.55+.2*Math.cos((i-3)*.5);
+  godLimb(p,G.foam,[.2,1.9,z],[.32+Math.sin(i)*.04,1.9-len,z*1.25],.075,true);}
+ godPart(p,smooth,G.foam,.24,1.86,0,.12,.1,.2);                    // moustache
+ for(let i=0;i<8;i++){const z=(i-3.5)*.075;
+  godLimb(p,G.foam,[-.1,2.22,z],[-.62,1.62+Math.abs(z)*.6,z*1.6],.08,true);}
+ // crown
+ godPart(p,new THREE.TorusGeometry(.29,.045,10,40),G.gold,.02,2.3,0,1,1,1).rotation.x=Math.PI/2;
+ for(let i=0;i<9;i++){const a=i*Math.PI*2/9,h=.3+.22*Math.max(0,Math.cos(a));
+  godLimb(p,G.gold,[.02+.29*Math.cos(a),2.3,.29*Math.sin(a)],[.02+.36*Math.cos(a),2.3+h,.36*Math.sin(a)],.055,true);}
+ // left arm extended, palm glowing
+ godLimb(p,G.bronze,[0,1.56,-.52],[.28,1.38,-.86],.13,false,.15);
+ godLimb(p,G.bronze,[.28,1.38,-.86],[.68,1.58,-.95],.11,false,.125);
+ godPart(p,smooth,G.bronze,.74,1.6,-.96,.11,.07,.1);
+ godPart(p,smooth,G.eye,.8,1.72,-.96,.07,.07,.07);
+ // right arm raised, gripping the trident
+ godLimb(p,G.bronze,[0,1.56,.52],[.06,1.3,.86],.13,false,.15);
+ godLimb(p,G.bronze,[.06,1.3,.86],[.3,1.55,.86],.11,false,.125);
+ godPart(p,smooth,G.bronze,.3,1.56,.86,.1,.1,.1);
+ const pivot=new THREE.Group();pivot.position.set(.3,1.56,.86);p.add(pivot);
+ const staff=new THREE.Group();staff.position.copy(pivot.position).multiplyScalar(-1);pivot.add(staff);
+ p.userData.trident=pivot;
+ godLimb(staff,G.gold,[.3,-.25,.86],[.3,3.05,.86],.065);
+ godPart(staff,smooth,G.gold,.3,3.05,.86,.08,.06,.08);
+ godLimb(staff,G.gold,[.3,3.05,.6],[.3,3.05,1.12],.045);          // crossbar
+ for(const dz of [-.26,0,.26]){
+  const top=dz?3.5:3.65;
+  godLimb(staff,G.gold,[.3,3.05,.86+dz],[.3,top,.86+dz],.045);
+  godLimb(staff,G.gold,[.3,top,.86+dz],[.3,top+.28,.86+dz],.07,true);
+  godLimb(staff,G.gold,[.3,top-.02,.86+dz],[.3,top-.16,.86+dz+(dz>=0?.07:-.07)],.03,true); // barb
+  godPart(staff,smooth,G.eye,.3,top+.29,.86+dz,.035,.035,.035);
+ }
 }
 function barge(p){
   box(p,0x60453c,0,0,0,4.5,.5,1.45);

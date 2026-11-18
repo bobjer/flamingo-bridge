@@ -415,9 +415,10 @@ $('resume-game').onclick=toggle;
 $('pause').onclick=toggle;$('start').onclick=()=>{if(phase==='over')confirmNewGame();else if(phase==='buy'){for(const s of scouts)world.scene.remove(s.m);scouts.length=0;phase='live';nextWave()}else toggle()};$('plus').onclick=()=>world.zoom(.83);$('minus').onclick=()=>world.zoom(1.2);
 function spawn(k){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x=Math.cos(a)*r,z=Math.sin(a)*r,y=.35;if(k==='neptune'){z=Math.max(11,Math.abs(z));x*=.48}
  if(k==='drone'||k==='bird'||k==='flamingo'||k==='loaf')y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
- const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.4);const stats={drone:[3,2.7],loaf:[3,2.2],baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=gameTargets(k);
+ const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.6);const stats={drone:[3,2.7],loaf:[3,2.2],baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=gameTargets(k);
  const target=Math.random()<(k==='baby'?.82:.65)?candidates[Math.floor(Math.random()*candidates.length)]:null;
- enemies.push({m,k,y,target,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:Math.max(1,Math.round((stats[0]+Math.floor((wave-1)/4))*(.75+.25*intensity()))),speed:stats[1]*(1+wave*.018),angle:a});}
+ const ships=units.filter(u=>u.k==='cruiser'),prey=k==='neptune'&&ships.length&&Math.random()<.6?ships[Math.floor(Math.random()*ships.length)]:null;
+ enemies.push({m,k,y,target,prey,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:Math.max(1,Math.round((stats[0]+Math.floor((wave-1)/4))*(.75+.25*intensity()))),speed:stats[1]*(1+wave*.018),angle:a});}
 function gameTargets(kind){
  return units.filter(u=>(u.k==='cruiser'&&(kind==='baby'||kind==='bird'))||((u.k==='sam'||u.k==='pantsir')&&kind==='bird'));
 }
@@ -592,6 +593,22 @@ function step(dt){
    if(time<e.glitch){p.x+=Math.sin(time*8+e.angle)*dt*4;p.z+=Math.cos(time*5+e.angle)*dt*3;e.m.rotation.z=Math.sin(time*11);e.m.rotation.y+=dt*7;continue}
    e.glitch=0;e.m.rotation.z=0;if(e.pop){fx.burst(p);e.hp=0}
   }
+  if(e.k==='neptune'&&e.prey&&!units.includes(e.prey))e.prey=units.find(u=>u.k==='cruiser')??null;
+  if(e.k==='neptune'&&e.prey&&e.hp>0&&!crashed.has(e)&&!retreat){
+   const q=e.prey.m.position,dx=q.x-p.x,dz=q.z-p.z,d=Math.hypot(dx,dz);
+   e.m.rotation.y=Math.atan2(-dz,dx);
+   if(d>4.6){p.x+=dx/d*dt*e.speed*1.7;p.z+=dz/d*dt*e.speed*1.7;p.y=.35+Math.sin(time*2+e.angle)*.08;e.swing=0;e.m.userData.trident.rotation.z=0;continue}
+   const before=e.swing??0;e.swing=(before+dt)%2.6;
+   e.m.userData.trident.rotation.z=-1.08*Math.pow(Math.sin(Math.PI*e.swing/2.6),8);
+   if(before<1.3&&e.swing>=1.3){
+    const u=e.prey,hit=q.clone().setY(1.1);u.hull=Math.max(0,u.hull-2);
+    fx.explosion(hit,1.7);fx.splash(q,1.8);world.cinematic(hit,1.5);
+    if(u.hull<=0){removeUnit(u);writeMessage(()=>tr("Нептун розколов крейсер тризубом.","Neptune split the cruiser with his trident."))}
+    else writeMessage(()=>tr("Нептун ударив по крейсеру · міцність ","Neptune struck the cruiser · hull ")+u.hull);
+    ui();
+   }
+   continue;
+  }
   if(e.k==='neptune'&&e.hp>0&&!crashed.has(e)&&!retreat&&p.z<=4.4){
    p.z=4.4;e.m.rotation.y=Math.PI/2;
    const before=e.swing??0;e.swing=(before+dt)%2.6;
@@ -650,16 +667,16 @@ document.addEventListener('siege-language',()=>{
 });
 const SAVE_KEY='pink-siege:match:v1';
 function packEntity(entity){
- const {m,pad,target,destination,oldPoint,exitPoint,...state}=entity;
+ const {m,pad,target,prey,destination,oldPoint,exitPoint,...state}=entity;
  return {...state,type:m.name,position:m.position.toArray(),rotation:m.quaternion.toArray(),scale:m.scale.toArray(),
-  pad:pads.indexOf(pad),target:units.indexOf(target),lostTarget:target&&!units.includes(target)?target.m.position.toArray():null,
+  pad:pads.indexOf(pad),target:units.indexOf(target),prey:prey?units.indexOf(prey):-1,lostTarget:target&&!units.includes(target)?target.m.position.toArray():null,
   destination:destination?.toArray(),oldPoint:oldPoint?.toArray(),exitPoint:exitPoint?.toArray()};
 }
 function unpackEntity(item){
- const {type,position,rotation,scale,pad,target,lostTarget,destination,oldPoint,exitPoint,...state}=item;
+ const {type,position,rotation,scale,pad,target,prey,lostTarget,destination,oldPoint,exitPoint,...state}=item;
  if(magazine[type])state.ammo=Number.isInteger(state.ammo)?Math.max(0,Math.min(magazine[type],state.ammo)):magazine[type];
  const m=put(type,...position);m.quaternion.fromArray(rotation);m.scale.fromArray(scale);
- return {...state,m,pad:pads[pad],target:units[target]??(lostTarget?{m:{position:new T.Vector3(...lostTarget)}}:null),
+ return {...state,m,pad:pads[pad],prey:units[prey]??null,target:units[target]??(lostTarget?{m:{position:new T.Vector3(...lostTarget)}}:null),
   destination:destination&&new T.Vector3(...destination),oldPoint:oldPoint&&new T.Vector3(...oldPoint),exitPoint:exitPoint&&new T.Vector3(...exitPoint)};
 }
 function saveMatch(){
