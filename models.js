@@ -1,3 +1,4 @@
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import * as THREE from 'three';
 
 const geometry = {
@@ -200,7 +201,24 @@ function drone(p){
  oval(p,coral,.42,-.05,0,.12,.11,.13);
 }
 const builders = { drone,jet, loaf,barge, sam,pantsir,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
+let truckMesh;
+function roadVehicle(){
+ if(!truckMesh){
+  const parts=new THREE.Group();truck(parts);
+  const meshes=parts.children.map(part=>{
+   part.updateMatrix();
+   const g=part.geometry.toNonIndexed().applyMatrix4(part.matrix);
+   const colors=new Float32Array(g.attributes.position.count*3);
+   for(let i=0;i<colors.length;i+=3)part.material.color.toArray(colors,i);
+   g.setAttribute('color',new THREE.BufferAttribute(colors,3));return g;
+  });
+  truckMesh=new THREE.Mesh(mergeGeometries(meshes),new THREE.MeshStandardMaterial({vertexColors:true,roughness:.78,flatShading:true}));
+  truckMesh.name='truck';
+ }
+ return truckMesh.clone();
+}
 export function model(type) {
+  if(type==='truck')return roadVehicle();
   const group = new THREE.Group();
   group.name = type;
   builders[type](group);

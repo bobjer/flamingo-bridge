@@ -1,3 +1,5 @@
+import {LANDFALL} from './terrain.js';
+import {railTraffic} from './rail-traffic.js';
 import {tankerTraffic} from './tanker-traffic.js';
 import roosterUrl from './rooster.svg';
 import {ditching} from './ditching.js';
@@ -12,6 +14,7 @@ import {landscape} from './scene.js';
 const $=id=>document.getElementById(id),world=landscape($('view'));
 const drawRadar=arenaRadar($('arena-radar'));
 const tankers=tankerTraffic(world.scene);
+const moveTrain=railTraffic(world,LANDFALL);
 const road=roadArt(world.scene);
 const fx=fireworks(world.scene);
 const getSpecs=()=>({sam:[tr("С-400 «Хлопавка»","S-400 Party Popper"),320,6,1.15],turret:[tr("Кулеметна турель","Machine-gun turret"),160,1,.45],cruiser:[tr("Ракетний крейсер","Missile cruiser"),420,8,1.25],dolphin:[tr("Бойовий дельфін","Combat dolphin"),120,2,.9],pantsir:[tr("Панцир-міні","Mini Pantsir"),200,2,.8]});
@@ -23,7 +26,7 @@ let reserve0,hype=0,victims=0,waveVictims=0,jamLoss=0;
 const drain=x=>{reserve=Math.max(0,reserve-x)};
 function casualties(at){
  let n=Math.floor(Math.random()*3);
- for(const v of vehicles)n+=(v.m.position.distanceTo(at)<7?2:.25)*(.5+Math.random());
+ for(const v of vehicles)if(v.m.position.distanceTo(at)<25)n+=(v.m.position.distanceTo(at)<7?2:.25)*(.5+Math.random());
  n=Math.round(n);victims+=n;waveVictims+=n;hype+=4*n;drain(12*n);
  if(n)$('caption').textContent=tr("ВТРАТИ: ","CASUALTIES: ")+n+(n>=6?tr(" · СКУПЧЕННЯ МАШИН"," · TRAFFIC PILEUP"):'');
 }
@@ -218,18 +221,19 @@ function jammed(){return vehicles.filter(v=>v.queued||v.hold>0).length}
 function showTraffic(){
  $('traffic').textContent=tr("Перевірено ","Checked ")+checks+tr(" з "," of ")+arrivals+tr(" · затримано "," · detained ")+caught+tr(" · у заторі "," · queued ")+jammed();
 }
+function addTruck(direction,x){
+ const m=put('truck',x,world.deckTop(x)+.06,direction*.8);
+ m.rotation.y=direction===1?0:Math.PI;
+ const checked=x*direction>=-10;
+ const manure=!checked&&Math.random()<bombTruckChance;
+ vehicles.push({m,direction,manure,wobbles:Math.random()<(manure?.85:.16),marked:false,checked,hold:0,stopped:false,queued:false});
+}
 function roadStep(dt){
  roadTimer-=dt;
  if(roadTimer<=0){
   const direction=Math.random()<.5?1:-1;
-  if(vehicles.some(v=>v.direction===direction&&v.m.position.x*direction<-19.3))roadTimer=.4;
-  else{
-   const m=put('truck',-22*direction,3.22,direction*.8);
-   m.rotation.y=direction===1?0:Math.PI;
-   const manure=Math.random()<bombTruckChance;
-   vehicles.push({m,direction,manure,wobbles:Math.random()<(manure?.85:.16),marked:false,checked:false,hold:0,stopped:false,queued:false});
-   roadTimer=Math.max(.9,1.8-wave*.04);
-  }
+  if(vehicles.some(v=>v.direction===direction&&v.m.position.x*direction<-LANDFALL+2.7))roadTimer=.4;
+  else{addTruck(direction,-LANDFALL*direction);roadTimer=Math.max(.9,1.8-wave*.04)}
  }
  const along=v=>v.m.position.x*v.direction;
  for(const v of [...vehicles].sort((a,b)=>along(b)-along(a))){
@@ -238,6 +242,7 @@ function roadStep(dt){
   v.queued=!!ahead&&(ahead.hold>0||ahead.queued);
   if(v.hold>0)v.hold-=dt;
   else if(!v.queued)p.x+=v.direction*3.7*dt;
+  p.y=world.deckTop(p.x)+.06;
   if(v.hold>0||v.queued)jamLoss+=dt*1.6;
   if(!v.checked && along(v)>=-10){
    v.checked=true;arrivals++;inspectionCredit+=Number($('inspection').value);
@@ -250,7 +255,7 @@ function roadStep(dt){
  for(let i=vehicles.length-1;i>=0;i--){
   const v=vehicles[i],a=along(v);
   const hit=v.manure&&!v.stopped&&a>=0;
-  if(hit||a>25||(v.stopped&&v.hold<=0)){
+  if(hit||a>LANDFALL||(v.stopped&&v.hold<=0)){
    if(hit){const loss=damageDeck(6,v.m.position);world.scene.remove(v.m);vehicles.splice(i,1);casualties(v.m.position);}
    else{world.scene.remove(v.m);vehicles.splice(i,1)}
    if(v.stopped)score++;
@@ -370,6 +375,7 @@ function purchase(k,pad){const cost=price(specs[k][1]);cash-=cost;const n=units.
 const grant=w=>Math.round(110+10*w);
 function nextWave(){
  if(wave===0){
+  for(const dir of [-1,1])for(let x=-LANDFALL+5;x<LANDFALL;x+=14)addTruck(dir,dir*(x+Math.random()*4));
   reserve=reserve0=reserves[$('difficulty').value];
   writeMessage(()=>tr("Перша виплата надійде після хвилі. Бухгалтер уже рахує тріщини.","First payment after the wave. Accounting is already counting cracks."));
  }else{
@@ -574,7 +580,7 @@ function step(dt){
  if(hits===3){world.carryDown(road.patchedMeshes());world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));phase='over';selectedShip=null;setPlacement(false);writeMessage(()=>tr("Третій фламінго обвалив арку. Хвиль протрималися: ","A third flamingo brought down the arch. Waves reached: ")+wave+tr(". Відбито цілей: ",". Targets repelled: ")+score+'.');ui()}}
 function flap(m,t){for(const wing of m.userData.wings||[])wing.rotation.x=wing.scale.z*Math.sin(t*6)*.32}
 function frame(now){const dt=Math.min((now-last)/1000,.08);last=now;if(phase==='live'&&!paused&&!$('restart').open&&!watchDone){step(dt);if(watchGoal&&!paused&&phase==='live')step(dt)};if(selectedShip)ring.position.copy(selectedShip.m.position);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
- $('clock').textContent=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;tankers.draw(time);world.draw(time,trafficTime,phase==="live"&&orders.smoke.end>time);updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
+ $('clock').textContent=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;moveTrain(trafficTime);tankers.draw(time);world.draw(time,trafficTime,phase==="live"&&orders.smoke.end>time);updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
 document.addEventListener('siege-language',()=>{
  specs=getSpecs();techs=getTechs();ui();showTraffic();showSignals();
 });

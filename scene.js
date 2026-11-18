@@ -356,7 +356,7 @@ export function landscape(view) {
  const daySun=new T.Color(0xfff0dc),sunset=new T.Color(0xffa56d),nightHaze=new T.Color(0x162a49),nightWater=new T.Color(0x163d51),dayWater=new T.Color(0x2aa3ad);
  let collapse = false, prevDist = camera.position.distanceTo(controls.target);
  return {
-  scene, zoom, pick,
+  scene, zoom, pick, deckTop,
   cameraPosition:()=>camera.position.toArray(),
   heading:()=>controls.getAzimuthalAngle(),
   restoreCamera(p){camera.position.fromArray(p);controls.update();prevDist=camera.position.distanceTo(controls.target)},
