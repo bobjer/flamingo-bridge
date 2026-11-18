@@ -320,3 +320,11 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
 
 /* ---- Disclaimer ---- */
 .legal{margin:0 auto;padding:10px 16px 14px;max-width:880px;text-align:center;font:500 10.5px/1.5 var(--mono);color:#8b96a3;letter-spacing:.01em;opacity:.85}
+
+/* On narrow desktop viewports allow controls to wrap at browser zoom. */
+@media(pointer:fine) and (max-width:900px){
+ .top{position:static;grid-template-columns:minmax(0,1fr) auto;gap:6px}
+ .top .panel-toggles{min-width:0;justify-content:flex-start;flex-wrap:wrap}
+ .arcade-order{flex-wrap:wrap}
+}
+html{touch-action:pan-x pan-y}

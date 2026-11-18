@@ -72,3 +72,15 @@ for(const restore of document.querySelectorAll('.panel-toggles button[aria-contr
  document.addEventListener('siege-language',render);
 }
 document.addEventListener('siege-reset',()=>{previous=undefined;log.replaceChildren()});
+
+// Keep accidental trackpad and keyboard zoom inside the game. Leave the
+// browser's reset shortcut available for visitors arriving already zoomed in.
+window.addEventListener('wheel',event=>{
+ if(event.ctrlKey||event.metaKey)event.preventDefault();
+},{capture:true,passive:false});
+window.addEventListener('keydown',event=>{
+ if((event.ctrlKey||event.metaKey)&&!event.altKey&&['+','=','-','_'].includes(event.key))event.preventDefault();
+});
+for(const name of ['gesturestart','gesturechange']){
+ window.addEventListener(name,event=>event.preventDefault(),{passive:false});
+}
