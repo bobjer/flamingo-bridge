@@ -20,6 +20,8 @@ const fx=fireworks(world.scene);
 const getSpecs=()=>({sam:[tr("С-400 «Хлопавка»","S-400 Party Popper"),320,6,1.15],turret:[tr("Кулеметна турель","Machine-gun turret"),160,1,.45],cruiser:[tr("Ракетний крейсер","Missile cruiser"),420,8,1.25],dolphin:[tr("Бойовий дельфін","Combat dolphin"),120,2,.9],pantsir:[tr("Панцир-міні","Mini Pantsir"),200,2,.8]});
 let specs=getSpecs();
 const units=[],enemies=[],effects=[],scouts=[];
+let spent=0,partialLedger=0;
+function spend(amount){cash-=amount;spent+=amount}
 let cash,hp,time,wave,phase,paused,untilSpawn,score,foam,rp,unpaid,last=performance.now();
 // Hidden national budget: player never sees it. All payouts come from it; time, blockade, jams, blackouts and victims drain it.
 let reserve0,hype=0,victims=0,waveVictims=0,jamLoss=0;
@@ -67,7 +69,7 @@ $('resupply').onclick=()=>{
   const least=launchers.reduce((a,b)=>a.ammo/magazine[a.k]<=b.ammo/magazine[b.k]?a:b);
   least.ammo++;
  }
- cash-=amount*each;ui();
+ spend(amount*each);ui();
 };
 const rewards={drone:[1,6],loaf:[2,7],baby:[1,7],flamingo:[1,9],bird:[1,6],neptune:[8,80]};
 const infl=()=>Math.pow(1.03,Math.max(0,wave-1))*(1+.3*(1-reserve/reserve0))*Math.pow(.93,tech.logi);
@@ -144,7 +146,7 @@ function clearCourse(a,b){
  return barges.every(v=>line.closestPointToPoint(v.m.position,true,new T.Vector3()).distanceTo(v.m.position)>4.1);
 }
 function issueOrder(key){
- const o=orders[key];cash-=price(o.cost);o.end=time+10;showSignals();ui();
+ const o=orders[key];spend(price(o.cost));o.end=time+10;showSignals();ui();
 }
 const ring=new T.Mesh(new T.RingGeometry(2.9,3.04,48),new T.MeshBasicMaterial({color:0xffb947,side:T.DoubleSide}));
 ring.rotation.x=-Math.PI/2;ring.visible=false;world.scene.add(ring);
@@ -210,7 +212,7 @@ function buyBarge(channel){
  const m=put('barge',channel?0:(count%2?11:-11),-.27,(2+Math.floor(count/(channel?1:2))*3)*(count%2?1:-1));
  if(units.some(u=>u.k==='cruiser'&&u.m.position.distanceTo(m.position)<4.1)){world.scene.remove(m);writeMessage(()=>tr("Спершу відведіть крейсер від місця затоплення.","Move the cruiser away before sinking the barge."));return}
  m.rotation.z=.13;m.rotation.y=channel?.15:.6;
- barges.push({m,channel});cash-=price(110);ui();
+ barges.push({m,channel});spend(price(110));ui();
 }
 let trafficTime=0;
 let roadTimer, inspectionCredit, arrivals, checks, caught;
@@ -268,7 +270,7 @@ function roadStep(dt){
  showTraffic();
 }
 function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);m.traverse(o=>{if(o.isMesh)o.castShadow=true});world.scene.add(m);return m}
-function reset(){guestWave=guestUntil=0;incoming=null;guest.hidden=true;road.reset();clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.reset();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;trafficTime=0;tankers.restore();tankers.move(0);orders.smoke.end=orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
+function reset(){spent=0;partialLedger=0;guestWave=guestUntil=0;incoming=null;guest.hidden=true;road.reset();clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.reset();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;trafficTime=0;tankers.restore();tankers.move(0);orders.smoke.end=orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
@@ -306,7 +308,7 @@ function patchDeck(spot){
   if(!site.loss)damageSpots.splice(damageSpots.indexOf(site),1);
   if(!left)break;
  }
- cash-=cost;hp+=amount;ui();
+ spend(cost);hp+=amount;ui();
 }
 function repairDeck(){patchDeck(null)}
 function localAmmo(u){
@@ -318,7 +320,7 @@ function refillUnit(u){
  if(!units.includes(u)||phase!=='live'||paused)return;
  const {amount,cost}=localAmmo(u);
  if(!amount)return;
- u.ammo+=amount;cash-=cost;ui();
+ u.ammo+=amount;spend(cost);ui();
 }
 function updateMarkers(){
  const items=[];
@@ -351,8 +353,12 @@ function arcadeHud(){
   if(msg.textContent!==text)msg.textContent=text;
   act.hidden=!action;act.textContent=label??'';act.onclick=action??null;
  }
- if(autoplay)return order(phase==='over'?tr('Арка впала','Arch collapsed'):tr('Автогра','Autoplay'));
- if(phase==='over')return order(tr('Арка впала. Хвиля ','Arch down. Wave ')+wave,tr('Нова гра','New game'),confirmNewGame);
+ if(phase==='over'){
+  const cost=(partialLedger?tr('щонайменше ','at least '):'')+money(spent);
+  const verdict=tr('Вітаю! Ви вгатили '+cost+' з бюджету. Відбито цілей — '+score+'. А міст усе одно булькнув.','Congratulations! You blew '+cost+' of the budget. Targets repelled: '+score+'. The bridge went splash anyway.');
+  return order(verdict,autoplay?undefined:tr('Нова гра','New game'),autoplay?undefined:confirmNewGame);
+ }
+ if(autoplay)return order(tr('Автогра','Autoplay'));
  if(paused)return order(tr('Партія на паузі.','Game paused.'),tr('Продовжити ▸','Resume ▸'),toggle);
  if(phase==='buy'){
   const kit=price(specs.sam[1])+price(specs.cruiser[1]);
@@ -372,9 +378,10 @@ function arcadeHud(){
  if(hits===2)return order(tr('Останній шанс: ще один фламінго обвалить арку.','Last chance: one more flamingo hit will bring down the arch.'));
  return order(tr('Гарнізон веде вогонь самостійно. Хвиля ','Garrison firing automatically. Wave ')+wave+(capacity?tr(' · ракети ',' · missiles ')+stock+'/'+capacity:''));
 }
-function purchase(k,pad){const cost=price(specs[k][1]);cash-=cost;const n=units.filter(u=>u.k===k).length;const side=n%2?1:-1;
+function purchase(k,pad){const cost=price(specs[k][1]);const n=units.filter(u=>u.k===k).length;const side=n%2?1:-1;
  const marine=k==='dolphin'||k==='cruiser';const x=side*(2+Math.floor(n/2)*2.7)+(k==='turret'?1:0);const z=marine?(k==='cruiser'?-10:6)+side*(n%3):k==='sam'?-1.2:1.2;
- if(k==='cruiser'&&barges.some(b=>Math.hypot(x-b.m.position.x,z-b.m.position.z)<4.1)){cash+=cost;writeMessage(()=>tr("Місце спуску зайняте баржею.","A barge blocks the launch site."));return}
+ if(k==='cruiser'&&barges.some(b=>Math.hypot(x-b.m.position.x,z-b.m.position.z)<4.1)){writeMessage(()=>tr("Місце спуску зайняте баржею.","A barge blocks the launch site."));return}
+ spend(cost);
  const m=pad?put(k,pad.position.x,3.32,pad.position.z):(k==='sam'||k==='pantsir')?put(k,side*(20+Math.floor(n/2)%5),1.0,(k==='pantsir'?-4.2:3.7)+Math.floor(n/10)*1.4):put(k,x,marine?.24:3.2,z);m.scale.setScalar(k==='cruiser'?1.2:.78);units.push({k,m,pad,ammo:magazine[k],cd:0,hull:(k==='cruiser'?4:2)+tech.armor});ui()}
 const grant=w=>Math.max(24,Math.round(150*Math.pow(.95,Math.max(0,w-1))));
 function nextWave(){
@@ -390,7 +397,7 @@ function nextWave(){
   drain(reserve*.02+20+signalPenalty+jamLoss);
   const bill=upkeepBill(),paid=Math.min(cash,bill);
   const regen=reserve>0&&paid===bill&&wave%3===0&&hits>0&&hits<3;if(regen){hits--;world.setHits(hits)}
-  cash-=paid;unpaid=bill?paid/bill:1;
+  spend(paid);unpaid=bill?paid/bill:1;
   writeMessage(()=>tr("Хвиля ","Wave ")+wave+tr(" · пошкодження "," · damage ")+waveDamage+tr(" од. · втрати "," pts · casualties ")+waveVictims+tr(" · розголос "," · publicity ")+Math.round(hype)+tr(" · на ремонт і оборону "," · repair and defence grant ")+pay+tr(" млн ₽ · утримання −"," M RUB · upkeep −")+paid+tr(" млн ₽."," M RUB.")+(unpaid<1?tr(" Платню затримано. Темп стрільби гарнізону впав на "," Payroll shortfall. Garrison fire rate down ")+Math.round(100*(1-unpaid))+tr("%.","%."):'')+(regen?tr(" Інженери підсилили арку: +1 життя."," Engineers reinforced the arch: +1 life."):'')+' '+headline());
   hype*=.55;
  }
@@ -619,7 +626,7 @@ function unpackEntity(item){
 function saveMatch(){
  if(autoplay)return;
  try{
-  const state={guestWave,die,waveElapsed,breakLeft,cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught};
+  const state={spent,partialLedger,guestWave,die,waveElapsed,breakLeft,cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught};
   localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,state,tech,patches:road.patchedMeshes().map(m=>m.position.toArray()),damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss})),difficulty:$('difficulty').value,inspection:$('inspection').value,
    trafficTime,oilSlicks:tankers.snapshot(),orders:[orders.gps.end,orders.net.end,orders.smoke.end],units:units.map(packEntity),enemies:enemies.map(packEntity),vehicles:vehicles.map(packEntity),
    barges:barges.map(packEntity),flights:fx.snapshot(enemies),camera:world.cameraPosition(),selectedShip:units.indexOf(selectedShip),placing}));
@@ -635,6 +642,7 @@ function restoreMatch(){
  if(state.reserve0!==reserves[data.difficulty])state.reserve0=reserves[data.difficulty];
  for(const key of "cash hp time wave untilSpawn score rp unpaid reserve0 hype victims waveVictims jamLoss reserve waveDamage seaCosts hits signalPenalty roadTimer inspectionCredit arrivals checks caught".split(" "))if(!Number.isFinite(state[key]))return;
  for(const value of Object.values({...state,phase:0}))if(!Number.isFinite(value))return;
+ spent=state.spent??0;partialLedger=state.partialLedger??Number(state.spent===undefined);
  ({cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught}=state);
  for(const s of data.damageSpots??[])damageSpots.push({point:new T.Vector3(...s.point),loss:s.loss});
  if(!damageSpots.length&&hp<100)damageSpots.push({point:new T.Vector3(0,3.23,0),loss:100-hp});
