@@ -19,6 +19,7 @@ function renderTimeline() {
 
 function syncPhase() {
  const text = phase.textContent.replace(/^[●■Ⅱ]\s*/, '');
+ wave=Number(phase.dataset.wave??wave);
  const m = text.match(/(?:ХВИЛЯ|WAVE) (\d+)/);
  if (m) { wave = +m[1]; state = 'live'; }
  else if (/ЗАКУПІВЛЯ|PROCUREMENT/.test(text)) { wave = 0; state = 'buy'; }
@@ -57,8 +58,8 @@ for(const restore of document.querySelectorAll('.panel-toggles button')){
  const key='pink-siege:'+panel.id;
  function render(){
   const open=!panel.hidden;
-  restore.hidden=open;
-  restore.textContent=hq?tr('Відкрити штаб','Open HQ'):tr('Відкрити арсенал','Open arsenal');
+  document.querySelector('.panel-title').textContent=tr('Панелі','Panels');
+  restore.textContent=hq?(open?tr('Згорнути штаб','Hide HQ'):tr('Відкрити штаб','Open HQ')):(open?tr('Згорнути арсенал','Hide arsenal'):tr('Відкрити арсенал','Open arsenal'));
   for(const button of [restore,fold])button.setAttribute('aria-expanded',String(open));
   document.querySelector('main').classList.toggle('hide-'+panel.id,!open);
  }
@@ -66,7 +67,7 @@ for(const restore of document.querySelectorAll('.panel-toggles button')){
   panel.hidden=!open;render();localStorage.setItem(key,open?'open':'closed');
   (open?fold:restore).focus({preventScroll:true});
  }
- fold.onclick=()=>toggle(false);restore.onclick=()=>toggle(true);
+ fold.onclick=()=>toggle(false);restore.onclick=()=>toggle(panel.hidden);
  panel.hidden=localStorage.getItem(key)==='closed';render();
  document.addEventListener('siege-language',render);
 }

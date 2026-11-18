@@ -161,7 +161,7 @@ function reset(){fx.reset();for(const x of [...units,...enemies,...effects,...sc
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
-function ui(){const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?tr("Ⅱ ПАУЗА","Ⅱ PAUSED"):buy?tr("● ЗАКУПІВЛЯ","● PROCUREMENT"):live?tr("● ХВИЛЯ ","● WAVE ")+wave:tr("■ АРКУ ЗАКРИТО","■ ARCH CLOSED");$('hits').textContent=hits+' / 3';$('cash').textContent=cash+tr(" млн ₽"," M RUB");$('rp').textContent=rp+' ⚙';$('hype').textContent=Math.round(hype)+(hype>60?tr(" · ЕФІР"," · ON AIR"):hype>20?tr(" · СЮЖЕТ"," · NEWS"):'');$('victims').textContent=victims;$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+tr(" млн ₽"," M RUB")+(unpaid<1?tr(" · борг"," · debt"):'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
+function ui(){$('phase').dataset.wave=wave;const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?tr("Ⅱ ПАУЗА · ХВИЛЯ ","Ⅱ PAUSED · WAVE ")+wave:buy?tr("● ЗАКУПІВЛЯ","● PROCUREMENT"):live?tr("● ХВИЛЯ ","● WAVE ")+wave:tr("■ АРКУ ЗАКРИТО","■ ARCH CLOSED");$('hits').textContent=hits+' / 3';$('cash').textContent=cash+tr(" млн ₽"," M RUB");$('rp').textContent=rp+' ⚙';$('hype').textContent=Math.round(hype)+(hype>60?tr(" · ЕФІР"," · ON AIR"):hype>20?tr(" · СЮЖЕТ"," · NEWS"):'');$('victims').textContent=victims;$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+tr(" млн ₽"," M RUB")+(unpaid<1?tr(" · борг"," · debt"):'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
  for(const [k,[name,base]] of Object.entries(specs)){const cost=price(base),count=units.filter(u=>u.k===k).length;button(name+(count?' ×'+count:'')+'<span>'+cost+tr(" млн ₽</span>"," M RUB</span>"),()=>{if(k==='turret'){selectedShip=null;setPlacement(!placing);writeMessage(()=>placing?tr("Оберіть жовтий майданчик на будь-якому прольоті. Повторне натискання скасовує вибір.","Choose a yellow pad on either span. Press the turret button again to cancel."):tr("Розміщення скасовано.","Placement cancelled."))}else purchase(k)},paused||phase==='over'||cash<cost||(k==='turret'&&count===pads.length))}
  for(const channel of [false,true])button(tr("Баржа · ","Barge · ")+(channel?tr("фарватер","channel"):tr("біля краю","edge"))+' ×'+barges.filter(b=>b.channel===channel).length+'<span>'+price(110)+tr(" млн ₽</span>"," M RUB</span>"),()=>buyBarge(channel),paused||phase==='over'||cash<price(110)||barges.filter(b=>b.channel===channel).length>=4);
  if(live){
@@ -298,4 +298,49 @@ function frame(now){const dt=Math.min((now-last)/1000,.08);last=now;if(phase==='
 document.addEventListener('siege-language',()=>{
  specs=getSpecs();techs=getTechs();ui();showTraffic();showSignals();
 });
-reset();requestAnimationFrame(frame);
+const SAVE_KEY='pink-siege:match:v1';
+function packEntity(entity){
+ const {m,pad,target,destination,oldPoint,exitPoint,...state}=entity;
+ return {...state,type:m.name,position:m.position.toArray(),rotation:m.quaternion.toArray(),scale:m.scale.toArray(),
+  pad:pads.indexOf(pad),target:units.indexOf(target),lostTarget:target&&!units.includes(target)?target.m.position.toArray():null,
+  destination:destination?.toArray(),oldPoint:oldPoint?.toArray(),exitPoint:exitPoint?.toArray()};
+}
+function unpackEntity(item){
+ const {type,position,rotation,scale,pad,target,lostTarget,destination,oldPoint,exitPoint,...state}=item;
+ const m=put(type,...position);m.quaternion.fromArray(rotation);m.scale.fromArray(scale);
+ return {...state,m,pad:pads[pad],target:units[target]??(lostTarget?{m:{position:new T.Vector3(...lostTarget)}}:null),
+  destination:destination&&new T.Vector3(...destination),oldPoint:oldPoint&&new T.Vector3(...oldPoint),exitPoint:exitPoint&&new T.Vector3(...exitPoint)};
+}
+function saveMatch(){
+ try{
+  const state={cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught};
+  localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,state,tech,difficulty:$('difficulty').value,inspection:$('inspection').value,
+   orders:[orders.gps.end,orders.net.end],units:units.map(packEntity),enemies:enemies.map(packEntity),vehicles:vehicles.map(packEntity),
+   barges:barges.map(packEntity),flights:fx.snapshot(enemies),camera:world.cameraPosition(),selectedShip:units.indexOf(selectedShip),placing}));
+ }catch(err){console.warn('Could not save match',err)}
+}
+function restoreMatch(){
+ const data=JSON.parse(localStorage.getItem(SAVE_KEY));
+ if(!data||data.version!==1)return;
+ const state=data.state;
+ if(!Object.hasOwn(reserves,data.difficulty)||!['buy','live','over'].includes(state.phase)||!Number.isInteger(state.wave))return;
+ for(const value of Object.values({...state,phase:0}))if(!Number.isFinite(value))return;
+ ({cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught}=state);
+ $('difficulty').value=data.difficulty;$('inspection').value=data.inspection;
+ if(phase!=='buy'){for(const s of scouts)s.m.removeFromParent();scouts.length=0}
+ Object.assign(tech,data.tech);[orders.gps.end,orders.net.end]=data.orders;
+ for(const [list,saved] of [[units,data.units],[enemies,data.enemies],[vehicles,data.vehicles],[barges,data.barges]]){
+  for(const item of saved)list.push(unpackEntity(item));
+ }
+ fx.restore(data.flights,enemies);world.restoreCamera(data.camera);world.setHits(hits);
+ if(phase==='over')world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));
+ selectedShip=units[data.selectedShip]??null;setPlacement(data.placing);
+ paused=phase==='live';ui();showTraffic();showSignals();
+ if(paused)writeMessage(()=>tr('Партію відновлено. Натисніть ▸, щоб продовжити хвилю.','Match restored. Press ▸ to resume the wave.'));
+}
+reset();
+try{restoreMatch()}catch(err){console.warn('Could not restore match',err);reset()}
+setInterval(()=>{if(!document.hidden)saveMatch()},2000);
+window.addEventListener('pagehide',saveMatch);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)saveMatch()});
+requestAnimationFrame(frame);

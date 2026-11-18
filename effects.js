@@ -22,14 +22,15 @@ export function fireworks(scene){
   });
   scene.add(cloud);bursts.push({cloud,bits,crumbs,age:0});
  }
- function launch(source,target,damage){
+ function launch(source,target,damage){return launchAt(source.localToWorld(new T.Vector3(.99,1.51,0)),target,damage)}
+ function launchAt(origin,target,damage){
   const rocket=new T.Group();
   for(const [geometry,mat,y] of [[hull,white,0],[cone,orange,.64],[cone,flame,-.73]]){
    const piece=new T.Mesh(geometry,mat);piece.position.y=y;
    if(y<0){piece.rotation.z=Math.PI;piece.scale.y=1.8}rocket.add(piece);
   }
-  const origin=source.localToWorld(new T.Vector3(.99,1.51,0));rocket.position.copy(origin);scene.add(rocket);
-  flights.push({rocket,origin,target,damage,age:0,duration:T.MathUtils.clamp(origin.distanceTo(target.m.position)/20,.5,1.9)});
+  rocket.position.copy(origin);scene.add(rocket);
+  const f={rocket,origin,target,damage,age:0,duration:T.MathUtils.clamp(origin.distanceTo(target.m.position)/20,.5,1.9)};flights.push(f);return f;
  }
  const marker=new T.Object3D();
  function tick(dt,enemies){
@@ -54,5 +55,8 @@ export function fireworks(scene){
   }
  }
  function reset(){for(const f of flights)f.rocket.removeFromParent();for(const b of bursts){b.cloud.removeFromParent();b.cloud.dispose()}flights.length=bursts.length=0}
- return {launch,tick,reset,crumbs:p=>scatter(new T.Vector3(p.x,3.27,p.z),true)};
+ return {launch,tick,reset,
+  snapshot(enemies){return flights.filter(f=>enemies.includes(f.target)).map(f=>({origin:f.origin.toArray(),target:enemies.indexOf(f.target),damage:f.damage,age:f.age,duration:f.duration,position:f.rocket.position.toArray()}))},
+  restore(saved,enemies){for(const item of saved){const f=launchAt(new T.Vector3(...item.origin),enemies[item.target],item.damage);f.age=item.age;f.duration=item.duration;f.rocket.position.fromArray(item.position)}},
+  crumbs:p=>scatter(new T.Vector3(p.x,3.27,p.z),true)};
 }

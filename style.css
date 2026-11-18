@@ -168,3 +168,9 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
 .fold:hover,.panel-toggles button:hover,.fold:focus-visible{border-color:var(--accent)}
 .panel-toggles button[hidden]{display:none}
 .lang{background:transparent;border:0;cursor:pointer}
+
+.top .panel-toggles{position:static;grid-column:1/-1;align-items:center;justify-content:center;gap:10px;padding:4px 0;border-top:1px solid var(--line)}
+.panel-title{color:var(--muted);font:12px var(--mono)}
+.top .panel-toggles button{min-height:34px;padding:5px 12px}
+.top .panel-toggles button[aria-expanded=false]{color:var(--accent-ink);background:var(--accent);border-color:var(--accent);font-weight:700}
+@media(max-width:900px){.top{position:sticky;top:0;z-index:8}.top .panel-toggles{gap:5px}}
