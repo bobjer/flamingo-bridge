@@ -67,13 +67,26 @@ function flying(p, flamingo) {
   if(!flamingo) p.scale.setScalar(.58);
 }
 function sam(p) {
-  box(p,ink,0,.23,0,2.12,.36,1.1);
-  box(p,marine,0,.5,0,1.9,.35,1.03);
-  for(const s of [-1,0,1]) {
-    const z = s*.32;
-    rod(p,mint,[-.83,.72,z],[.65,1.35,z],.145);
-    rod(p,coral,[.65,1.35,z],[.99,1.51,z],.147,true);
+  box(p,marine,0,.48,0,3.1,.48,1.13);
+  box(p,mint,1.08,.94,0,.78,.64,1.12);
+  box(p,ink,1.19,1.03,0,.61,.24,1.14);
+  for(const z of [-.58,.58])for(const x of [-1.12,-.51,.46,1.15])
+    rod(p,ink,[x,.29,z*.84],[x,.29,z*1.18],.27);
+  for(const x of [-.76,-.18])for(const z of [-.29,.29]){
+    rod(p,marine,[x,.73,z],[x+.36,2.48,z],.26);
+    rod(p,mint,[x+.34,2.39,z],[x+.38,2.52,z],.27);
   }
+  p.userData.launchPoint=[.2,2.52,.29];
+}
+function pantsir(p) {
+  box(p,marine,0,.33,0,1.62,.4,.86);
+  for(const z of [-.46,.46])box(p,ink,0,.21,z,1.52,.35,.22);
+  box(p,mint,-.12,.64,0,.77,.43,.7);
+  oval(p,ivory,-.24,1.02,0,.34,.28,.34);
+  for(const z of [-.49,.49]){
+    for(const y of [.57,.8])rod(p,marine,[-.42,y,z],[.68,y+.27,z],.104);
+  }
+  p.userData.launchPoint=[.68,1.07,.49];
 }
 function turret(p) {
   add(p,'tube',ink,0,.14,0,.82,.28,.82);
@@ -169,7 +182,7 @@ function loaf(p){
    for(const x of [-.03,.15])oval(p,0xffdd87,x,.05,side*.687,.027,.047,.015);
   }
 }
-const builders = { loaf,barge, sam,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
+const builders = { loaf,barge, sam,pantsir,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
 export function model(type) {
   const group = new THREE.Group();
   group.name = type;

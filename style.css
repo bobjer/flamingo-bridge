@@ -107,7 +107,8 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
 #shop .unit:nth-child(2)::before{content:'TUR'}
 #shop .unit:nth-child(3)::before{content:'CRS'}
 #shop .unit:nth-child(4)::before{content:'DOL'}
-#shop .unit:nth-child(5)::before,#shop .unit:nth-child(6)::before{content:'BRG'}
+#shop .unit:nth-child(5)::before{content:'MINI'}
+#shop .unit:nth-child(6)::before,#shop .unit:nth-child(7)::before{content:'BRG'}
 #shop .unit:last-child:nth-child(n+8)::before{content:'REP'}
 #tech .unit::before{content:'R&D'}
 .unit span{grid-column:3;grid-row:1;font-size:11px;color:var(--accent);border:1px solid rgba(255,154,31,.4);padding:2px 6px;white-space:nowrap;font-weight:500}
