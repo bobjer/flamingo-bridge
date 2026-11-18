@@ -288,3 +288,21 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
  body{position:fixed;left:100dvw;top:0;width:100dvh;height:100dvw;transform-origin:0 0;transform:rotate(90deg);padding:env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) env(safe-area-inset-top)}
  #restart{transform:rotate(90deg);width:min(380px,80dvh);max-width:none;max-height:88dvw;overflow:auto}
 }
+
+/* ---- Scene labels v3: compact chips, expand on hover/focus ---- */
+.scene-marker{gap:5px;padding:2px 8px 2px 2px;border-radius:999px;background:rgba(10,14,20,.55);box-shadow:0 2px 8px rgba(0,0,0,.35);border-color:rgba(255,255,255,.12);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.scene-marker::before{width:18px;height:18px}
+.scene-marker::after{left:5px;width:12px;height:12px;margin-top:-6px}
+.scene-marker .marker-short{font:700 11px/1 var(--mono);color:var(--pin);font-variant-numeric:tabular-nums;letter-spacing:.02em;text-shadow:0 1px 2px #000a}
+.scene-marker .marker-text{display:none}
+.scene-marker:hover,.scene-marker:focus-visible{z-index:3;padding:5px 10px 5px 4px;border-radius:11px;background:linear-gradient(180deg,rgba(28,36,48,.82),rgba(10,14,20,.9))}
+.scene-marker:hover .marker-short,.scene-marker:focus-visible .marker-short{display:none}
+.scene-marker:hover .marker-text,.scene-marker:focus-visible .marker-text{display:flex}
+.scene-marker:hover::before,.scene-marker:focus-visible::before{width:24px;height:24px}
+.scene-marker:hover::after,.scene-marker:focus-visible::after{left:8px;width:16px;height:16px;margin-top:-8px}
+.scene-marker:enabled:hover{translate:0 -1px}
+.scene-marker.urgent{border-color:rgba(var(--pin-rgb),.7);animation:marker-in .26s cubic-bezier(.2,.9,.3,1.25) both,marker-urgent 1.2s ease-in-out infinite}
+@keyframes marker-urgent{50%{box-shadow:0 2px 8px rgba(0,0,0,.35),0 0 10px rgba(var(--pin-rgb),.55)}}
+.scene-markers line.marker-line{opacity:.55;stroke-width:1}
+.marker-dot .core{r:2.4px}.marker-dot .pulse{r:4px}
+@media(prefers-reduced-motion:reduce){.scene-marker.urgent{animation:none}}
