@@ -82,7 +82,38 @@ function researchTech(k){
 const reserves = {easy: 7000, normal: 4500, hard: 2600};
 let reserve, waveDamage;
 const BREAK_SECONDS=8;
-let waveElapsed=0,breakLeft=0;
+let waveElapsed=0,breakLeft=0,die=1;
+let watchGoal=0,botDelay=0,watchDone=false;
+const intensity=()=>wave%9===0?1.9+die*.09:.65+die*.115;
+function waveHud(){
+ $('watch-game').textContent=watchGoal?tr('До моєї гри','Return to my game'):tr('Автогра ▸','Watch autoplay ▸');
+ $('new-game').disabled=!!watchGoal;
+ $('wave-roll').textContent=wave?('⚄ '+die+'/6 · '+(wave%9===0?tr('ШТОРМ','STORM'):tr('Натиск','Pressure'))+' ×'+intensity().toFixed(2)):'';
+ $('wave-roll').hidden=!wave;
+}
+function watchGame(){
+ if(watchGoal){location.reload();return}
+ saveMatch();watchGoal=10+Math.floor(Math.random()*11);reset();
+ cash=5000;
+ for(const k of Object.keys(techs))tech[k]=3;
+ for(const k of ['sam','cruiser','pantsir','dolphin'])purchase(k);
+ purchase('turret',pads[Math.floor(Math.random()*pads.length)]);
+ $('inspection').value='25';$('start').click();ui();
+}
+$('watch-game').onclick=watchGame;
+function botTurn(dt){
+ botDelay-=dt;if(botDelay>0)return;botDelay=.75;
+ const supply=supplyQuote(),urgent=supply.capacity&&supply.stock<=supply.capacity*.35;
+ if(urgent&&supply.amount){$('resupply').click();return}
+ if(hp<100&&(hp<80||breakLeft)&&cash>=repairCost()){repairDeck();return}
+ if(breakLeft&&supply.amount&&supply.stock<supply.capacity*.8){$('resupply').click();return}
+ const affordable=Object.keys(techs).filter(k=>techCost(tech[k])<=rp);
+ if(affordable.length){researchTech(affordable[Math.floor(Math.random()*affordable.length)]);return}
+ if(cash>price(320)+price(12)*20&&units.length<9){
+  const pad=pads.find(p=>!units.some(u=>u.pad===p));
+  const k=Math.random()<.55?'sam':'turret';purchase(k,k==='turret'?pad:null);
+ }
+}
 function showBreak(){
  const banner=$('break-banner');
  banner.hidden=breakLeft<=0;
@@ -230,7 +261,7 @@ function reset(){road.reset();clearFlyby();damageSpots.length=0;breakLeft=waveEl
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
-function ui(){arcadeHud();supplyHud();showBreak();helm();$('phase').dataset.wave=wave;const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?tr("Ⅱ ПАУЗА · ХВИЛЯ ","Ⅱ PAUSED · WAVE ")+wave:buy?tr("● ЗАКУПІВЛЯ","● PROCUREMENT"):live&&breakLeft>0?tr('◷ ПЕРЕРВА','◷ INTERMISSION'):live?tr("● ХВИЛЯ ","● WAVE ")+wave:tr("■ АРКУ ЗАКРИТО","■ ARCH CLOSED");$('hits').textContent=hits+' / 3';$('cash').textContent=cash+tr(" млн ₽"," M RUB");$('rp').textContent=rp+' ⚙';$('hype').textContent=Math.round(hype)+(hype>60?tr(" · ЕФІР"," · ON AIR"):hype>20?tr(" · СЮЖЕТ"," · NEWS"):'');$('victims').textContent=victims;$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+tr(" млн ₽"," M RUB")+(unpaid<1?tr(" · борг"," · debt"):'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
+function ui(){waveHud();arcadeHud();supplyHud();showBreak();helm();$('phase').dataset.wave=wave;const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?tr("Ⅱ ПАУЗА · ХВИЛЯ ","Ⅱ PAUSED · WAVE ")+wave:buy?tr("● ЗАКУПІВЛЯ","● PROCUREMENT"):live&&breakLeft>0?tr('◷ ПЕРЕРВА','◷ INTERMISSION'):live?tr("● ХВИЛЯ ","● WAVE ")+wave:tr("■ АРКУ ЗАКРИТО","■ ARCH CLOSED");$('hits').textContent=hits+' / 3';$('cash').textContent=cash+tr(" млн ₽"," M RUB");$('rp').textContent=rp+' ⚙';$('hype').textContent=Math.round(hype)+(hype>60?tr(" · ЕФІР"," · ON AIR"):hype>20?tr(" · СЮЖЕТ"," · NEWS"):'');$('victims').textContent=victims;$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+tr(" млн ₽"," M RUB")+(unpaid<1?tr(" · борг"," · debt"):'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
  for(const [k,[name,base]] of Object.entries(specs)){const cost=price(base),count=units.filter(u=>u.k===k).length;const detail=k==='sam'?tr('Важкий · весь екран','Heavy · screen-wide'):k==='pantsir'?tr('Компактний · швидкий вогонь зблизька','Compact · rapid short-range fire'):'';button(name+(count?' ×'+count:'')+(detail?'<small>'+detail+'</small>':'')+'<span>'+cost+tr(" млн ₽</span>"," M RUB</span>"),()=>{if(k==='turret'){selectedShip=null;helm();setPlacement(!placing);writeMessage(()=>placing?tr("Оберіть жовтий майданчик на будь-якому прольоті. Повторне натискання скасовує вибір.","Choose a yellow pad on either span. Press the turret button again to cancel."):tr("Розміщення скасовано.","Placement cancelled."))}else purchase(k)},paused||phase==='over'||cash<cost||(k==='turret'&&count===pads.length))}
  for(const channel of [false,true])button(tr("Баржа · ","Barge · ")+(channel?tr("фарватер","channel"):tr("біля краю","edge"))+' ×'+barges.filter(b=>b.channel===channel).length+'<span>'+price(110)+tr(" млн ₽</span>"," M RUB</span>"),()=>buyBarge(channel),paused||phase==='over'||cash<price(110)||barges.filter(b=>b.channel===channel).length>=4);
  if(live){
@@ -303,6 +334,7 @@ function arcadeHud(){
   if(msg.textContent!==text)msg.textContent=text;
   act.hidden=!action;act.textContent=label??'';act.onclick=action??null;
  }
+ if(watchGoal)return order((watchDone?tr('Дистанцію пройдено','Run completed'):phase==='over'?tr('Арка впала','Arch collapsed'):tr('Автогра','Autoplay'))+' · '+wave+'/'+watchGoal+' · '+tr('ракети ','missiles ')+stock+'/'+capacity,tr('До моєї гри','Return to my game'),watchGame);
  if(phase==='over')return order(tr('Арка впала. Хвиля ','Arch down. Wave ')+wave,tr('Нова гра','New game'),confirmNewGame);
  if(paused)return order(tr('Партія на паузі.','Game paused.'),tr('Продовжити ▸','Resume ▸'),toggle);
  if(phase==='buy'){
@@ -346,7 +378,7 @@ function nextWave(){
  }
  signalPenalty=seaCosts=jamLoss=waveVictims=0;arrivals=checks=caught=0;showTraffic();
  waveDamage=0;
- wave++;waveElapsed=0;untilSpawn=0;
+ wave++;die=1+Math.floor(Math.random()*6);waveElapsed=0;untilSpawn=0;
  ui();
 }
 function toggle(){if(phase==='live'){paused=!paused;ui()}}
@@ -355,7 +387,7 @@ function spawn(k){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x
  if(k==='bird'||k==='flamingo'||k==='loaf')y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
  const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.4);const stats={loaf:[3,2.2],baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=gameTargets(k);
  const target=Math.random()<.65?candidates[Math.floor(Math.random()*candidates.length)]:null;
- enemies.push({m,k,y,target,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:stats[0]+Math.floor((wave-1)/4),speed:stats[1]*(1+wave*.018),angle:a});}
+ enemies.push({m,k,y,target,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:Math.max(1,Math.round((stats[0]+Math.floor((wave-1)/4))*(.75+.25*intensity()))),speed:stats[1]*(1+wave*.018),angle:a});}
 function gameTargets(kind){
  return units.filter(u=>(u.k==='cruiser'&&(kind==='baby'||kind==='bird'))||((u.k==='sam'||u.k==='pantsir')&&kind==='bird'));
 }
@@ -399,6 +431,7 @@ function jetStep(dt){
 
 }
 function step(dt){
+ if(watchGoal)botTurn(dt);
  jetStep(dt);
  if(breakLeft>0){
   const elapsed=Math.min(dt,breakLeft);
@@ -419,7 +452,7 @@ function step(dt){
  showSignals();
  moveShips(dt);
  if(Math.floor(time)>elapsed){const loss=Math.min(reserve,blocked*4);reserve-=loss;seaCosts+=loss}
- roadStep(dt);untilSpawn-=dt;if(waveElapsed<=17&&untilSpawn<=0){const pool=['flamingo','flamingo','bird','baby','loaf'];spawn(pool[Math.floor(Math.random()*pool.length)]);untilSpawn=Math.max(.32,1.9/(1+.12*wave))}
+ roadStep(dt);untilSpawn-=dt;if(waveElapsed<=17&&untilSpawn<=0){const pool=['flamingo','flamingo','bird','baby','loaf'];spawn(pool[Math.floor(Math.random()*pool.length)]);untilSpawn=Math.max(.32,1.9/((1+.12*wave)*intensity()))}
  for(const u of units){u.cd-=dt;if(u.cd>0||u.ammo===0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.hp>fx.pendingDamage(e)&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range))){closest=d;target=e}}
  if(flyby?.confused&&u.k==='sam'&&!fx.pendingDamage(flyby)&&world.onScreen(flyby.m.position))target=flyby;
  if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);const damage=specs[u.k][2]*(1+.3*tech.dmg);u.cd=specs[u.k][3]*Math.pow(.85,tech.rate)/unpaid;if(magazine[u.k]){u.ammo--;arcadeHud();supplyHud();fx.launch(u.m,target,damage);continue}target.hp-=damage;const m=new T.Mesh(shotGeo,shotMat);m.position.copy(p);m.position.y+=.9;world.scene.add(m);effects.push({m,to:to.clone(),life:.16})}}
@@ -479,11 +512,11 @@ function step(dt){
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.m.position.lerp(e.to,Math.min(1,dt/e.life));e.life-=dt;if(e.life<=0){world.scene.remove(e.m);effects.splice(i,1)}}
  if(hits<3&&waveElapsed>=17&&(!enemies.length||waveElapsed>=37)){
   for(const e of enemies)e.m.removeFromParent();
-  enemies.length=0;fx.reset();breakLeft=BREAK_SECONDS;ui();
+  enemies.length=0;fx.reset();breakLeft=BREAK_SECONDS;if(watchGoal===wave){watchDone=true;paused=true}ui();
  }
  if(hits===3){world.carryDown(road.patchedMeshes());world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));phase='over';selectedShip=null;setPlacement(false);writeMessage(()=>tr("Третій фламінго обвалив арку. Хвиль протрималися: ","A third flamingo brought down the arch. Waves reached: ")+wave+tr(". Відбито цілей: ",". Targets repelled: ")+score+'.');ui()}}
 function flap(m,t){for(const wing of m.userData.wings||[])wing.rotation.x=wing.scale.z*Math.sin(t*6)*.32}
-function frame(now){const dt=Math.min((now-last)/1000,.08);last=now;if(phase==='live'&&!paused&&!$('restart').open)step(dt);if(selectedShip)ring.position.copy(selectedShip.m.position);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
+function frame(now){const dt=Math.min((now-last)/1000,.08);last=now;if(phase==='live'&&!paused&&!$('restart').open&&!watchDone){step(dt);if(watchGoal&&!paused&&phase==='live')step(dt)};if(selectedShip)ring.position.copy(selectedShip.m.position);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
  $('clock').textContent=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;world.draw(time);updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
 document.addEventListener('siege-language',()=>{
  specs=getSpecs();techs=getTechs();ui();showTraffic();showSignals();
@@ -503,8 +536,9 @@ function unpackEntity(item){
   destination:destination&&new T.Vector3(...destination),oldPoint:oldPoint&&new T.Vector3(...oldPoint),exitPoint:exitPoint&&new T.Vector3(...exitPoint)};
 }
 function saveMatch(){
+ if(watchGoal)return;
  try{
-  const state={waveElapsed,breakLeft,cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught};
+  const state={die,waveElapsed,breakLeft,cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught};
   localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,state,tech,patches:road.patchedMeshes().map(m=>m.position.toArray()),damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss})),difficulty:$('difficulty').value,inspection:$('inspection').value,
    orders:[orders.gps.end,orders.net.end],units:units.map(packEntity),enemies:enemies.map(packEntity),vehicles:vehicles.map(packEntity),
    barges:barges.map(packEntity),flights:fx.snapshot(enemies),camera:world.cameraPosition(),selectedShip:units.indexOf(selectedShip),placing}));
@@ -521,7 +555,7 @@ function restoreMatch(){
  if(!damageSpots.length&&hp<100)damageSpots.push({point:new T.Vector3(0,3.23,0),loss:100-hp});
  for(const pos of data.patches??[])road.repair({point:new T.Vector3(...pos)},time-1);
  for(const site of damageSpots)road.impact(site,time-6);
- waveElapsed=state.waveElapsed??Math.max(0,time-(wave-1)*17);breakLeft=state.breakLeft??0;
+ die=state.die??3;waveElapsed=state.waveElapsed??Math.max(0,time-(wave-1)*17);breakLeft=state.breakLeft??0;
  $('difficulty').value=data.difficulty;$('inspection').value=data.inspection;
  if(phase!=='buy'){for(const s of scouts)s.m.removeFromParent();scouts.length=0}
  Object.assign(tech,data.tech);[orders.gps.end,orders.net.end]=data.orders;

@@ -3,7 +3,7 @@
  <div class="top-left"><span class="mark" aria-hidden="true">◈</span><span class="label">OPERATIONS HQ · SECTOR 07</span></div>
  <div class="top-title"><strong>PINK SIEGE</strong><span>BRIDGE DEFENCE SIMULATOR</span></div>
  <div class="top-status"><button class="lang" type="button" lang="uk">Українська</button><span class="label">MODE</span><span class="chip"><i class="dot" aria-hidden="true"></i><span id="statusMirror">PROCUREMENT</span></span></div>
-<nav class="panel-toggles"><span class="panel-title" data-uk="Панелі" data-en="Panels">Panels</span><button aria-controls="hq-panel" aria-expanded="true">HQ</button><button aria-controls="arsenal-panel" aria-expanded="true">Arsenal</button></nav><button id="new-game" type="button">New game</button></header>
+<nav class="panel-toggles"><span class="panel-title" data-uk="Панелі" data-en="Panels">Panels</span><button aria-controls="hq-panel" aria-expanded="true">HQ</button><button aria-controls="arsenal-panel" aria-expanded="true">Arsenal</button><button type="button" id="watch-game"></button></nav><button id="new-game" type="button">New game</button></header>
 <main>
  <aside id="hq-panel" class="col left"><button type="button" class="fold" aria-controls="hq-panel">Hide HQ ‹</button>
   <section class="panel br">
@@ -43,7 +43,7 @@
  </aside>
  <div class="play-column"><section id="view" class="br br-accent">
   <div class="hud hud-tl"><b><i class="dot" aria-hidden="true"></i>REC</b> CAM 01 / VHS</div>
-  <div class="hud hud-tr">SP ▸ · GRID 50 M</div>
+  <div class="hud wave-roll" id="wave-roll" hidden></div><div class="hud hud-tr">SP ▸ · GRID 50 M</div>
   <div class="helm"><select id="ship-list"></select><button id="course" type="button"></button><span id="course-hint" role="status"></span></div><div id="break-banner" role="status" hidden></div><div class="reticle" aria-hidden="true"></div>
   <div class="hud hud-bl" id="caption">SITE OVERVIEW</div>
   <canvas id="arena-radar" role="img" aria-label="Attacker radar"></canvas>

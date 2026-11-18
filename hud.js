@@ -52,7 +52,7 @@ document.addEventListener('siege-language',()=>{
  for(const item of log.querySelectorAll('[data-uk]'))item.textContent=item.dataset[lang];
  syncPhase();
 });
-for(const restore of document.querySelectorAll('.panel-toggles button')){
+for(const restore of document.querySelectorAll('.panel-toggles button[aria-controls]')){
  const panel=document.getElementById(restore.getAttribute('aria-controls'));
  const fold=panel.querySelector('.fold'),hq=panel.id==='hq-panel';
  const key='pink-siege:'+panel.id;
