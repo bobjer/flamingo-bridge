@@ -200,3 +200,4 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
 .cartoon-rooster{font-size:54px;display:inline-block;vertical-align:middle;margin-right:10px;animation:rooster-hop .48s ease-in-out infinite alternate}@keyframes rooster-hop{to{transform:translateY(-7px) rotate(-12deg)}}@media(prefers-reduced-motion:reduce){.cartoon-rooster{animation:none}}
 .tribute:not([hidden]){display:flex;align-items:center;gap:8px}.tribute .cartoon-rooster{width:clamp(70px,9vw,120px);height:auto;margin:0;filter:drop-shadow(0 3px 3px #23170e88)}
 .wave-roll{right:12px;top:42px;color:#ffce8a;pointer-events:none}.top .panel-toggles{flex-wrap:wrap}.top #watch-game::before{content:none}
+.guest:not([hidden]){position:absolute;z-index:5;top:14%;left:10px;display:flex;align-items:center;background:#241d29eb;border:2px solid #efb65c;border-radius:9px;padding:3px 12px 3px 2px;color:#ffe7ba;pointer-events:none}.guest svg{width:65px;height:74px}

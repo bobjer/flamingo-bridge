@@ -191,7 +191,15 @@ function jet(p){
   rod(p,0x647986,[-1.6,.1,side*.27],[-1.94,.78,side*.46],.16,true);
  }
 }
-const builders = { jet, loaf,barge, sam,pantsir,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
+function drone(p){
+ box(p,ink,0,0,0,.8,.28,.55);
+ for(const x of [-.63,.63])for(const z of [-.7,.7]){
+  rod(p,marine,[0,0,0],[x,.08,z],.085);
+  oval(p,mint,x,.12,z,.48,.035,.13);
+ }
+ oval(p,coral,.42,-.05,0,.12,.11,.13);
+}
+const builders = { drone,jet, loaf,barge, sam,pantsir,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
 export function model(type) {
   const group = new THREE.Group();
   group.name = type;
