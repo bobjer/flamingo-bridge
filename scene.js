@@ -360,6 +360,10 @@ export function landscape(view) {
   heading:()=>controls.getAzimuthalAngle(),
   restoreCamera(p){camera.position.fromArray(p);controls.update();prevDist=camera.position.distanceTo(controls.target)},
   carryDown(objects){for(const m of objects)if(Math.abs(m.position.x)<12)falling.attach(m)},
+  screenPoint(point){const p=point.clone().project(camera);
+   if(Math.abs(p.x)>1||Math.abs(p.y)>1||Math.abs(p.z)>1)return null;
+   return {x:(1+p.x)*view.clientWidth/2,y:(1-p.y)*view.clientHeight/2};
+  },
   onScreen(point){const p=point.clone().project(camera);return Math.abs(p.x)<=1&&Math.abs(p.y)<=1&&Math.abs(p.z)<=1},
   waterPoint(event) { aim(event); return ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), 0), new T.Vector3()); },
   setHits(hits) {

@@ -1,3 +1,4 @@
+import {sceneMarkers} from './scene-markers.js';
 import {arenaRadar} from './radar.js';
 import {tr,writeMessage} from './language.js';
 import {fireworks} from './effects.js';
@@ -209,7 +210,7 @@ function roadStep(dt){
   const v=vehicles[i],a=along(v);
   const hit=v.manure&&!v.stopped&&a>=0;
   if(hit||a>25||(v.stopped&&v.hold<=0)){
-   if(hit){const loss=armored(6);hp-=loss;waveDamage+=loss;hype+=loss;world.scene.remove(v.m);vehicles.splice(i,1);casualties(v.m.position);}
+   if(hit){const loss=damageDeck(6,v.m.position);world.scene.remove(v.m);vehicles.splice(i,1);casualties(v.m.position);}
    else{world.scene.remove(v.m);vehicles.splice(i,1)}
    if(v.stopped)score++;
    ui();
@@ -218,7 +219,7 @@ function roadStep(dt){
  showTraffic();
 }
 function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);m.traverse(o=>{if(o.isMesh)o.castShadow=true});world.scene.add(m);return m}
-function reset(){breakLeft=waveElapsed=0;fx.reset();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
+function reset(){damageSpots.length=0;breakLeft=waveElapsed=0;fx.reset();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
@@ -230,10 +231,56 @@ function ui(){arcadeHud();supplyHud();showBreak();helm();$('phase').dataset.wave
  const patch=repairCost();button(tr("Латати полотно +25%<span>","Patch deck +25%<span>")+patch+tr(" млн ₽</span>"," M RUB</span>"),repairDeck,paused||hp===100||cash<patch)}
  for(const [k,[name,effect]] of Object.entries(techs)){const c=techCost(tech[k]),b=document.createElement('button');b.className='unit';b.innerHTML=name+(tech[k]?tr(" · рів. "," · lvl ")+tech[k]:'')+'<small>'+effect+'</small><span>'+c+' ⚙</span>';b.disabled=paused||phase==='over'||rp<c;b.onclick=()=>researchTech(k);$('tech').append(b)}
  $('start').textContent=buy?tr("Почати облогу →","Start siege →"):live?(paused?tr("Продовжити ▸","Resume ▸"):tr("Пауза Ⅱ","Pause Ⅱ")):tr("Нова зміна ↻","New shift ↻");$('start').disabled=buy&&!units.length;$('pause').disabled=!live;$('pause').textContent=paused?'▸':'Ⅱ';$('caption').textContent=buy?tr("ОГЛЯД ОБ’ЄКТА","SITE OVERVIEW"):live?tr("ВІДБИТО: ","REPELLED: ")+score:tr("ЕФІР ЗАВЕРШЕНО","END OF BROADCAST")}
-function repairDeck(){
- const cost=repairCost();
- if(phase!=='live'||paused||hp>=100||cash<cost)return;
- cash-=cost;hp=Math.min(100,hp+25);ui();
+const damageSpots=[];
+const drawMarkers=sceneMarkers($('view'),world.screenPoint);
+function damageDeck(amount,position){
+ const loss=armored(amount);
+ if(!loss)return 0;
+ const point=new T.Vector3(position.x,3.23,T.MathUtils.clamp(position.z,-2,2));
+ let spot=damageSpots.find(s=>s.point.distanceTo(point)<2.2);
+ if(!spot){spot={point,loss:0};damageSpots.push(spot)}
+ spot.loss+=loss;hp-=loss;waveDamage+=loss;hype+=loss;return loss;
+}
+function patchDeck(spot){
+ if(phase!=='live'||paused||hp>=100||(spot&&!damageSpots.includes(spot)))return;
+ const amount=Math.min(25,spot?.loss??100-hp),cost=price(90*amount/25);
+ if(cash<cost)return;
+ let left=amount;
+ for(const site of spot?[spot]:[...damageSpots]){
+  const fill=Math.min(left,site.loss);site.loss-=fill;left-=fill;
+  if(!site.loss)damageSpots.splice(damageSpots.indexOf(site),1);
+  if(!left)break;
+ }
+ cash-=cost;hp+=amount;ui();
+}
+function repairDeck(){patchDeck(null)}
+function localAmmo(u){
+ const each=Math.max(1,price(12)),missing=magazine[u.k]-u.ammo;
+ const amount=Math.min(8,missing,Math.floor(cash/each));
+ return {amount,cost:(amount||1)*each};
+}
+function refillUnit(u){
+ if(!units.includes(u)||phase!=='live'||paused)return;
+ const {amount,cost}=localAmmo(u);
+ if(!amount)return;
+ u.ammo+=amount;cash-=cost;ui();
+}
+function updateMarkers(){
+ const items=[];
+ if(phase==='live'){
+  const currency=tr(' млн ₽',' M RUB');
+  for(const spot of damageSpots){
+   const amount=Math.min(25,spot.loss),cost=price(90*amount/25);
+   items.push({key:spot,kind:'deck',point:spot.point,label:tr('Латати +','Patch +')+amount+'% · '+cost+currency,disabled:paused||cash<cost,action:()=>patchDeck(spot)});
+  }
+  for(const u of units){
+   const capacity=magazine[u.k];if(!capacity||u.ammo>Math.ceil(capacity*.3))continue;
+   const {amount,cost}=localAmmo(u);
+   const label=specs[u.k][0]+' '+u.ammo+'/'+capacity+' · '+(amount?'+'+amount:tr('Бракує коштів','Low funds'))+' · '+cost+currency;
+   items.push({key:u,kind:'ammo',point:u.m.position,label,disabled:paused||!amount,action:()=>refillUnit(u)});
+  }
+ }
+ drawMarkers(items);
 }
 function arcadeHud(){
  const {capacity,stock,each,amount}=supplyQuote();
@@ -365,7 +412,7 @@ function step(dt){
    const before=e.swing??0;e.swing=(before+dt)%2.6;
    e.m.userData.trident.rotation.z=-1.08*Math.pow(Math.sin(Math.PI*e.swing/2.6),8);
    if(before<1.3&&e.swing>=1.3){
-    const loss=armored(9);hp-=loss;waveDamage+=loss;hype+=loss;
+    const loss=damageDeck(9,p);
     writeMessage(()=>tr("Нептун ударив тризубом по полотну: −","Neptune struck the deck: −")+loss+'%');ui();
    }
    continue;
@@ -392,7 +439,7 @@ function step(dt){
     for(const v of vehicles)v.hold=Math.max(v.hold,4);
     writeMessage(()=>tr("Паляниця розсипалася! Вантажівки стоять 4 секунди.","The loaf burst into crumbs! Trucks stop for 4 seconds."));
    }else if(e.k==='flamingo'){hits=Math.min(3,hits+1);world.setHits(hits);hype+=25;casualties(new T.Vector3())}
-   else{const loss=armored(e.k==='neptune'?23:6);hp-=loss;waveDamage+=loss;hype+=loss;if(loss)casualties(e.m.position)}
+   else{const loss=damageDeck(e.k==='neptune'?23:6,p);if(loss)casualties(e.m.position)}
    world.scene.remove(e.m);enemies.splice(i,1);ui();continue;
   }
   e.m.rotation.y=Math.atan2(-dz,dx);const travel=dt*e.speed;p.x+=dx/d*travel;p.z+=dz/d*travel;
@@ -406,7 +453,7 @@ function step(dt){
  if(hits===3){world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));phase='over';selectedShip=null;setPlacement(false);writeMessage(()=>tr("Третій фламінго обвалив арку. Хвиль протрималися: ","A third flamingo brought down the arch. Waves reached: ")+wave+tr(". Відбито цілей: ",". Targets repelled: ")+score+'.');ui()}}
 function flap(m,t){for(const wing of m.userData.wings||[])wing.rotation.x=wing.scale.z*Math.sin(t*6)*.32}
 function frame(now){const dt=Math.min((now-last)/1000,.08);last=now;if(phase==='live'&&!paused&&!$('restart').open)step(dt);if(selectedShip)ring.position.copy(selectedShip.m.position);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
- $('clock').textContent=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');world.draw(time);drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
+ $('clock').textContent=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');world.draw(time);updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
 document.addEventListener('siege-language',()=>{
  specs=getSpecs();techs=getTechs();ui();showTraffic();showSignals();
 });
@@ -427,7 +474,7 @@ function unpackEntity(item){
 function saveMatch(){
  try{
   const state={waveElapsed,breakLeft,cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught};
-  localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,state,tech,difficulty:$('difficulty').value,inspection:$('inspection').value,
+  localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,state,tech,damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss})),difficulty:$('difficulty').value,inspection:$('inspection').value,
    orders:[orders.gps.end,orders.net.end],units:units.map(packEntity),enemies:enemies.map(packEntity),vehicles:vehicles.map(packEntity),
    barges:barges.map(packEntity),flights:fx.snapshot(enemies),camera:world.cameraPosition(),selectedShip:units.indexOf(selectedShip),placing}));
  }catch(err){console.warn('Could not save match',err)}
@@ -439,6 +486,8 @@ function restoreMatch(){
  if(!Object.hasOwn(reserves,data.difficulty)||!['buy','live','over'].includes(state.phase)||!Number.isInteger(state.wave))return;
  for(const value of Object.values({...state,phase:0}))if(!Number.isFinite(value))return;
  ({cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught}=state);
+ for(const s of data.damageSpots??[])damageSpots.push({point:new T.Vector3(...s.point),loss:s.loss});
+ if(!damageSpots.length&&hp<100)damageSpots.push({point:new T.Vector3(0,3.23,0),loss:100-hp});
  waveElapsed=state.waveElapsed??Math.max(0,time-(wave-1)*17);breakLeft=state.breakLeft??0;
  $('difficulty').value=data.difficulty;$('inspection').value=data.inspection;
  if(phase!=='buy'){for(const s of scouts)s.m.removeFromParent();scouts.length=0}
