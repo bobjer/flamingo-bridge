@@ -371,7 +371,7 @@ export function landscape(view) {
    if (!hits) { falling.position.y = 0; falling.rotation.z = 0; }
    span.scale.y = 1 - .035 * hits;
   },
-  draw(gameTime=0) {
+  draw(gameTime=0,trafficTime=0,smoke=false) {
    const angle=2*Math.PI*gameTime/120,altitude=Math.cos(angle);
    const day=T.MathUtils.smoothstep(altitude,-.32,.6),dusk=1-Math.min(1,Math.abs(altitude)*3);
    sun.position.set(35*Math.cos(angle),13+40*Math.abs(altitude),46+20*Math.sin(angle));
@@ -397,6 +397,11 @@ export function landscape(view) {
    prevDist = dist;
    // sea haze swallows the far ends of the viaduct; it thins out from high orbit so the whole sea is visible
    scene.fog.density = .0019 * Math.min(1, 140 / dist) ** 1.6;
+   scene.fog.density += smoke ? .028 : 0;
+   const passage=trafficTime*.052;
+   boat.position.x=2.4;
+   boat.position.z=32*Math.cos(passage);
+   boat.rotation.y=Math.sin(passage)>=0?Math.PI/2:-Math.PI/2;
    boat.position.y = .08 + Math.sin(performance.now() * .0012) * .04;
    boat.rotation.z = Math.sin(performance.now() * .0009) * .05;
    water.material.uniforms.time.value = performance.now() * .00035;
