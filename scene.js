@@ -1,6 +1,8 @@
 import * as T from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
+import {Water} from 'three/addons/objects/Water.js';
+import {Sky} from 'three/addons/objects/Sky.js';
 export function landscape(view){
  const renderer=new T.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));view.prepend(renderer.domElement);
  const scene=new T.Scene();scene.background=new T.Color(0xffd6c4);scene.fog=new T.FogExp2(0xfbc9bd,.009);
@@ -14,7 +16,7 @@ export function landscape(view){
  const white=0xf1ddd0,shadow=0xb89591,rail=0xf5e3cc;
  box(0x605e62,0,2.9,0,110,.52,4.8);for(let x=-53;x<54;x+=2.8)box(rail,x,3.17,0,1.3,.015,.08);
  for(const z of [-2.35,2.35]){box(shadow,0,3.58,z,110,.12,.12);for(let x=-54;x<55;x+=2)box(white,x,3.38,z,.09,.55,.09)}
- for(let x=-48;x<=48;x+=8){box(0x989696,x,1.25,0,1.25,3,4.6);box(0xbcb4a4,x,.12,0,2.3,.75,5.6)}
+ for(const x of [-48,-40,-32,-24,-18,-12,12,18,24,32,40,48]){box(0x989696,x,1.25,0,1.25,3,4.6);box(0xbcb4a4,x,.12,0,2.3,.75,5.6)}
  function arch(x){return 3.25+7.3*(1-(x/12)**2)}
  for(let x=-12;x<12;x+=1.5){for(const z of [-2.2,2.2]){
  beam(white,[x,arch(x),z],[x+1.5,arch(x+1.5),z],.35);
@@ -22,11 +24,40 @@ export function landscape(view){
  beam(white,[x,3.2,z],[x,arch(x),z],.12);
  beam(white,[x,arch(x)-.65,z],[x+1.5,arch(x+1.5),z],.12)}
  beam(white,[x,arch(x),-2.2],[x,arch(x),2.2],.22);beam(shadow,[x,arch(x),-2.2],[x+1.5,arch(x+1.5),2.2],.13)}
- for(let i=0;i<76;i++){let a=i*.39,r=65+rand()*47;solid(new T.ConeGeometry(10+rand()*14,5+rand()*12,5),i%2?0x988f9a:0xa09da7,Math.cos(a)*r,0,Math.sin(a)*r)}
- const sea=new T.PlaneGeometry(410,410,140,140).rotateX(-Math.PI/2).toNonIndexed(),pos=sea.attributes.position,colors=[];for(let i=0;i<pos.count;i+=3){let color=new T.Color(0x48808c).lerp(new T.Color(0x83aeb3),rand()*.65);for(let j=0;j<3;j++)colors.push(color.r,color.g,color.b)}sea.setAttribute('color',new T.Float32BufferAttribute(colors,3));scene.add(new T.Mesh(sea,new T.MeshBasicMaterial({vertexColors:true})));
- for(let i=0;i<1500;i++)box(i%4?0x86aeb1:0xc7c4b4,(rand()-.5)*145,.02,(rand()-.5)*145,rand()*1.7+.1,.01,rand()*.09+.02)
+ // Low coastal bluffs leave the middle of the span open to shipping.
+ for(const side of [-1,1]){
+  const bluff=new T.SphereGeometry(1,64,22);
+  bluff.scale(30,2.4,20);
+  solid(bluff,0x736e50,side*46,-.45,1);
+ }
+ for(let i=0;i<48;i++){const a=i*.39,r=85+rand()*27;
+  const hill=new T.SphereGeometry(1,24,12);hill.scale(13+rand()*16,2+rand()*5,10);
+  solid(hill,0x747e73,Math.cos(a)*r,-.6,Math.sin(a)*r);
+ }
+ const sky=new Sky();sky.scale.setScalar(240);scene.add(sky);
+ const skySun=new T.Vector3(-.86,.35,-.35).normalize();
+ const su=sky.material.uniforms;su.sunPosition.value.copy(skySun);su.turbidity.value=3;su.rayleigh.value=1.2;
+ renderer.toneMapping=T.ACESFilmicToneMapping;
+ const size=128,data=new Uint8Array(size*size*4);
+ for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+  const u=x*Math.PI*2/size,v=y*Math.PI*2/size,i=(y*size+x)*4;
+  data[i]=128+45*Math.cos(3*u+Math.sin(v)*2)+23*Math.cos(11*u+4*v);
+  data[i+1]=128+50*Math.sin(5*v+Math.cos(u)*2)+21*Math.sin(7*v-3*u);
+  data[i+2]=235;data[i+3]=255;
+ }
+ const normals=new T.DataTexture(data,size,size);normals.wrapS=normals.wrapT=T.RepeatWrapping;normals.magFilter=T.LinearFilter;normals.minFilter=T.LinearFilter;normals.needsUpdate=true;
+ const water=new Water(new T.PlaneGeometry(410,410),{textureWidth:512,textureHeight:512,waterNormals:normals,sunDirection:skySun,sunColor:0xffecce,waterColor:0x254f53,distortionScale:2.8});
+ water.rotation.x=-Math.PI/2;water.material.uniforms.size.value=6;scene.add(water);
  for(const [color,geos] of parts){scene.add(new T.Mesh(mergeGeometries(geos),new T.MeshStandardMaterial({color,flatShading:true})));geos.forEach(g=>g.dispose())}
  new ResizeObserver(()=>{renderer.setSize(view.clientWidth,view.clientHeight,false);camera.aspect=view.clientWidth/view.clientHeight;camera.updateProjectionMatrix()}).observe(view);
  function zoom(f){let off=camera.position.clone().sub(controls.target);camera.position.copy(controls.target).add(off.setLength(T.MathUtils.clamp(off.length()*f,14,59)))}
- return {scene,zoom,draw(){controls.update();renderer.render(scene,camera)}}
+ const ray=new T.Raycaster();
+ function pick(event,groups){
+  const r=renderer.domElement.getBoundingClientRect();
+  ray.setFromCamera(new T.Vector2(2*(event.clientX-r.left)/r.width-1,1-2*(event.clientY-r.top)/r.height),camera);
+  let hit=ray.intersectObjects(groups,true)[0]?.object;
+  while(hit&&!groups.includes(hit))hit=hit.parent;
+  return hit;
+ }
+ return {scene,zoom,pick,draw(){water.material.uniforms.time.value=performance.now()*.00035;controls.update();renderer.render(scene,camera)}}
 }

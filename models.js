@@ -125,7 +125,9 @@ function truck(p) {
   box(p,0x65969c,.81,1,0,.72,.32,1.035);
   box(p,gold,.76,1.23,0,.82,.12,1.08);
   box(p,marine,-.47,.72,0,1.55,.55,1.12);
-  box(p,0x84866b,-.47,1.03,0,1.49,.34,1.05);
+  for(const z of [-.53,.53])box(p,marine,-.47,.99,z,1.55,.36,.065);
+  for(const x of [-1.22,.28])box(p,marine,x,.99,0,.065,.36,1.12);
+  for(let i=0;i<11;i++)oval(p,i%3===0?0x483724:0x604730,-.99+(i%4)*.34,1.01+Math.sin(i)*.05,(Math.floor(i/4)-1)*.27,.32,.19,.23);
   for(const s of [-1,1]) for(const x of [-.82,.78]) rod(p,ink,[x,.3,s*.45],[x,.3,s*.63],.28);
 }
 function neptune(p) {
@@ -148,7 +150,14 @@ function neptune(p) {
     rod(p,gold,[.3,2.55,.81+dz],[.3,2.98,.81+dz],.063,true);
   }
 }
-const builders = { sam,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
+function barge(p){
+  box(p,0x60453c,0,0,0,4.5,.5,1.45);
+  for(const z of [-.68,.68])box(p,0x78574a,0,.39,z,4.5,.4,.09);
+  for(const x of [-2.2,2.2])box(p,0x78574a,x,.39,0,.1,.4,1.4);
+  box(p,0x978981,-1.55,.55,0,.73,.65,.9);
+  rod(p,ink,[-1.56,.8,0],[-1.56,1.45,0],.045);
+}
+const builders = { barge, sam,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
 export function model(type) {
   const group = new THREE.Group();
   group.name = type;
