@@ -1,3 +1,5 @@
+import roosterUrl from './rooster.svg';
+import {ditching} from './ditching.js';
 import {roadArt} from './road-art.js';
 import {sceneMarkers} from './scene-markers.js';
 import {arenaRadar} from './radar.js';
@@ -376,17 +378,28 @@ function destination(e,offline){
 const shotGeo=new T.SphereGeometry(.12,5,4),shotMat=new T.MeshBasicMaterial({color:0xffee8e});
 function showSignals(){ $('signals').textContent=Object.values(orders).filter(o=>o.end>time).map(o=>o.name+tr(" вимк. · "," off · ")+Math.ceil(o.end-time)+tr(" с"," s")).join(' / ');
 }
-let flyby=null,tributeUntil=0;
+const crashArt=ditching(world.scene);
+let flyby=null,tributeUntil=0,tributeDelay=0;
 const tribute=document.createElement('div');tribute.className='tribute';tribute.hidden=true;
-tribute.innerHTML='<span class="cartoon-rooster" aria-hidden="true">🐓</span><span>«вечного полета братья»</span>';$('view').append(tribute);
-function clearFlyby(){flyby?.m.removeFromParent();flyby=null;tributeUntil=0;tribute.hidden=true}
+tribute.innerHTML='<img class="cartoon-rooster" alt="" src="'+roosterUrl+'"><span>«вечного полета братья»</span>';$('view').append(tribute);
+function clearFlyby(){crashArt.reset();tributeDelay=0;flyby?.m.removeFromParent();flyby=null;tributeUntil=0;tribute.hidden=true}
 function jetStep(dt){
+ crashArt.tick(dt);
+ if(tributeDelay>0){tributeDelay-=dt;if(tributeDelay<=0)tributeUntil=time+4}
  if(!flyby)return;
- const j=flyby;j.m.position.x+=dt*6;
- if(j.hp<=0){j.m.removeFromParent();flyby=null;tributeUntil=time+4;tribute.hidden=false}
- else if(j.m.position.x>30){j.m.removeFromParent();flyby=null}
+ const j=flyby,p=j.m.position;
+ if(j.hp>0){p.x+=dt*6;if(p.x>30){j.m.removeFromParent();flyby=null}return}
+ if(!j.fall){j.fall={start:p.clone(),age:0,smoke:0,end:new T.Vector3(T.MathUtils.clamp(p.x+8,-10,10),.08,11)};j.confused=false}
+ const f=j.fall;f.age+=dt;
+ const t=Math.min(1,f.age/2.4);
+ p.lerpVectors(f.start,f.end,t);p.y=T.MathUtils.lerp(f.start.y,f.end.y,t*t);
+ j.m.rotation.set(t*1.2,-Math.atan2(f.end.z-f.start.z,f.end.x-f.start.x),-t*.95,'YXZ');
+ f.smoke-=dt;if(f.smoke<=0){crashArt.wake(p);f.smoke=.065}
+ if(t===1){crashArt.splash(p);j.m.removeFromParent();flyby=null;tributeDelay=.65}
+
 }
 function step(dt){
+ jetStep(dt);
  if(breakLeft>0){
   const elapsed=Math.min(dt,breakLeft);
   for(const order of Object.values(orders))if(order.end>time)order.end+=elapsed;
@@ -396,7 +409,7 @@ function step(dt){
   return;
  }
  waveElapsed+=dt;
- fx.tick(dt,flyby?[...enemies,flyby]:enemies);jetStep(dt);
+ fx.tick(dt,flyby?[...enemies,flyby]:enemies);
  const blocked=barges.filter(b=>b.channel).length;
  const before=time,elapsed=Math.floor(time);time+=dt;
  for(const o of Object.values(orders)){
