@@ -477,7 +477,19 @@ function aircraftStep(dt){
   const speed=j.hp>0?25:7;
   rotors[0].rotation.y+=dt*speed;rotors[1].rotation.z+=dt*speed*1.7;
  }
- if(j.hp>0){p.x+=dt*(rotors?3.6:6);if(p.x>30){j.m.removeFromParent();flyby=null}return}
+ if(j.hp>0){
+  p.x+=dt*(rotors?3.6:6);
+  if(p.x>30){j.m.removeFromParent();flyby=null;return}
+  if(!breakLeft&&time>=(j.nextAssist??0)){
+   const drone=enemies.find(e=>e.k==='drone'&&e.hp>fx.pendingDamage(e)&&p.distanceToSquared(e.m.position)<225);
+   if(drone){
+    fx.tracer(p.clone(),drone.m.position.clone());
+    drone.hp=0;
+    j.nextAssist=time+2.5;
+   }
+  }
+  return;
+ }
  if(!j.fall){j.fall={start:p.clone(),age:0,smoke:0,end:new T.Vector3(T.MathUtils.clamp(p.x+8,-10,10),.08,11)};j.confused=false}
  const f=j.fall;f.age+=dt;
  const t=Math.min(1,f.age/2.4);
