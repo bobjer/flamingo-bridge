@@ -412,7 +412,7 @@ $('pause').onclick=toggle;$('start').onclick=()=>{if(phase==='over')confirmNewGa
 function spawn(k){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x=Math.cos(a)*r,z=Math.sin(a)*r,y=.35;if(k==='neptune'){z=Math.max(11,Math.abs(z));x*=.48}
  if(k==='drone'||k==='bird'||k==='flamingo'||k==='loaf')y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
  const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.4);const stats={drone:[3,2.7],loaf:[3,2.2],baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=gameTargets(k);
- const target=Math.random()<.65?candidates[Math.floor(Math.random()*candidates.length)]:null;
+ const target=Math.random()<(k==='baby'?.82:.65)?candidates[Math.floor(Math.random()*candidates.length)]:null;
  enemies.push({m,k,y,target,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:Math.max(1,Math.round((stats[0]+Math.floor((wave-1)/4))*(.75+.25*intensity()))),speed:stats[1]*(1+wave*.018),angle:a});}
 function gameTargets(kind){
  return units.filter(u=>(u.k==='cruiser'&&(kind==='baby'||kind==='bird'))||((u.k==='sam'||u.k==='pantsir')&&kind==='bird'));
@@ -440,7 +440,29 @@ const crashArt=ditching(world.scene);
 let flyby=null,tributeUntil=0,tributeDelay=0;
 const tribute=document.createElement('div');tribute.className='tribute';tribute.hidden=true;
 tribute.innerHTML='<img class="cartoon-rooster" alt="" src="'+roosterUrl+'"><span>«вечного полета братья»</span>';$('view').append(tribute);
-function clearFlyby(){crashArt.reset();tributeDelay=0;flyby?.m.removeFromParent();flyby=null;tributeUntil=0;tribute.hidden=true}
+const sinking=[];
+const sinkingBanner=document.createElement('div');
+sinkingBanner.className='tribute sinking-banner';sinkingBanner.hidden=true;
+sinkingBanner.textContent='отрицатєльноє всплитіє';$('view').append(sinkingBanner);
+let sinkingBannerEnd=0;
+function removeUnit(u){
+ units.splice(units.indexOf(u),1);
+ if(u.k!=='cruiser'){u.m.removeFromParent();return}
+ sinking.push({mesh:u.m,startY:u.m.position.y,age:0});
+ fx.burst(u.m.position);
+ sinkingBannerEnd=time+4;sinkingBanner.hidden=false;
+}
+function sinkStep(dt){
+ sinkingBanner.hidden=time>=sinkingBannerEnd;
+ for(let i=sinking.length-1;i>=0;i--){
+  const wreck=sinking[i];wreck.age+=dt;
+  const t=Math.min(1,wreck.age/3);
+  wreck.mesh.rotation.z=-.65*t;
+  wreck.mesh.position.y=wreck.startY-4*t*t;
+  if(t===1){wreck.mesh.removeFromParent();sinking.splice(i,1)}
+ }
+}
+function clearFlyby(){for(const wreck of sinking)wreck.mesh.removeFromParent();sinking.length=0;sinkingBannerEnd=0;sinkingBanner.hidden=true;crashArt.reset();tributeDelay=0;flyby?.m.removeFromParent();flyby=null;tributeUntil=0;tribute.hidden=true}
 function aircraftStep(dt){
  crashArt.tick(dt);
  if(tributeDelay>0){tributeDelay-=dt;if(tributeDelay<=0)tributeUntil=time+4}
@@ -474,7 +496,7 @@ function guestStep(dt){
  guest.hidden=time>=guestUntil;
  if(incoming&&(incoming.hp<=0||!units.includes(incoming.unit))){
   if(incoming.hp<=0&&units.includes(incoming.unit)&&--incoming.unit.hull<=0){
-   incoming.unit.m.removeFromParent();units.splice(units.indexOf(incoming.unit),1);ui();
+   removeUnit(incoming.unit);ui();
   }
   incoming=null;
  }
@@ -502,7 +524,7 @@ function advanceTraffic(before,after){
 }
 function step(dt){
  if(autoplay)botTurn(dt);
- aircraftStep(dt);
+ sinkStep(dt);aircraftStep(dt);
  if(breakLeft>0){
   const elapsed=Math.min(dt,breakLeft);
   for(const order of Object.values(orders))if(order!==orders.smoke&&order.end>time)order.end+=elapsed;
@@ -575,6 +597,7 @@ function step(dt){
    continue;
   }
   if(e.k==='baby'&&e.hp>0&&tankers.collide(p,time)){
+   fx.burst(p);crashArt.splash(p);
    e.m.removeFromParent();enemies.splice(i,1);
    writeMessage(()=>tr('Пупс врізався в танкер. Нафтова пляма зникне за дві доби.','A baby hit an oil tanker. The slick will clear in two days.'));
    continue;
@@ -584,7 +607,7 @@ function step(dt){
    if(e.hp<=0||intercepted){score++;reward(e.k)}
    else if(e.target){
     const u=e.target;
-    if(--u.hull===0){world.scene.remove(u.m);units.splice(units.indexOf(u),1)}
+    if(units.includes(u)&&--u.hull<=0)removeUnit(u);
     writeMessage(()=>getSpecs()[u.k][0]+(u.hull?tr(" · міцність "," · hull ")+u.hull:tr(" вибув із ладу"," out of action")));
    }else if(e.k==='loaf'){
     fx.crumbs(p);damageDeck(8,p);
@@ -628,7 +651,7 @@ function saveMatch(){
  try{
   const state={spent,partialLedger,guestWave,die,waveElapsed,breakLeft,cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught};
   localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,state,tech,patches:road.patchedMeshes().map(m=>m.position.toArray()),damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss})),difficulty:$('difficulty').value,inspection:$('inspection').value,
-   trafficTime,oilSlicks:tankers.snapshot(),orders:[orders.gps.end,orders.net.end,orders.smoke.end],units:units.map(packEntity),enemies:enemies.map(packEntity),vehicles:vehicles.map(packEntity),
+   trafficTime,oilSlicks:tankers.snapshot(),lostTankers:tankers.losses(),orders:[orders.gps.end,orders.net.end,orders.smoke.end],units:units.map(packEntity),enemies:enemies.map(packEntity),vehicles:vehicles.map(packEntity),
    barges:barges.map(packEntity),flights:fx.snapshot(enemies),camera:world.cameraPosition(),selectedShip:units.indexOf(selectedShip),placing}));
  }catch(err){console.warn('Could not save match',err)}
 }
@@ -651,7 +674,7 @@ function restoreMatch(){
  guestWave=state.guestWave??wave;die=state.die??3;waveElapsed=state.waveElapsed??Math.max(0,time-(wave-1)*17);breakLeft=state.breakLeft??0;
  $('difficulty').value=data.difficulty;$('inspection').value=data.inspection;
  if(phase!=='buy'){for(const s of scouts)s.m.removeFromParent();scouts.length=0}
- for(const k of Object.keys(techs)){const level=data.tech?.[k];tech[k]=Number.isSafeInteger(level)&&level>=0&&level<1000?level:0}[orders.gps.end,orders.net.end,orders.smoke.end=0]=data.orders;trafficTime=Number.isFinite(data.trafficTime)?data.trafficTime:time;tankers.move(trafficTime);tankers.restore(data.oilSlicks);
+ for(const k of Object.keys(techs)){const level=data.tech?.[k];tech[k]=Number.isSafeInteger(level)&&level>=0&&level<1000?level:0}[orders.gps.end,orders.net.end,orders.smoke.end=0]=data.orders;trafficTime=Number.isFinite(data.trafficTime)?data.trafficTime:time;tankers.move(trafficTime);tankers.restore(data.oilSlicks,data.lostTankers);
  for(const [list,saved] of [[units,data.units],[enemies,data.enemies],[vehicles,data.vehicles],[barges,data.barges]]){
   for(const item of saved)list.push(unpackEntity(item));
  }

@@ -6,7 +6,7 @@ export function tankerTraffic(scene) {
  const steel = new T.MeshStandardMaterial({color:0x303b42});
  const deck = new T.MeshStandardMaterial({color:0xab5340});
  const white = new T.MeshStandardMaterial({color:0xeae2cf});
- const tanks = [-3.2, 5.4].map((lane,index) => {
+ const tanks = [-3.2, 5.4, -6.3, 2.1].map((lane,index) => {
   const ship = new T.Group();
   function box(x,y,z,w,h,l,material) {
    const mesh = new T.Mesh(new T.BoxGeometry(w,h,l),material);
@@ -19,7 +19,7 @@ export function tankerTraffic(scene) {
   box(.42,1.46,-2.55,.26,.64,.27,deck);
   box(0,.69,.4,.13,.16,3.9,white);
   for(const z of [-.85,.5,1.85])box(0,.65,z,1.45,.14,.35,deck);
-  ship.position.x=lane; ship.rotation.y=index*Math.PI; scene.add(ship);
+  ship.position.x=lane; ship.rotation.y=(index%2)*Math.PI; scene.add(ship);
   return ship;
  });
  const slicks=[];
@@ -40,10 +40,17 @@ export function tankerTraffic(scene) {
  }
  return {
   move(clock){
-   tanks.forEach((ship,i)=>{ship.position.z=(((clock*.92+i*42+29)%84)-42)*(i?-1:1)});
+   tanks.forEach((ship,i)=>{
+    const progress=clock*1.18+i*13+20;
+    ship.userData.trip=Math.floor(progress/52);
+    ship.visible=ship.userData.trip!==ship.userData.lostTrip;
+    ship.position.z=((progress%52)-26)*(i%2?-1:1);
+   });
   },
   collide(p,time){
-   if(!tanks.some(({position:q})=>Math.abs(q.x-p.x)<1.05&&Math.abs(q.z-p.z)<3.1))return false;
+   const ship=tanks.find(s=>s.visible&&Math.abs(s.position.x-p.x)<1.35&&Math.abs(s.position.z-p.z)<3.4);
+   if(!ship)return false;
+   ship.userData.lostTrip=ship.userData.trip;ship.visible=false;
    add(p.x,p.z,time);return true;
   },
   draw(time){
@@ -56,7 +63,9 @@ export function tankerTraffic(scene) {
    }
   },
   snapshot(){return slicks.map(({mesh,start})=>[mesh.position.x,mesh.position.z,start])},
-  restore(rows=[]){
+  losses(){return tanks.map(s=>s.userData.lostTrip??null)},
+  restore(rows=[],losses=[]){
+   tanks.forEach((s,i)=>{s.userData.lostTrip=losses[i]??-1;s.visible=s.userData.trip!==s.userData.lostTrip});
    while(slicks.length)remove(slicks.length-1);
    for(const row of rows)if(Array.isArray(row)&&row.length===3&&row.every(Number.isFinite))add(...row);
   }
