@@ -3,6 +3,7 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {Water} from 'three/addons/objects/Water.js';
 import {Sky} from 'three/addons/objects/Sky.js';
+import {buildLand, LANDFALL, LANDFALL_Y} from './terrain.js';
 
 const MIN_DIST = 14, MAX_DIST = 3500;
 
@@ -60,7 +61,7 @@ function waterNormals(renderer) {
 
 export function landscape(view) {
  const renderer = new T.WebGLRenderer({antialias: true, logarithmicDepthBuffer: true});
- renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
+ renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
  renderer.toneMapping = T.ACESFilmicToneMapping;
  renderer.toneMappingExposure = .42;
  renderer.shadowMap.enabled = true;
@@ -75,6 +76,7 @@ export function landscape(view) {
  const camera = new T.PerspectiveCamera(42, 1, .15, 60000);
  camera.position.set(40, 20, 52);
  // Pan is off and the target is fixed: the bridge is always in the centre of the view.
+ camera.layers.enable(1); // land (see terrain.js)
  const controls = new OrbitControls(camera, renderer.domElement);
  controls.target.set(0, 5, 0);
  controls.enablePan = false;
@@ -96,7 +98,7 @@ export function landscape(view) {
  su.mieDirectionalG.value = .85;
  const pmrem = new T.PMREMGenerator(renderer);
  scene.environment = pmrem.fromScene(sky).texture;
- scene.environmentIntensity = .9;
+ scene.environmentIntensity = .25;
  pmrem.dispose();
 
 // Visible sky: clear photographic gradient, deep blue at the zenith, pale haze at the horizon.
@@ -137,9 +139,6 @@ export function landscape(view) {
   steel: {color: 0x8c9296, roughness: .5, metalness: .7},
   sleeper: {color: 0x5b5651, roughness: .95},
   fender: {color: 0xe9e7e0, roughness: .85, map: concrete},
-  sand: {color: 0x9a8a60, roughness: 1},
-  grass: {color: 0x5a6a3c, roughness: 1},
-  haze: {color: 0x55705f, roughness: 1},
   lamp: {color: 0xdfe4e6, roughness: .4, metalness: .4}
  };
  const scenery = new Map(), steel = new Map();
@@ -221,24 +220,64 @@ export function landscape(view) {
   box('concrete', x, .08, -6, 2.4, .8, 4.6);
  }
 
- // --- coast ---
- for (const side of [-1, 1]) {
-  const bluff = new T.SphereGeometry(1, 48, 20);
-  bluff.scale(30, 2.4, 20);
-  solid(bluff, 'sand', side * 46, -.45, 1);
-  const turf = new T.SphereGeometry(1, 40, 14);
-  turf.scale(24, 1.1, 14);
-  solid(turf, 'grass', side * 48, .55, 1);
+ // --- viaduct: low road and rail spans from the arch section out to the far shores (instanced) ---
+ const SPANS = 20, L = (LANDFALL - 55) / SPANS;
+ const deckTop = x => T.MathUtils.lerp(3.16, LANDFALL_Y, T.MathUtils.smoothstep(Math.abs(x), 55, LANDFALL));
+ const module = build => { const m = new Map(); parts = m; build(); parts = scenery; return m; };
+ const spanParts = module(() => { // one span, deck top at y = 0
+  box('asphalt', 0, -.26, 0, L, .52, 4.8);
+  box('shade', 0, -.61, 0, L, .22, 4.9);
+  for (let x = -L / 2 + .7; x < L / 2; x += 2.8) box('line', x, .01, 0, 1.3, .015, .08);
+  for (const z of [-1.95, 1.95]) box('line', 0, .01, z, L, .015, .06);
+  for (const z of [-2.35, 2.35]) {
+   box('shade', 0, .42, z, L, .1, .1);
+   box('shade', 0, .22, z, L, .05, .05);
+   for (let x = -L / 2; x < L / 2; x += 2) box('white', x, .22, z, .08, .55, .08);
+   beam('lamp', [0, .04, z], [0, 2.6, z], .1);
+   beam('lamp', [0, 2.6, z], [0, 2.72, z - Math.sign(z) * .55], .07);
+  }
+  box('railbed', 0, -.31, -6, L, .52, 3.6);
+  box('shade', 0, -.64, -6, L, .22, 3.7);
+  for (const z of [-6.62, -5.38]) box('steel', 0, .02, z, L, .13, .1);
+  for (let x = -L / 2 + .3; x < L / 2; x += .65) box('sleeper', x, -.04, -6, .15, .09, 1.65);
+ });
+ const columnParts = module(() => { // unit-height columns, scaled per pier
+  for (const z of [-1.4, 1.4]) column('concrete', 0, .5, z, .85, 1, 1, 1.4);
+  for (const z of [-6.9, -5.1]) column('concrete', 0, .5, z, .8, .95, 1, 1.1);
+ });
+ const capParts = module(() => {
+  box('concreteDark', 0, -.9, 0, 1.5, .4, 5.4);
+  box('concreteDark', 0, -.95, -6, 1.4, .4, 4.1);
+ });
+ const footParts = module(() => {
+  box('concrete', 0, .08, 0, 2.3, .8, 5.6);
+  box('concrete', 0, .08, -6, 2.2, .8, 4.4);
+  for (const z of [-3, 3, -8.3]) solid(new T.CylinderGeometry(.5, .5, .8, 12), 'fender', 0, .06, z);
+ });
+ const spanM = [], colM = [], capM = [], footM = [], ZR = new T.Vector3(0, 0, 1);
+ for (const side of [-1, 1]) for (let k = 0; k < SPANS; k++) {
+  const xc = side * (55 + L * (k + .5)), xp = side * (55 + L * (k + 1)), yp = deckTop(xp);
+  const tilt = Math.atan2(deckTop(xc + L / 2) - deckTop(xc - L / 2), L);
+  spanM.push(new T.Matrix4().compose(new T.Vector3(xc, deckTop(xc), 0), new T.Quaternion().setFromAxisAngle(ZR, tilt), ONE));
+  colM.push(new T.Matrix4().compose(new T.Vector3(xp, -.5, 0), Q, new T.Vector3(1, yp - .6, 1)));
+  capM.push(new T.Matrix4().makeTranslation(xp, yp, 0));
+  footM.push(new T.Matrix4().makeTranslation(xp, 0, 0));
  }
- for (let i = 0; i < 26; i++) { // low far shoreline, hazed by fog
-  const side = i % 2 ? 1 : -1, hill = new T.SphereGeometry(1, 20, 8);
-  hill.scale(30 + rand() * 60, .5 + rand() * 1.2, 12 + rand() * 12);
-  solid(hill, 'haze', side * (95 + rand() * 260), -.5, (rand() - .5) * 120);
+ const mats = {}, material = key => (mats[key] ??= new T.MeshStandardMaterial(palette[key]));
+ for (const [partsMap, list] of [[spanParts, spanM], [columnParts, colM], [capParts, capM], [footParts, footM]]) {
+  for (const [key, geos] of partsMap) {
+   const m = new T.InstancedMesh(mergeGeometries(geos), material(key), list.length);
+   list.forEach((mt, i) => m.setMatrixAt(i, mt));
+   m.computeBoundingSphere();
+   m.castShadow = m.receiveShadow = true;
+   scene.add(m);
+   geos.forEach(g => g.dispose());
+  }
  }
 
  for (const [collection, parent] of [[scenery, scene], [steel, null]]) {
   for (const [key, geos] of collection) {
-   const m = new T.Mesh(mergeGeometries(geos), new T.MeshStandardMaterial(palette[key]));
+   const m = new T.Mesh(mergeGeometries(geos), material(key));
    m.castShadow = m.receiveShadow = true;
    (parent || (collection.group ??= new T.Group())).add(m);
    geos.forEach(g => g.dispose());
@@ -251,12 +290,14 @@ export function landscape(view) {
  railway.position.z = -6;
  scene.add(railway);
 
+ const land = buildLand(scene);
+
  // --- water ---
  const water = new Water(new T.PlaneGeometry(60000, 60000), {
   textureWidth: 512, textureHeight: 512,
   waterNormals: waterNormals(renderer),
   sunDirection: skySun, sunColor: 0xb9a98a,
-  waterColor: 0x0a7088, distortionScale: 2.4, fog: true
+  waterColor: 0x2aa3ad, distortionScale: 2.4, fog: true
  });
  water.rotation.x = -Math.PI / 2;
  water.material.uniforms.size.value = 14;
@@ -266,7 +307,7 @@ export function landscape(view) {
  const buoyGeo = new T.CylinderGeometry(.16, .22, .45, 8), buoyMat = new T.MeshStandardMaterial({color: 0xc8231c, roughness: .5});
  for (let i = 0; i < 14; i++) {
   const b = new T.Mesh(buoyGeo, buoyMat);
-  b.position.set((rand() - .5) * 110, .05, (rand() < .5 ? -1 : 1) * (14 + rand() * 40));
+  b.position.set((rand() - .5) * 24, .05, (rand() < .5 ? -1 : 1) * (14 + rand() * 40));
   scene.add(b);
  }
  const boat = new T.Group();
@@ -279,10 +320,16 @@ export function landscape(view) {
  scene.add(boat);
  boat.traverse(o => { if (o.isMesh) o.castShadow = true; });
 
+ let framed = false;
  new ResizeObserver(() => {
   renderer.setSize(view.clientWidth, view.clientHeight, false);
   camera.aspect = view.clientWidth / view.clientHeight;
   camera.updateProjectionMatrix();
+  if (!framed) { // first layout: oblique view along the bridge, like the reference aerial photo
+   framed = true;
+   const dir = new T.Vector3(.55, .15, .8).normalize();
+   camera.position.copy(controls.target).addScaledVector(dir, Math.max(105, 145 / camera.aspect));
+  }
  }).observe(view);
 
  function zoom(f) {
@@ -321,11 +368,12 @@ export function landscape(view) {
     camera.position.copy(controls.target).addScaledVector(off, dist);
    }
    prevDist = dist;
-   // thick haze up close, almost none from high orbit so the whole sea is visible
-   scene.fog.density = .0035 / (1 + (dist / 45) ** 2.2);
+   // sea haze swallows the far ends of the viaduct; it thins out from high orbit so the whole sea is visible
+   scene.fog.density = .0019 * Math.min(1, 140 / dist) ** 1.6;
    boat.position.y = .08 + Math.sin(performance.now() * .0012) * .04;
    boat.rotation.z = Math.sin(performance.now() * .0009) * .05;
    water.material.uniforms.time.value = performance.now() * .00035;
+   land.update(performance.now() * .001);
    controls.update();
    renderer.render(scene, camera);
   }

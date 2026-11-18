@@ -4,25 +4,37 @@ import {landscape} from './scene.js';
 const $=id=>document.getElementById(id),world=landscape($('view'));
 const specs={sam:['ЗРК «Хлопушка»',320,4,1.7],turret:['Пулемётная турель',180,1,.45],cruiser:['Ракетный крейсер',480,7,2.1],dolphin:['Боевой дельфин',140,2,.9]};
 const units=[],enemies=[],effects=[],scouts=[];
-let cash,hp,time,wave,phase,paused,untilSpawn,score,foam,rp,unpaid,waveBounty,last=performance.now();
+let cash,hp,time,wave,phase,paused,untilSpawn,score,foam,rp,unpaid,last=performance.now();
+// Hidden national budget: player never sees it. All payouts come from it; time, blockade, jams, blackouts and victims drain it.
+let reserve0,hype=0,victims=0,waveVictims=0,jamLoss=0;
+const drain=x=>{reserve=Math.max(0,reserve-x)};
+function casualties(at){
+ let n=Math.floor(Math.random()*3);
+ for(const v of vehicles)n+=(v.m.position.distanceTo(at)<7?2:.25)*(.5+Math.random());
+ n=Math.round(n);victims+=n;waveVictims+=n;hype+=4*n;drain(12*n);
+ if(n)$('caption').textContent='ЖЕРТВЫ: '+n+(n>=6?' · СКОПЛЕНИЕ МАШИН':'');
+}
+function headline(){
+ const f=reserve/reserve0;
+ return f>.75?'Минфин: «Запас прочности велик».':f>.5?'Аналитики фиксируют замедление экономики.':f>.3?'Рубль обновил минимум, судоходство сокращается.':f>.12?'Регионы жалуются на задержки выплат.':f>0?'Минфин: «Средства есть».':'Казна пуста. Ремонт за счёт энтузиазма.';
+}
 // Economy: money shrinks (decaying grants and trophies, inflation, upkeep); research points grow with every kill.
 const techs={dmg:['Калибр','урон +30%'],rate:['Автомат заряжания','темп +15%'],range:['Радар','дальность +12%'],armor:['Броня','корпус +1 · мосту −12% урона'],logi:['Логистика','цены −7% · содержание −20%']};
 const tech={};
 const techCost=L=>Math.round(10*Math.pow(2.3,L));
 const upkeep={sam:14,turret:6,cruiser:20,dolphin:5};
-const bounty={baby:6,flamingo:8,bird:5,neptune:80};
 const research={baby:1,flamingo:1,bird:1,neptune:8};
-const infl=()=>Math.pow(1.06,Math.max(0,wave-1))*Math.pow(.93,tech.logi);
+const infl=()=>Math.pow(1.04,Math.max(0,wave-1))*(1+.8*(1-reserve/reserve0))*Math.pow(.93,tech.logi);
 const price=base=>Math.round(base*infl());
 const armored=x=>Math.min(hp,Math.round(x*Math.pow(.88,tech.armor)));
-function reward(k){const b=Math.round(bounty[k]*Math.pow(.88,Math.max(0,wave-1)));cash+=b;waveBounty+=b;rp+=research[k]}
+function reward(k){rp+=research[k]}
 function upkeepBill(){return Math.round((units.reduce((s,u)=>s+upkeep[u.k],0)*Math.pow(.8,tech.logi)+barges.length*4)*infl())}
 function researchTech(k){
  rp-=techCost(tech[k]);tech[k]++;
  if(k==='armor')for(const u of units)u.hull++;
  $('info').textContent=techs[k][0]+' · ур. '+tech[k]+': '+techs[k][1]+'.';ui();
 }
-const reserves = {easy: 4500, normal: 2400, hard: 1100};
+const reserves = {easy: 7000, normal: 4500, hard: 2600};
 let reserve, waveDamage;
 const vehicles = [], barges=[];
 let seaCosts=0, hits=0,selectedShip=null,placing=false,signalPenalty=0;
@@ -91,50 +103,59 @@ function buyBarge(channel){
  barges.push({m,channel});cash-=price(110);ui();
 }
 let roadTimer, inspectionCredit, arrivals, checks, caught;
-function throughput(){
- return arrivals ? 1 - 0.65 * Math.max(0, (checks / arrivals - 0.25) / 0.75) : 1;
-}
+// Road: every inspection stops the truck at the checkpoint; trucks behind it queue up.
+// Queued vehicle-seconds drain the hidden national budget, and a crowd near an impact means more victims.
+function jammed(){return vehicles.filter(v=>v.queued||v.hold>0).length}
 function showTraffic(){
- $('traffic').textContent='Проверено '+checks+' из '+arrivals+' · задержано '+caught+' · поток '+Math.round(100*throughput())+'%';
+ $('traffic').textContent='Проверено '+checks+' из '+arrivals+' · задержано '+caught+' · в пробке '+jammed();
 }
 function roadStep(dt){
  roadTimer-=dt;
  if(roadTimer<=0){
   const direction=Math.random()<.5?1:-1;
-  const m=put('truck',-22*direction,3.22,direction*.8);
-  m.rotation.y=direction===1?0:Math.PI;
-  const manure=Math.random()<Math.min(.55,.25+wave*.012);
-  vehicles.push({m,direction,manure,wobbles:Math.random()<(manure?.85:.16),marked:false,checked:false,hold:0,stopped:false});
-  roadTimer=Math.max(1.5,3-wave*.04)/throughput();
+  if(vehicles.some(v=>v.direction===direction&&v.m.position.x*direction<-19.3))roadTimer=.4;
+  else{
+   const m=put('truck',-22*direction,3.22,direction*.8);
+   m.rotation.y=direction===1?0:Math.PI;
+   const manure=Math.random()<Math.min(.55,.25+wave*.012);
+   vehicles.push({m,direction,manure,wobbles:Math.random()<(manure?.85:.16),marked:false,checked:false,hold:0,stopped:false,queued:false});
+   roadTimer=Math.max(.9,1.8-wave*.04);
+  }
  }
- for(let i=vehicles.length-1;i>=0;i--){
-  const v=vehicles[i],p=v.m.position;
+ const along=v=>v.m.position.x*v.direction;
+ for(const v of [...vehicles].sort((a,b)=>along(b)-along(a))){
+  const p=v.m.position,ahead=vehicles.find(o=>o!==v&&o.direction===v.direction&&along(o)>along(v)&&along(o)-along(v)<2.7);
   v.m.rotation.z=v.wobbles&&!v.checked?Math.sin(time*9)*.11:0;
+  v.queued=!!ahead&&(ahead.hold>0||ahead.queued);
   if(v.hold>0)v.hold-=dt;
-  else p.x+=v.direction*3.7*dt;
-  const along=p.x*v.direction;
-  if(!v.checked && along>=-10){
+  else if(!v.queued)p.x+=v.direction*3.7*dt;
+  if(v.hold>0||v.queued)jamLoss+=dt*1.6;
+  if(!v.checked && along(v)>=-10){
    v.checked=true;arrivals++;inspectionCredit+=Number($('inspection').value);
    if(v.marked||inspectionCredit>=100){
-    if(inspectionCredit>=100)inspectionCredit-=100;checks++;v.hold=1.4;v.stopped=v.manure;
+    if(inspectionCredit>=100)inspectionCredit-=100;checks++;v.hold=3.4;v.stopped=v.manure;
     if(v.stopped)caught++;
    }
-   showTraffic();
-  }
-  const hit=v.manure&&!v.stopped&&along>=0;
-  if(hit||along>25||(v.stopped&&v.hold<=0)){
-   if(hit){const loss=armored(6);hp-=loss;waveDamage+=loss}
-   if(v.stopped)score++;
-   world.scene.remove(v.m);vehicles.splice(i,1);ui();
   }
  }
+ for(let i=vehicles.length-1;i>=0;i--){
+  const v=vehicles[i],a=along(v);
+  const hit=v.manure&&!v.stopped&&a>=0;
+  if(hit||a>25||(v.stopped&&v.hold<=0)){
+   if(hit){const loss=armored(6);hp-=loss;waveDamage+=loss;hype+=loss;world.scene.remove(v.m);vehicles.splice(i,1);casualties(v.m.position);}
+   else{world.scene.remove(v.m);vehicles.splice(i,1)}
+   if(v.stopped)score++;
+   ui();
+  }
+ }
+ showTraffic();
 }
 function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);m.traverse(o=>{if(o.isMesh)o.castShadow=true});world.scene.add(m);return m}
-function reset(){for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])world.scene.remove(x.m);units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=waveBounty=0;unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
+function reset(){for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])world.scene.remove(x.m);units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
- $('info').textContent='Выше сложность — меньше закрытый резерв. Из него штаб оплачивает каждую волну и компенсирует повреждения.';ui()}
+ $('info').textContent='Выше сложность — беднее страна. Сколько осталось в казне, штаб не сообщает.';ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
-function ui(){const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?'Ⅱ ПАУЗА':buy?'● ФАЗА ЗАКУПКИ':live?'● ВОЛНА '+wave:'■ АРКА ЗАКРЫТА';$('hits').textContent=hits+' / 3';$('cash').textContent=cash+' ₽';$('rp').textContent=rp+' ⚙';$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+' ₽'+(unpaid<1?' · долг':'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
+function ui(){const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?'Ⅱ ПАУЗА':buy?'● ФАЗА ЗАКУПКИ':live?'● ВОЛНА '+wave:'■ АРКА ЗАКРЫТА';$('hits').textContent=hits+' / 3';$('cash').textContent=cash+' ₽';$('rp').textContent=rp+' ⚙';$('hype').textContent=Math.round(hype)+(hype>60?' · ЭФИР':hype>20?' · СЮЖЕТ':'');$('victims').textContent=victims;$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+' ₽'+(unpaid<1?' · долг':'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
  for(const [k,[name,base]] of Object.entries(specs)){const cost=price(base),count=units.filter(u=>u.k===k).length;button(name+(count?' ×'+count:'')+'<span>'+cost+' ₽</span>',()=>{if(k==='turret'){selectedShip=null;setPlacement(!placing);$('info').textContent=placing?'Выберите жёлтую площадку. Для отмены снова нажмите кнопку турели.':'Размещение отменено.'}else purchase(k)},paused||phase==='over'||cash<cost||(k==='turret'&&count===pads.length))}
  for(const channel of [false,true])button('Баржа · '+(channel?'фарватер':'у края')+' ×'+barges.filter(b=>b.channel===channel).length+'<span>'+price(110)+' ₽</span>',()=>buyBarge(channel),paused||phase==='over'||cash<price(110)||barges.filter(b=>b.channel===channel).length>=4);
  if(live){
@@ -146,20 +167,23 @@ function purchase(k,pad){const cost=price(specs[k][1]);cash-=cost;const n=units.
  const marine=k==='dolphin'||k==='cruiser';const x=side*(2+Math.floor(n/2)*2.7)+(k==='turret'?1:0);const z=marine?(k==='cruiser'?-10:6)+side*(n%3):k==='sam'?-1.2:1.2;
  if(k==='cruiser'&&barges.some(b=>Math.hypot(x-b.m.position.x,z-b.m.position.z)<4.1)){cash+=cost;$('info').textContent='Место спуска занято баржей.';return}
  const m=pad?put(k,pad.position.x,3.32,pad.position.z):k==='sam'?put(k,side*(20+Math.floor(n/2)%5),1.0,3.7+Math.floor(n/10)*1.4):put(k,x,marine?.24:3.2,z);m.scale.setScalar(k==='cruiser'?1.2:.78);units.push({k,m,pad,cd:0,hull:(k==='cruiser'?4:2)+tech.armor});ui()}
-const grant=w=>Math.round(240*Math.pow(.85,w-1));
+const grant=w=>Math.round(160*Math.pow(.85,w-1));
 function nextWave(){
  if(wave===0){
-  reserve=reserves[$('difficulty').value];
+  reserve=reserve0=reserves[$('difficulty').value];
   $('info').textContent='Первая выплата поступит после волны. Бухгалтер уже считает трещины.';
  }else{
-  const pay=hp<100?0:Math.min(reserve,Math.max(0,Math.round((grant(wave)+waveDamage*6*Math.pow(.9,wave-1))*throughput()-signalPenalty)));
+  // Planned funding fades; repair money is damage x hype. Then the economy erodes on its own.
+  const pay=Math.min(reserve,Math.round(grant(wave)+waveDamage*8*(1+hype/40)));
   reserve-=pay;
   cash+=pay;
+  drain(reserve*.03+20+signalPenalty+jamLoss);
   const bill=upkeepBill(),paid=Math.min(cash,bill);
   cash-=paid;unpaid=bill?Math.max(.5,paid/bill):1;
-  $('info').textContent='Волна '+wave+' · ущерб '+waveDamage+' ед. · поток '+Math.round(100*throughput())+'% · выплата '+pay+' ₽ · трофеи '+waveBounty+' ₽ · содержание −'+paid+' ₽.'+(unpaid<1?' Жалованье недоплачено: гарнизон стреляет на '+Math.round(100*(1-unpaid))+'% медленнее.':'')+(hp<100?' Полотно не залатано.':'')+' Удержано за связь: '+Math.round(signalPenalty)+' ₽. Издержки судоходства: '+seaCosts+' ₽.'+(reserve===0?' Резерв исчерпан.':'')+' Цены выросли до ×'+(infl()*1.06).toFixed(2)+'.';
+  $('info').textContent='Волна '+wave+' · ущерб '+waveDamage+' ед. · жертв '+waveVictims+' · хайп '+Math.round(hype)+' · на ремонт и оборону '+pay+' ₽ · содержание −'+paid+' ₽.'+(unpaid<1?' Жалованье недоплачено: гарнизон стреляет на '+Math.round(100*(1-unpaid))+'% медленнее.':'')+' '+headline();
+  hype*=.55;
  }
- signalPenalty=seaCosts=waveBounty=0;arrivals=checks=caught=0;showTraffic();
+ signalPenalty=seaCosts=jamLoss=waveVictims=0;arrivals=checks=caught=0;showTraffic();
  waveDamage=0;
  wave++;
  ui();
@@ -199,7 +223,7 @@ function step(dt){
  }
  $('signals').textContent=Object.values(orders).filter(o=>o.end>time).map(o=>o.name+' выкл. · '+Math.ceil(o.end-time)+' с').join(' / ');
  moveShips(dt);
- if(Math.floor(time)>elapsed){const loss=Math.min(reserve,blocked*3);reserve-=loss;seaCosts+=loss}
+ if(Math.floor(time)>elapsed){const loss=Math.min(reserve,blocked*4);reserve-=loss;seaCosts+=loss}
  if(time>=wave*17){nextWave();if(wave%4===0)spawn('neptune')}roadStep(dt);untilSpawn-=dt;if(untilSpawn<=0){const pool=['flamingo','flamingo','bird','baby'];spawn(pool[Math.floor(Math.random()*pool.length)]);untilSpawn=Math.max(.19,1.9/(1+.2*wave))}
  for(const u of units){u.cd-=dt;if(u.cd>0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.hp>0&&d<closest&&u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:17)*(1+.12*tech.range)){closest=d;target=e}}
  if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);target.hp-=specs[u.k][2]*(1+.3*tech.dmg);u.cd=specs[u.k][3]*Math.pow(.85,tech.rate)/unpaid;const m=new T.Mesh(shotGeo,shotMat);m.position.copy(p);m.position.y+=.9;world.scene.add(m);effects.push({m,to:to.clone(),life:.16})}}
@@ -234,8 +258,8 @@ function step(dt){
     const u=e.target;
     if(--u.hull===0){world.scene.remove(u.m);units.splice(units.indexOf(u),1)}
     $('info').textContent=specs[u.k][0]+(u.hull?' · прочность '+u.hull:' выбыл из строя');
-   }else if(e.k==='flamingo'){hits=Math.min(3,hits+1);world.setHits(hits)}
-   else{const loss=armored(e.k==='neptune'?23:6);hp-=loss;waveDamage+=loss}
+   }else if(e.k==='flamingo'){hits=Math.min(3,hits+1);world.setHits(hits);hype+=25;casualties(new T.Vector3())}
+   else{const loss=armored(e.k==='neptune'?23:6);hp-=loss;waveDamage+=loss;hype+=loss;if(loss)casualties(e.m.position)}
    world.scene.remove(e.m);enemies.splice(i,1);ui();continue;
   }
   e.m.rotation.y=Math.atan2(-dz,dx);const travel=dt*e.speed;p.x+=dx/d*travel;p.z+=dz/d*travel;
