@@ -342,7 +342,7 @@ function arcadeHud(){
   if(msg.textContent!==text)msg.textContent=text;
   act.hidden=!action;act.textContent=label??'';act.onclick=action??null;
  }
- if(watchGoal)return order((watchDone?tr('Дистанцію пройдено','Run completed'):phase==='over'?tr('Арка впала','Arch collapsed'):tr('Автогра','Autoplay'))+' · '+wave+'/'+watchGoal+' · '+tr('ракети ','missiles ')+stock+'/'+capacity,tr('До моєї гри','Return to my game'),watchGame);
+ if(watchGoal)return order(watchDone?tr('Автогру завершено','Autoplay complete'):phase==='over'?tr('Арка впала','Arch collapsed'):tr('Автогра','Autoplay'));
  if(phase==='over')return order(tr('Арка впала. Хвиля ','Arch down. Wave ')+wave,tr('Нова гра','New game'),confirmNewGame);
  if(paused)return order(tr('Партія на паузі.','Game paused.'),tr('Продовжити ▸','Resume ▸'),toggle);
  if(phase==='buy'){
