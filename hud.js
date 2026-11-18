@@ -71,3 +71,4 @@ for(const restore of document.querySelectorAll('.panel-toggles button')){
  panel.hidden=localStorage.getItem(key)==='closed';render();
  document.addEventListener('siege-language',render);
 }
+document.addEventListener('siege-reset',()=>{previous=undefined;log.replaceChildren()});

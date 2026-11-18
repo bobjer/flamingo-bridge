@@ -226,5 +226,25 @@
  [
   "⊕ Коліщатко / щипок — масштаб",
   "⊕ Scroll / pinch to zoom"
+ ],
+ [
+  "Нова гра",
+  "New game"
+ ],
+ [
+  "Почати нову гру?",
+  "Start a new game?"
+ ],
+ [
+  "Збережену партію буде замінено. Оберіть складність нової гри.",
+  "This replaces your saved match. Choose the difficulty for your new game."
+ ],
+ [
+  "Скасувати",
+  "Cancel"
+ ],
+ [
+  "Замінити партію",
+  "Replace match"
  ]
 ]

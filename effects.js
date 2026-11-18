@@ -22,7 +22,7 @@ export function fireworks(scene){
   });
   scene.add(cloud);bursts.push({cloud,bits,crumbs,age:0});
  }
- function launch(source,target,damage){return launchAt(source.localToWorld(new T.Vector3(.99,1.51,0)),target,damage)}
+ function launch(source,target,damage){return launchAt(source.localToWorld(source.name==='cruiser'?new T.Vector3(1.86,.93,0):new T.Vector3(.99,1.51,0)),target,damage)}
  function launchAt(origin,target,damage){
   const rocket=new T.Group();
   for(const [geometry,mat,y] of [[hull,white,0],[cone,orange,.64],[cone,flame,-.73]]){

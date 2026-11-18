@@ -3,7 +3,7 @@
  <div class="top-left"><span class="mark" aria-hidden="true">◈</span><span class="label">ОПЕРАТИВНИЙ ШТАБ · СЕКТОР 07</span></div>
  <div class="top-title"><strong>РОЖЕВА ОБЛОГА</strong><span>СИМУЛЯТОР ОБОРОНИ МОСТУ</span></div>
  <div class="top-status"><button class="lang" type="button" lang="en">English</button><span class="label">РЕЖИМ</span><span class="chip"><i class="dot" aria-hidden="true"></i><span id="statusMirror">ЗАКУПІВЛЯ</span></span></div>
-<nav class="panel-toggles"><span class="panel-title" data-uk="Панелі" data-en="Panels">Панелі</span><button aria-controls="hq-panel" aria-expanded="true">Штаб</button><button aria-controls="arsenal-panel" aria-expanded="true">Арсенал</button></nav></header>
+<nav class="panel-toggles"><span class="panel-title" data-uk="Панелі" data-en="Panels">Панелі</span><button aria-controls="hq-panel" aria-expanded="true">Штаб</button><button aria-controls="arsenal-panel" aria-expanded="true">Арсенал</button></nav><button id="new-game" type="button">Нова гра</button></header>
 <main>
  <aside id="hq-panel" class="col left"><button type="button" class="fold" aria-controls="hq-panel">Згорнути штаб ‹</button>
   <section class="panel br">
@@ -44,7 +44,7 @@
  <section id="view" class="br br-accent">
   <div class="hud hud-tl"><b><i class="dot" aria-hidden="true"></i>REC</b> CAM 01 / VHS</div>
   <div class="hud hud-tr">SP ▸ · СІТКА 50 М</div>
-  <div class="reticle" aria-hidden="true"></div>
+  <div class="helm"><select id="ship-list"></select><button id="course" type="button"></button><span id="course-hint" role="status"></span></div><div class="reticle" aria-hidden="true"></div>
   <div class="hud hud-bl" id="caption">ОГЛЯД ОБ’ЄКТА</div>
   <div class="zoom"><button id="minus" aria-label="Віддалити">−</button><button id="plus" aria-label="Наблизити">+</button></div>
  </section>
@@ -60,6 +60,7 @@
   <button id="start">Почати облогу →</button>
  </aside>
 </main>
+<dialog id="restart" aria-labelledby="restart-title"><form method="dialog"><h2 id="restart-title">Почати нову гру?</h2><p>Збережену партію буде замінено. Оберіть складність нової гри.</p><label>Складність <select id="new-difficulty"><option value="easy">Легка</option><option value="normal" selected>Звичайна</option><option value="hard">Важка</option></select></label><div><button value="cancel" autofocus>Скасувати</button><button value="replace">Замінити партію</button></div></form></dialog>
 <footer class="strip">
  <button id="pause" aria-label="Пауза">Ⅱ</button>
  <div class="timeline" id="timeline" aria-label="Перебіг облоги"></div>
