@@ -1,9 +1,11 @@
+import {arenaRadar} from './radar.js';
 import {tr,writeMessage} from './language.js';
 import {fireworks} from './effects.js';
 import * as T from 'three';
 import {model} from './models.js';
 import {landscape} from './scene.js';
 const $=id=>document.getElementById(id),world=landscape($('view'));
+const drawRadar=arenaRadar($('arena-radar'));
 const fx=fireworks(world.scene);
 const getSpecs=()=>({sam:[tr("ЗРК «Хлопавка»","Party Popper SAM"),320,4,1.7],turret:[tr("Кулеметна турель","Machine-gun turret"),180,1,.45],cruiser:[tr("Ракетний крейсер","Missile cruiser"),480,7,2.1],dolphin:[tr("Бойовий дельфін","Combat dolphin"),140,2,.9]});
 let specs=getSpecs();
@@ -337,7 +339,7 @@ function step(dt){
  if(hits===3){world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));phase='over';selectedShip=null;setPlacement(false);writeMessage(()=>tr("Третій фламінго обвалив арку. Хвиль протрималися: ","A third flamingo brought down the arch. Waves reached: ")+wave+tr(". Відбито цілей: ",". Targets repelled: ")+score+'.');ui()}}
 function flap(m,t){for(const wing of m.userData.wings||[])wing.rotation.x=wing.scale.z*Math.sin(t*6)*.32}
 function frame(now){const dt=Math.min((now-last)/1000,.08);last=now;if(phase==='live'&&!paused&&!$('restart').open)step(dt);if(selectedShip)ring.position.copy(selectedShip.m.position);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
- $('clock').textContent=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');world.draw(time);requestAnimationFrame(frame)}
+ $('clock').textContent=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');world.draw(time);drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
 document.addEventListener('siege-language',()=>{
  specs=getSpecs();techs=getTechs();ui();showTraffic();showSignals();
 });

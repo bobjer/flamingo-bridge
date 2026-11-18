@@ -357,6 +357,7 @@ export function landscape(view) {
  return {
   scene, zoom, pick,
   cameraPosition:()=>camera.position.toArray(),
+  heading:()=>controls.getAzimuthalAngle(),
   restoreCamera(p){camera.position.fromArray(p);controls.update();prevDist=camera.position.distanceTo(controls.target)},
   carryDown(objects){for(const m of objects)if(Math.abs(m.position.x)<12)falling.attach(m)},
   onScreen(point){const p=point.clone().project(camera);return Math.abs(p.x)<=1&&Math.abs(p.y)<=1&&Math.abs(p.z)<=1},
