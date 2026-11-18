@@ -113,7 +113,7 @@ export function landscape(view) {
  dome.renderOrder = -1;
  scene.add(dome);
 
-  scene.add(new T.HemisphereLight(0xdcebff, 0x6f8f9c, .55));
+  const ambient=new T.HemisphereLight(0xdcebff,0x6f8f9c,.55);scene.add(ambient);
  const sun = new T.DirectionalLight(0xfff0dc, 3);
  sun.position.copy(skySun).multiplyScalar(70);
  sun.castShadow = true;
@@ -352,6 +352,7 @@ export function landscape(view) {
   while (hit && !groups.includes(hit)) hit = hit.parent;
   return hit;
  }
+ const daySun=new T.Color(0xfff0dc),sunset=new T.Color(0xffa56d),nightHaze=new T.Color(0x162a49),nightWater=new T.Color(0x163d51),dayWater=new T.Color(0x2aa3ad);
  let collapse = false, prevDist = camera.position.distanceTo(controls.target);
  return {
   scene, zoom, pick,
@@ -365,7 +366,19 @@ export function landscape(view) {
    if (!hits) { falling.position.y = 0; falling.rotation.z = 0; }
    span.scale.y = 1 - .035 * hits;
   },
-  draw() {
+  draw(gameTime=0) {
+   const angle=2*Math.PI*gameTime/120,altitude=Math.cos(angle);
+   const day=T.MathUtils.smoothstep(altitude,-.32,.6),dusk=1-Math.min(1,Math.abs(altitude)*3);
+   sun.position.set(35*Math.cos(angle),13+40*Math.abs(altitude),46+20*Math.sin(angle));
+   sun.intensity=.32+2.68*day;
+   sun.color.setHex(0x9bbfff).lerp(daySun,day).lerp(sunset,dusk*.68);
+   ambient.intensity=.34+.21*day;
+   dome.material.color.setRGB(.07+.93*day,.12+.88*day,.27+.73*day).lerp(sunset,dusk*.28);
+   scene.fog.color.copy(nightHaze).lerp(hazeColor,day).lerp(sunset,dusk*.3);
+   water.material.uniforms.waterColor.value.copy(nightWater).lerp(dayWater,day);
+   water.material.uniforms.sunDirection.value.copy(sun.position).normalize();
+   water.material.uniforms.sunColor.value.copy(sun.color).multiplyScalar(.38+.5*day);
+
    if (collapse) {
     falling.position.y = T.MathUtils.lerp(falling.position.y, -6.5, .045);
     falling.rotation.z = T.MathUtils.lerp(falling.rotation.z, -.26, .045);
