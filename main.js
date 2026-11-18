@@ -430,12 +430,17 @@ let flyby=null,tributeUntil=0,tributeDelay=0;
 const tribute=document.createElement('div');tribute.className='tribute';tribute.hidden=true;
 tribute.innerHTML='<img class="cartoon-rooster" alt="" src="'+roosterUrl+'"><span>«вечного полета братья»</span>';$('view').append(tribute);
 function clearFlyby(){crashArt.reset();tributeDelay=0;flyby?.m.removeFromParent();flyby=null;tributeUntil=0;tribute.hidden=true}
-function jetStep(dt){
+function aircraftStep(dt){
  crashArt.tick(dt);
  if(tributeDelay>0){tributeDelay-=dt;if(tributeDelay<=0)tributeUntil=time+4}
  if(!flyby)return;
  const j=flyby,p=j.m.position;
- if(j.hp>0){p.x+=dt*6;if(p.x>30){j.m.removeFromParent();flyby=null}return}
+ const rotors=j.m.userData.rotors;
+ if(rotors){
+  const speed=j.hp>0?25:7;
+  rotors[0].rotation.y+=dt*speed;rotors[1].rotation.z+=dt*speed*1.7;
+ }
+ if(j.hp>0){p.x+=dt*(rotors?3.6:6);if(p.x>30){j.m.removeFromParent();flyby=null}return}
  if(!j.fall){j.fall={start:p.clone(),age:0,smoke:0,end:new T.Vector3(T.MathUtils.clamp(p.x+8,-10,10),.08,11)};j.confused=false}
  const f=j.fall;f.age+=dt;
  const t=Math.min(1,f.age/2.4);
@@ -486,13 +491,17 @@ function advanceTraffic(before,after){
 }
 function step(dt){
  if(watchGoal)botTurn(dt);
- jetStep(dt);
+ aircraftStep(dt);
  if(breakLeft>0){
   const elapsed=Math.min(dt,breakLeft);
   for(const order of Object.values(orders))if(order!==orders.smoke&&order.end>time)order.end+=elapsed;
   time+=elapsed;breakLeft=Math.max(0,breakLeft-elapsed);
   advanceTraffic(time-elapsed,time);moveShips(elapsed);showBreak();showSignals();
-  if(breakLeft===0){nextWave();if(wave%4===0)spawn('neptune');if(wave>=4&&Math.random()<.3)flyby={m:put('jet',-29,13,4),hp:1,confused:Math.random()<.45}}
+  if(breakLeft===0){nextWave();if(wave%4===0)spawn('neptune');if(!flyby&&wave>=4){
+   const roll=Math.random();
+   const type=roll<.3?'jet':roll<.5?'helicopter':null;
+   if(type)flyby={m:put(type,-29,type==='jet'?13:8,type==='jet'?4:9),hp:1,confused:Math.random()<.45};
+  }}
   return;
  }
  waveElapsed+=dt;

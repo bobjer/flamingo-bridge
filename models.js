@@ -183,6 +183,23 @@ function loaf(p){
    for(const x of [-.03,.15])oval(p,0xffdd87,x,.05,side*.687,.027,.047,.015);
   }
 }
+function helicopter(p){
+ const olive=0x78846a;
+ oval(p,olive,0,0,0,1.28,.57,.56);
+ oval(p,0x567990,.69,.13,0,.68,.42,.49);
+ rod(p,olive,[-.82,.05,0],[-2.62,.38,0],.17);
+ rod(p,olive,[-2.58,.31,0],[-2.7,.88,0],.12);
+ for(const z of [-.47,.47]){
+  for(const x of [-.56,.52])rod(p,ink,[x,-.32,z*.7],[x,-.7,z],.045);
+  rod(p,ink,[-.94,-.7,z],[1,-.7,z],.065);
+ }
+ rod(p,ink,[0,.38,0],[0,.83,0],.09);
+ const rotor=new THREE.Group();rotor.position.y=.83;p.add(rotor);
+ box(rotor,ink,0,0,0,4.15,.045,.13);box(rotor,ink,0,.025,0,.13,.045,4.15);
+ const tail=new THREE.Group();tail.position.set(-2.64,.64,.14);p.add(tail);
+ box(tail,ink,0,0,0,.69,.09,.04);box(tail,ink,0,0,0,.09,.69,.04);
+ p.userData.rotors=[rotor,tail];
+}
 function jet(p){
  oval(p,0x849ba8,0,0,0,2.3,.27,.35);
  oval(p,0x39516a,.85,.21,0,.55,.17,.25);
@@ -200,7 +217,7 @@ function drone(p){
  }
  oval(p,coral,.42,-.05,0,.12,.11,.13);
 }
-const builders = { drone,jet, loaf,barge, sam,pantsir,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
+const builders = { drone,jet,helicopter, loaf,barge, sam,pantsir,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
 let truckMesh;
 function roadVehicle(){
  if(!truckMesh){
