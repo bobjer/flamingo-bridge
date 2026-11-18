@@ -141,7 +141,7 @@ export function landscape(view) {
   fender: {color: 0xe9e7e0, roughness: .85, map: concrete},
   lamp: {color: 0xdfe4e6, roughness: .4, metalness: .4}
  };
- const scenery = new Map(), steel = new Map();
+ const scenery = new Map(), steel = new Map(), pavement = new Map();
  let parts = scenery;
  const Q = new T.Quaternion(), ONE = new T.Vector3(1, 1, 1);
  function solid(geo, key, x, y, z, q) {
@@ -164,15 +164,19 @@ export function landscape(view) {
  const piers = [-48, -40, -32, -24, -18, -12, 12, 18, 24, 32, 40, 48];
 
  // --- road deck ---
- box('asphalt', 0, 2.9, 0, 110, .52, 4.8);
- box('shade', 0, 2.55, 0, 110, .22, 4.9);
- for (let x = -53; x < 54; x += 2.8) box('line', x, 3.17, 0, 1.3, .015, .08);
- for (const z of [-1.95, 1.95]) box('line', 0, 3.17, z, 110, .015, .06);
- for (const z of [-2.35, 2.35]) {
-  box('shade', 0, 3.58, z, 110, .1, .1);
-  box('shade', 0, 3.38, z, 110, .05, .05);
-  for (let x = -54; x < 55; x += 2) box('white', x, 3.38, z, .08, .55, .08);
+ for(const [left,right,collection] of [[-55,-12,scenery],[-12,12,pavement],[12,55,scenery]]){
+  parts=collection;
+  const mid=(left+right)/2,w=right-left;
+  box('asphalt',mid,2.9,0,w,.52,4.8);
+  box('shade',mid,2.55,0,w,.22,4.9);
+  for(let x=left+1;x<right-.65;x+=2.8)box('line',x,3.17,0,1.3,.015,.08);
+  for(const side of [-1,1]){
+   box('line',mid,3.17,side*1.95,w,.015,.06);
+   for(const y of [3.38,3.58])box('shade',mid,y,side*2.35,w,.08,.08);
+   for(let x=left+1;x<right;x+=2)box('white',x,3.38,side*2.35,.08,.55,.08);
+  }
  }
+ parts=scenery;
  // lamp posts along the approaches and between arch spans
  for (let x = -54; x <= 54; x += 9) for (const z of [-2.3, 2.3]) {
   if (Math.abs(x) < 13) continue;
@@ -275,7 +279,7 @@ export function landscape(view) {
   }
  }
 
- for (const [collection, parent] of [[scenery, scene], [steel, null]]) {
+ for (const [collection, parent] of [[scenery, scene], [steel, null], [pavement,null]]) {
   for (const [key, geos] of collection) {
    const m = new T.Mesh(mergeGeometries(geos), material(key));
    m.castShadow = m.receiveShadow = true;
@@ -289,6 +293,7 @@ export function landscape(view) {
  railway.scale.set(.98, 1.05, .78);
  railway.position.z = -6;
  scene.add(railway);
+ const falling=new T.Group();scene.add(falling);falling.add(span,pavement.group);
 
  const land = buildLand(scene);
 
@@ -350,16 +355,18 @@ export function landscape(view) {
  let collapse = false, prevDist = camera.position.distanceTo(controls.target);
  return {
   scene, zoom, pick,
+  carryDown(objects){for(const m of objects)if(Math.abs(m.position.x)<12)falling.attach(m)},
+  onScreen(point){const p=point.clone().project(camera);return Math.abs(p.x)<=1&&Math.abs(p.y)<=1&&Math.abs(p.z)<=1},
   waterPoint(event) { aim(event); return ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), 0), new T.Vector3()); },
   setHits(hits) {
    collapse = hits >= 3;
-   if (!hits) { span.position.y = 0; span.rotation.z = 0; }
+   if (!hits) { falling.position.y = 0; falling.rotation.z = 0; }
    span.scale.y = 1 - .035 * hits;
   },
   draw() {
    if (collapse) {
-    span.position.y = T.MathUtils.lerp(span.position.y, -6.5, .045);
-    span.rotation.z = T.MathUtils.lerp(span.rotation.z, -.26, .045);
+    falling.position.y = T.MathUtils.lerp(falling.position.y, -6.5, .045);
+    falling.rotation.z = T.MathUtils.lerp(falling.rotation.z, -.26, .045);
    }
    const dist = camera.position.distanceTo(controls.target);
    // any zoom-out (buttons, wheel, trackpad pinch) also tilts the camera toward straight-down, like climbing to orbit

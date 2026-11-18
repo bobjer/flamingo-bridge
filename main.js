@@ -23,7 +23,7 @@ const techs={dmg:['Калибр','урон +30%'],rate:['Автомат заря
 const tech={};
 const techCost=L=>Math.round(10*Math.pow(2.3,L));
 const upkeep={sam:14,turret:6,cruiser:20,dolphin:5};
-const research={baby:1,flamingo:1,bird:1,neptune:8};
+const research={loaf:2,baby:1,flamingo:1,bird:1,neptune:8};
 const infl=()=>Math.pow(1.04,Math.max(0,wave-1))*(1+.8*(1-reserve/reserve0))*Math.pow(.93,tech.logi);
 const price=base=>Math.round(base*infl());
 const armored=x=>Math.min(hp,Math.round(x*Math.pow(.88,tech.armor)));
@@ -151,7 +151,7 @@ function roadStep(dt){
  showTraffic();
 }
 function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);m.traverse(o=>{if(o.isMesh)o.castShadow=true});world.scene.add(m);return m}
-function reset(){for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])world.scene.remove(x.m);units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
+function reset(){for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  $('info').textContent='Выше сложность — беднее страна. Сколько осталось в казне, штаб не сообщает.';ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
@@ -190,8 +190,9 @@ function nextWave(){
 }
 function toggle(){if(phase==='live'){paused=!paused;ui()}}
 $('pause').onclick=toggle;$('start').onclick=()=>{if(phase==='over')reset();else if(phase==='buy'){for(const s of scouts)world.scene.remove(s.m);scouts.length=0;phase='live';nextWave()}else toggle()};$('plus').onclick=()=>world.zoom(.83);$('minus').onclick=()=>world.zoom(1.2);
-function spawn(k){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x=Math.cos(a)*r,z=Math.sin(a)*r,y=.35;if(k==='bird'||k==='flamingo')y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
- const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.4);const stats={baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=gameTargets(k);
+function spawn(k){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x=Math.cos(a)*r,z=Math.sin(a)*r,y=.35;if(k==='neptune'){z=Math.max(11,Math.abs(z));x*=.48}
+ if(k==='bird'||k==='flamingo'||k==='loaf')y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
+ const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.4);const stats={loaf:[3,2.2],baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=gameTargets(k);
  const target=Math.random()<.65?candidates[Math.floor(Math.random()*candidates.length)]:null;
  enemies.push({m,k,y,target,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:stats[0]+Math.floor(wave/3),speed:stats[1]*(1+wave*.026),angle:a});}
 function gameTargets(kind){
@@ -224,8 +225,8 @@ function step(dt){
  $('signals').textContent=Object.values(orders).filter(o=>o.end>time).map(o=>o.name+' выкл. · '+Math.ceil(o.end-time)+' с').join(' / ');
  moveShips(dt);
  if(Math.floor(time)>elapsed){const loss=Math.min(reserve,blocked*4);reserve-=loss;seaCosts+=loss}
- if(time>=wave*17){nextWave();if(wave%4===0)spawn('neptune')}roadStep(dt);untilSpawn-=dt;if(untilSpawn<=0){const pool=['flamingo','flamingo','bird','baby'];spawn(pool[Math.floor(Math.random()*pool.length)]);untilSpawn=Math.max(.19,1.9/(1+.2*wave))}
- for(const u of units){u.cd-=dt;if(u.cd>0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.hp>0&&d<closest&&u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:17)*(1+.12*tech.range)){closest=d;target=e}}
+ if(time>=wave*17){nextWave();if(wave%4===0)spawn('neptune')}roadStep(dt);untilSpawn-=dt;if(untilSpawn<=0){const pool=['flamingo','flamingo','bird','baby','loaf'];spawn(pool[Math.floor(Math.random()*pool.length)]);untilSpawn=Math.max(.19,1.9/(1+.2*wave))}
+ for(const u of units){u.cd-=dt;if(u.cd>0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.hp>0&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:17)*(1+.12*tech.range))){closest=d;target=e}}
  if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);target.hp-=specs[u.k][2]*(1+.3*tech.dmg);u.cd=specs[u.k][3]*Math.pow(.85,tech.rate)/unpaid;const m=new T.Mesh(shotGeo,shotMat);m.position.copy(p);m.position.y+=.9;world.scene.add(m);effects.push({m,to:to.clone(),life:.16})}}
  const offline=orders.net.end>time,retreat=orders.gps.end>time;
  const crashed=new Set();
@@ -242,6 +243,17 @@ function step(dt){
   }
  }
  for(let i=enemies.length-1;i>=0;i--){const e=enemies[i],p=e.m.position;
+  if(e.k==='neptune'&&e.hp>0&&!crashed.has(e)&&!retreat&&p.z<=4.4){
+   p.z=4.4;e.m.rotation.y=Math.PI/2;
+   const before=e.swing??0;e.swing=(before+dt)%2.6;
+   e.m.userData.trident.rotation.z=-1.08*Math.pow(Math.sin(Math.PI*e.swing/2.6),8);
+   if(before<1.3&&e.swing>=1.3){
+    const loss=armored(9);hp-=loss;waveDamage+=loss;hype+=loss;
+    $('info').textContent='Нептун ударил трезубцем по полотну: −'+loss+'%';ui();
+   }
+   continue;
+  }
+  if(e.k==='neptune'){e.swing=0;e.m.userData.trident.rotation.z=0}
   const aim=destination(e,offline),dest=retreat?e.exitPoint:aim;
   const dx=(dest?.x??0)-p.x,dz=(dest?.z??0)-p.z,d=Math.hypot(dx,dz);
   const actual=e.target?.m.position;
@@ -258,6 +270,9 @@ function step(dt){
     const u=e.target;
     if(--u.hull===0){world.scene.remove(u.m);units.splice(units.indexOf(u),1)}
     $('info').textContent=specs[u.k][0]+(u.hull?' · прочность '+u.hull:' выбыл из строя');
+   }else if(e.k==='loaf'){
+    for(const v of vehicles)v.hold=Math.max(v.hold,4);
+    $('info').textContent='Паляница рассыпалась! Грузовики стоят 4 секунды.';
    }else if(e.k==='flamingo'){hits=Math.min(3,hits+1);world.setHits(hits);hype+=25;casualties(new T.Vector3())}
    else{const loss=armored(e.k==='neptune'?23:6);hp-=loss;waveDamage+=loss;hype+=loss;if(loss)casualties(e.m.position)}
    world.scene.remove(e.m);enemies.splice(i,1);ui();continue;
@@ -266,7 +281,7 @@ function step(dt){
   p.y=(dest&&e.k==='bird'?T.MathUtils.lerp(dest.y+.65,e.y,Math.min(1,d/7)):e.y)+Math.sin(time*3+e.angle)*.18;
   flap(e.m,time+e.angle)}
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.m.position.lerp(e.to,Math.min(1,dt/e.life));e.life-=dt;if(e.life<=0){world.scene.remove(e.m);effects.splice(i,1)}}
- if(hits===3){phase='over';selectedShip=null;setPlacement(false);$('info').textContent='Третий фламинго обрушил арку. Продержались волн: '+wave+'. Отбито целей: '+score+'.';ui()}}
+ if(hits===3){world.carryDown([...vehicles,...units.filter(u=>u.k==='turret')].map(v=>v.m));phase='over';selectedShip=null;setPlacement(false);$('info').textContent='Третий фламинго обрушил арку. Продержались волн: '+wave+'. Отбито целей: '+score+'.';ui()}}
 function flap(m,t){for(const wing of m.userData.wings||[])wing.rotation.x=wing.scale.z*Math.sin(t*6)*.32}
 function frame(now){const dt=Math.min((now-last)/1000,.08);last=now;if(phase==='live'&&!paused)step(dt);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
  $('clock').textContent=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');world.draw();requestAnimationFrame(frame)}

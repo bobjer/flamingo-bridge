@@ -144,10 +144,13 @@ function neptune(p) {
     oval(p,ink,.41,2.03,s*.185,.05,.05,.04);
     rod(p,skin,[0,1.34,s*.39],[.28,1.51,s*.81],.14);
   }
-  rod(p,gold,[.3,.12,.81],[.3,2.87,.81],.056);
+  const pivot=new THREE.Group();pivot.position.set(.28,1.51,.81);p.add(pivot);
+  const staff=new THREE.Group();staff.position.copy(pivot.position).multiplyScalar(-1);pivot.add(staff);
+  p.userData.trident=pivot;
+  rod(staff,gold,[.3,.12,.81],[.3,2.87,.81],.056);
   for(const dz of [-.22,0,.22]) {
-    rod(p,gold,[.3,2.47,.81],[.3,2.58,.81+dz],.052);
-    rod(p,gold,[.3,2.55,.81+dz],[.3,2.98,.81+dz],.063,true);
+    rod(staff,gold,[.3,2.47,.81],[.3,2.58,.81+dz],.052);
+    rod(staff,gold,[.3,2.55,.81+dz],[.3,2.98,.81+dz],.063,true);
   }
 }
 function barge(p){
@@ -157,7 +160,16 @@ function barge(p){
   box(p,0x978981,-1.55,.55,0,.73,.65,.9);
   rod(p,ink,[-1.56,.8,0],[-1.56,1.45,0],.045);
 }
-const builders = { barge, sam,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
+function loaf(p){
+  oval(p,0xb96527,0,0,0,1.05,.54,.67);
+  for(const x of [-.48,0,.48])oval(p,0xf1cf8b,x,.44,0,.1,.06,.32).rotation.y=.4;
+  for(const side of [-1,1]){
+   oval(p,0xff3855,.08,.04,side*.64,.3,.29,.045);
+   for(const x of [-.12,.06,.24])oval(p,0x38894c,x,.3,side*.64,.13,.07,.04);
+   for(const x of [-.03,.15])oval(p,0xffdd87,x,.05,side*.687,.027,.047,.015);
+  }
+}
+const builders = { loaf,barge, sam,turret,cruiser,dolphin,baby,truck,neptune,bird:p=>flying(p,false),flamingo:p=>flying(p,true) };
 export function model(type) {
   const group = new THREE.Group();
   group.name = type;
