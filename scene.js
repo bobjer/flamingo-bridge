@@ -63,6 +63,8 @@ function waterNormals(renderer) {
 export function landscape(view) {
  const renderer = new T.WebGLRenderer({antialias: true, logarithmicDepthBuffer: true});
  const maxRatio = Math.min(devicePixelRatio, 1.6);
+ // Never drop below native resolution on 1x screens; on Retina stay at 1.2x or more.
+ const minRatio = Math.min(maxRatio, Math.max(1, maxRatio * .75));
  let pixelRatio = maxRatio;
  renderer.setPixelRatio(pixelRatio);
  // Adaptive resolution: drop render scale when frames run long, recover when there is headroom.
@@ -71,9 +73,9 @@ export function landscape(view) {
   const ms = lastFrame ? Math.min(100, now - lastFrame) : 16.7; lastFrame = now;
   if (document.hidden || ms > 90) return;
   frameAvg += (ms - frameAvg) * .08;
-  if (frameAvg > 21) { slowFor += ms; fastFor = 0; } else if (frameAvg < 14.5) { fastFor += ms; slowFor = 0; } else { slowFor = fastFor = 0; }
-  if (slowFor > 900 && pixelRatio > .7) { pixelRatio = Math.max(.7, pixelRatio - .15); renderer.setPixelRatio(pixelRatio); slowFor = 0; }
-  if (fastFor > 4000 && pixelRatio < maxRatio) { pixelRatio = Math.min(maxRatio, pixelRatio + .1); renderer.setPixelRatio(pixelRatio); fastFor = 0; }
+  if (frameAvg > 24) { slowFor += ms; fastFor = 0; } else if (frameAvg < 15) { fastFor += ms; slowFor = 0; } else { slowFor = fastFor = 0; }
+  if (slowFor > 2000 && pixelRatio > minRatio) { pixelRatio = Math.max(minRatio, pixelRatio - .1); renderer.setPixelRatio(pixelRatio); slowFor = 0; }
+  if (fastFor > 2500 && pixelRatio < maxRatio) { pixelRatio = Math.min(maxRatio, pixelRatio + .1); renderer.setPixelRatio(pixelRatio); fastFor = 0; }
  }
  renderer.toneMapping = T.ACESFilmicToneMapping;
  renderer.toneMappingExposure = .42;
