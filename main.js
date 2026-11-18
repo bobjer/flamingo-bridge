@@ -64,14 +64,13 @@ $('resupply').onclick=()=>{
  }
  cash-=amount*each;ui();
 };
-const research={drone:1,loaf:2,baby:1,flamingo:1,bird:1,neptune:8};
+const rewards={drone:[1,6],loaf:[2,7],baby:[1,7],flamingo:[1,9],bird:[1,6],neptune:[8,80]};
 const infl=()=>Math.pow(1.03,Math.max(0,wave-1))*(1+.3*(1-reserve/reserve0))*Math.pow(.93,tech.logi);
 const MISSILE=6,PATCH=70;
-const bounty={loaf:7,baby:7,flamingo:9,bird:6,neptune:80};
 const bountyMul={easy:1.2,normal:1,hard:.85};
 const price=base=>Math.round(base*infl());
 const armored=x=>Math.min(hp,Math.round(x*Math.pow(.88,tech.armor)));
-function reward(k){rp+=research[k];const b=Math.round(bounty[k]*bountyMul[$('difficulty').value]);cash+=b;drain(b*.25)}
+function reward(k){const [points,base]=rewards[k];rp+=points;const b=Math.round(base*bountyMul[$('difficulty').value]);cash+=b;drain(b*.25)}
 function upkeepBill(){return Math.round((units.reduce((s,u)=>s+upkeep[u.k],0)*Math.pow(.8,tech.logi)+barges.length*4)*infl())}
 function repairCost(){return price(PATCH*Math.min(25,100-hp)/25)}
 function researchTech(k){
@@ -93,6 +92,7 @@ function waveHud(){
 }
 function watchGame(){
  if(watchGoal){location.reload();return}
+ watchDone=false;
  saveMatch();watchGoal=10+Math.floor(Math.random()*11);reset();
  cash=5000;
  for(const k of Object.keys(techs))tech[k]=3;
@@ -261,7 +261,12 @@ function reset(){guestWave=guestUntil=0;incoming=null;guest.hidden=true;road.res
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
-function ui(){waveHud();arcadeHud();supplyHud();showBreak();helm();$('phase').dataset.wave=wave;const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?tr("Ⅱ ПАУЗА · ХВИЛЯ ","Ⅱ PAUSED · WAVE ")+wave:buy?tr("● ЗАКУПІВЛЯ","● PROCUREMENT"):live&&breakLeft>0?tr('◷ ПЕРЕРВА','◷ INTERMISSION'):live?tr("● ХВИЛЯ ","● WAVE ")+wave:tr("■ АРКУ ЗАКРИТО","■ ARCH CLOSED");$('hits').textContent=hits+' / 3';$('cash').textContent=cash+tr(" млн ₽"," M RUB");$('rp').textContent=rp+' ⚙';$('hype').textContent=Math.round(hype)+(hype>60?tr(" · ЕФІР"," · ON AIR"):hype>20?tr(" · СЮЖЕТ"," · NEWS"):'');$('victims').textContent=victims;$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+tr(" млн ₽"," M RUB")+(unpaid<1?tr(" · борг"," · debt"):'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
+function ui(){
+ const resume=$('resume-game');
+ resume.hidden=phase!=='live'||!paused||watchDone;
+ resume.textContent=tr('▶ Продовжити гру','▶ Resume game');
+ $('pause').setAttribute('aria-label',paused?resume.textContent:tr('Пауза','Pause'));
+ waveHud();arcadeHud();supplyHud();showBreak();helm();$('phase').dataset.wave=wave;const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?tr("Ⅱ ПАУЗА · ХВИЛЯ ","Ⅱ PAUSED · WAVE ")+wave:buy?tr("● ЗАКУПІВЛЯ","● PROCUREMENT"):live&&breakLeft>0?tr('◷ ПЕРЕРВА','◷ INTERMISSION'):live?tr("● ХВИЛЯ ","● WAVE ")+wave:tr("■ АРКУ ЗАКРИТО","■ ARCH CLOSED");$('hits').textContent=hits+' / 3';$('cash').textContent=cash+tr(" млн ₽"," M RUB");$('rp').textContent=rp+' ⚙';$('hype').textContent=Math.round(hype)+(hype>60?tr(" · ЕФІР"," · ON AIR"):hype>20?tr(" · СЮЖЕТ"," · NEWS"):'');$('victims').textContent=victims;$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+tr(" млн ₽"," M RUB")+(unpaid<1?tr(" · борг"," · debt"):'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
  for(const [k,[name,base]] of Object.entries(specs)){const cost=price(base),count=units.filter(u=>u.k===k).length;const detail=k==='sam'?tr('Важкий · весь екран','Heavy · screen-wide'):k==='pantsir'?tr('Компактний · швидкий вогонь зблизька','Compact · rapid short-range fire'):'';button(name+(count?' ×'+count:'')+(detail?'<small>'+detail+'</small>':'')+'<span>'+cost+tr(" млн ₽</span>"," M RUB</span>"),()=>{if(k==='turret'){selectedShip=null;helm();setPlacement(!placing);writeMessage(()=>placing?tr("Оберіть жовтий майданчик на будь-якому прольоті. Повторне натискання скасовує вибір.","Choose a yellow pad on either span. Press the turret button again to cancel."):tr("Розміщення скасовано.","Placement cancelled."))}else purchase(k)},paused||phase==='over'||cash<cost||(k==='turret'&&count===pads.length))}
  for(const channel of [false,true])button(tr("Баржа · ","Barge · ")+(channel?tr("фарватер","channel"):tr("біля краю","edge"))+' ×'+barges.filter(b=>b.channel===channel).length+'<span>'+price(110)+tr(" млн ₽</span>"," M RUB</span>"),()=>buyBarge(channel),paused||phase==='over'||cash<price(110)||barges.filter(b=>b.channel===channel).length>=4);
  if(live){
@@ -382,6 +387,7 @@ function nextWave(){
  ui();
 }
 function toggle(){if(phase==='live'){paused=!paused;ui()}}
+$('resume-game').onclick=toggle;
 $('pause').onclick=toggle;$('start').onclick=()=>{if(phase==='over')confirmNewGame();else if(phase==='buy'){for(const s of scouts)world.scene.remove(s.m);scouts.length=0;phase='live';nextWave()}else toggle()};$('plus').onclick=()=>world.zoom(.83);$('minus').onclick=()=>world.zoom(1.2);
 function spawn(k){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x=Math.cos(a)*r,z=Math.sin(a)*r,y=.35;if(k==='neptune'){z=Math.max(11,Math.abs(z));x*=.48}
  if(k==='drone'||k==='bird'||k==='flamingo'||k==='loaf')y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
@@ -568,7 +574,7 @@ function packEntity(entity){
 }
 function unpackEntity(item){
  const {type,position,rotation,scale,pad,target,lostTarget,destination,oldPoint,exitPoint,...state}=item;
- if(magazine[type]&&state.ammo==null)state.ammo=magazine[type];
+ if(magazine[type])state.ammo=Number.isInteger(state.ammo)?Math.max(0,Math.min(magazine[type],state.ammo)):magazine[type];
  const m=put(type,...position);m.quaternion.fromArray(rotation);m.scale.fromArray(scale);
  return {...state,m,pad:pads[pad],target:units[target]??(lostTarget?{m:{position:new T.Vector3(...lostTarget)}}:null),
   destination:destination&&new T.Vector3(...destination),oldPoint:oldPoint&&new T.Vector3(...oldPoint),exitPoint:exitPoint&&new T.Vector3(...exitPoint)};
@@ -585,8 +591,12 @@ function saveMatch(){
 function restoreMatch(){
  const data=JSON.parse(localStorage.getItem(SAVE_KEY));
  if(!data||data.version!==1)return;
- const state=data.state;
+ const state={...data.state};
  if(!Object.hasOwn(reserves,data.difficulty)||!['buy','live','over'].includes(state.phase)||!Number.isInteger(state.wave))return;
+ // JSON stores a previously corrupted monetary balance as null. Resume conservatively.
+ for(const key of ["cash","reserve"])if(state[key]===null)state[key]=0;
+ if(state.reserve0!==reserves[data.difficulty])state.reserve0=reserves[data.difficulty];
+ for(const key of "cash hp time wave untilSpawn score rp unpaid reserve0 hype victims waveVictims jamLoss reserve waveDamage seaCosts hits signalPenalty roadTimer inspectionCredit arrivals checks caught".split(" "))if(!Number.isFinite(state[key]))return;
  for(const value of Object.values({...state,phase:0}))if(!Number.isFinite(value))return;
  ({cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught}=state);
  for(const s of data.damageSpots??[])damageSpots.push({point:new T.Vector3(...s.point),loss:s.loss});
@@ -596,7 +606,7 @@ function restoreMatch(){
  guestWave=state.guestWave??wave;die=state.die??3;waveElapsed=state.waveElapsed??Math.max(0,time-(wave-1)*17);breakLeft=state.breakLeft??0;
  $('difficulty').value=data.difficulty;$('inspection').value=data.inspection;
  if(phase!=='buy'){for(const s of scouts)s.m.removeFromParent();scouts.length=0}
- Object.assign(tech,data.tech);[orders.gps.end,orders.net.end]=data.orders;
+ for(const k of Object.keys(techs)){const level=data.tech?.[k];tech[k]=Number.isSafeInteger(level)&&level>=0&&level<1000?level:0}[orders.gps.end,orders.net.end]=data.orders;
  for(const [list,saved] of [[units,data.units],[enemies,data.enemies],[vehicles,data.vehicles],[barges,data.barges]]){
   for(const item of saved)list.push(unpackEntity(item));
  }
