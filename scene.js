@@ -80,6 +80,28 @@ export function landscape(view) {
  camera.layers.enable(1); // land (see terrain.js)
  const controls = new OrbitControls(camera, renderer.domElement);
  controls.target.set(0, 5, 0);
+ const sideways=matchMedia('(pointer:coarse) and (max-width:600px) and (orientation:portrait)');
+ const canvas=renderer.domElement;
+ const fingers=new Map();
+ function orientTouch(){
+  fingers.clear();
+  controls.touches.ONE=sideways.matches?-1:T.TOUCH.ROTATE;
+ }
+ orientTouch();sideways.addEventListener('change',orientTouch);
+ canvas.addEventListener('pointerdown',e=>{
+  if(sideways.matches&&e.pointerType==='touch')fingers.set(e.pointerId,[e.clientX,e.clientY]);
+ });
+ canvas.addEventListener('pointermove',e=>{
+  const previous=fingers.get(e.pointerId);
+  if(!previous)return;
+  if(fingers.size===1){
+   const factor=2*Math.PI/canvas.clientHeight;
+   controls.rotateLeft((e.clientY-previous[1])*factor);
+   controls.rotateUp((previous[0]-e.clientX)*factor);
+  }
+  fingers.set(e.pointerId,[e.clientX,e.clientY]);
+ });
+ for(const event of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(event,e=>fingers.delete(e.pointerId));
  controls.enablePan = false;
  controls.enableDamping = true;
  controls.minDistance = MIN_DIST;
@@ -345,7 +367,8 @@ export function landscape(view) {
  const ray = new T.Raycaster();
  function aim(event) {
   const r = renderer.domElement.getBoundingClientRect();
-  ray.setFromCamera(new T.Vector2(2 * (event.clientX - r.left) / r.width - 1, 1 - 2 * (event.clientY - r.top) / r.height), camera);
+  const x=(event.clientX-r.left)/r.width,y=(event.clientY-r.top)/r.height;
+  ray.setFromCamera(sideways.matches?new T.Vector2(2*y-1,2*x-1):new T.Vector2(2*x-1,1-2*y),camera);
  }
  function pick(event, groups) {
   aim(event);
