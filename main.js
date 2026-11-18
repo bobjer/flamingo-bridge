@@ -442,7 +442,7 @@ function showSignals(){ $('signals').textContent=Object.values(orders).filter(o=
 }
 const crashArt=ditching(world.scene);
 let flyby=null,tributeUntil=0,tributeDelay=0;
-const tribute=document.createElement('div');tribute.className='tribute';tribute.hidden=true;
+const tribute=document.createElement('div');tribute.className='tribute rooster-banner';tribute.hidden=true;
 tribute.innerHTML='<img class="cartoon-rooster" alt="" src="'+roosterUrl+'"><span>«вечного полета братья»</span>';$('view').append(tribute);
 const sinking=[];
 const sinkingBanner=document.createElement('div');
