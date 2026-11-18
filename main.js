@@ -597,12 +597,17 @@ function step(dt){
   if(e.k==='neptune'&&e.prey&&e.hp>0&&!crashed.has(e)&&!retreat){
    const q=e.prey.m.position,dx=q.x-p.x,dz=q.z-p.z,d=Math.hypot(dx,dz);
    e.m.rotation.y=Math.atan2(-dz,dx);
-   if(d>4.6){p.x+=dx/d*dt*e.speed*1.7;p.z+=dz/d*dt*e.speed*1.7;p.y=.35+Math.sin(time*2+e.angle)*.08;e.swing=0;e.m.userData.trident.rotation.z=0;continue}
-   const before=e.swing??0;e.swing=(before+dt)%2.6;
-   e.m.userData.trident.rotation.z=-1.08*Math.pow(Math.sin(Math.PI*e.swing/2.6),8);
-   if(before<1.3&&e.swing>=1.3){
+   if(d>4.6){p.x+=dx/d*dt*e.speed*1.7;p.z+=dz/d*dt*e.speed*1.7;p.y=.35+Math.sin(time*2+e.angle)*.08;e.swing=0;e.m.userData.trident.rotation.z=0;e.m.rotation.z=0;continue}
+   // Choreographed strike: slow wind-up over the head, a violent swing, recovery.
+   const WIND=1.1,SWING=.22,CYCLE=2.6,before=e.swing??0;e.swing=(before+dt)%CYCLE;
+   if(before===0||e.swing<before){const mid=p.clone().lerp(q,.5).setY(2.2);world.cinematic(mid,2,{bomb:true,radius:10,height:3.2})}
+   const tr3=e.m.userData.trident,sw=e.swing;
+   if(sw<WIND){const k=sw/WIND,ease=k*k*(3-2*k);tr3.rotation.z=.85*ease;e.m.rotation.z=.12*ease}
+   else if(sw<WIND+SWING){const k=(sw-WIND)/SWING;tr3.rotation.z=.85-2.05*k*k;e.m.rotation.z=.12-.3*k}
+   else{const k=Math.min(1,(sw-WIND-SWING)/1);tr3.rotation.z=-1.2*(1-k*k*(3-2*k));e.m.rotation.z=-.18*(1-k)}
+   if(before<WIND+SWING&&sw>=WIND+SWING){
     const u=e.prey,hit=q.clone().setY(1.1);u.hull=Math.max(0,u.hull-2);
-    fx.explosion(hit,1.7);fx.splash(q,1.8);world.cinematic(hit,1.5);
+    world.cinematicBoom(hit);fx.explosion(hit,1.9);fx.splash(q,2.4);fx.splash(p.clone().lerp(q,.6),1.2);
     if(u.hull<=0){removeUnit(u);writeMessage(()=>tr("Нептун розколов крейсер тризубом.","Neptune split the cruiser with his trident."))}
     else writeMessage(()=>tr("Нептун ударив по крейсеру · міцність ","Neptune struck the cruiser · hull ")+u.hull);
     ui();

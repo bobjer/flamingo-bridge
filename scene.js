@@ -396,7 +396,7 @@ export function landscape(view) {
   const c = cine; c.age += dt;
   if (c.follow) c.point.copy(c.follow.position).add(c.lift);
   // bomb shots wait for the blast; give up if it never comes
-  if (c.bomb && c.boomAt == null && c.age > 5) { c.boomAt = c.age; c.end = c.age + .7; }
+  if (c.bomb && c.boomAt == null && c.age > 7) { c.boomAt = c.age; c.end = c.age + .7; }
   if (c.end != null && c.age >= c.end) { endCine(); return false; }
   const end = c.end ?? c.age + 3, inDur = c.bomb ? .7 : .2 * c.duration, outDur = c.bomb ? .8 : .2 * c.duration;
   const prog = c.bomb ? c.age / 6 : ease(T.MathUtils.clamp(c.age / c.duration, 0, 1));
@@ -448,7 +448,7 @@ export function landscape(view) {
    if (!cine) return 1;
    const c = cine;
    if (c.bomb) {
-    if (c.boomAt == null) return Math.max(.3, 1 - c.age * 1.2);            // approach: crawl toward the blast
+    if (c.boomAt == null) return Math.max(.25, 1 - c.age * 1.2);            // approach: crawl toward the blast
     const s = c.age - c.boomAt;
     if (s < .35) return .006;                                              // near freeze-frame
     if (s < 3.3) return .006 + .06 * ((s - .35) / 2.95) ** 2;              // bullet-time release
