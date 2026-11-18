@@ -222,14 +222,52 @@ function reset(){breakLeft=waveElapsed=0;fx.reset();for(const x of [...units,...
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
-function ui(){supplyHud();showBreak();helm();$('phase').dataset.wave=wave;const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?tr("Ⅱ ПАУЗА · ХВИЛЯ ","Ⅱ PAUSED · WAVE ")+wave:buy?tr("● ЗАКУПІВЛЯ","● PROCUREMENT"):live&&breakLeft>0?tr('◷ ПЕРЕРВА','◷ INTERMISSION'):live?tr("● ХВИЛЯ ","● WAVE ")+wave:tr("■ АРКУ ЗАКРИТО","■ ARCH CLOSED");$('hits').textContent=hits+' / 3';$('cash').textContent=cash+tr(" млн ₽"," M RUB");$('rp').textContent=rp+' ⚙';$('hype').textContent=Math.round(hype)+(hype>60?tr(" · ЕФІР"," · ON AIR"):hype>20?tr(" · СЮЖЕТ"," · NEWS"):'');$('victims').textContent=victims;$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+tr(" млн ₽"," M RUB")+(unpaid<1?tr(" · борг"," · debt"):'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
+function ui(){arcadeHud();supplyHud();showBreak();helm();$('phase').dataset.wave=wave;const buy=phase==='buy',live=phase==='live';$('phase').textContent=paused?tr("Ⅱ ПАУЗА · ХВИЛЯ ","Ⅱ PAUSED · WAVE ")+wave:buy?tr("● ЗАКУПІВЛЯ","● PROCUREMENT"):live&&breakLeft>0?tr('◷ ПЕРЕРВА','◷ INTERMISSION'):live?tr("● ХВИЛЯ ","● WAVE ")+wave:tr("■ АРКУ ЗАКРИТО","■ ARCH CLOSED");$('hits').textContent=hits+' / 3';$('cash').textContent=cash+tr(" млн ₽"," M RUB");$('rp').textContent=rp+' ⚙';$('hype').textContent=Math.round(hype)+(hype>60?tr(" · ЕФІР"," · ON AIR"):hype>20?tr(" · СЮЖЕТ"," · NEWS"):'');$('victims').textContent=victims;$('upkeep').textContent=phase==='over'?'—':'−'+upkeepBill()+tr(" млн ₽"," M RUB")+(unpaid<1?tr(" · борг"," · debt"):'');$('tech').replaceChildren();$('hp').textContent=hp+' %';$('bar').value=hp;$('shop').replaceChildren();$('difficulty').disabled=!buy;$('inspection').disabled=paused||phase==='over';
  for(const [k,[name,base]] of Object.entries(specs)){const cost=price(base),count=units.filter(u=>u.k===k).length;const detail=k==='sam'?tr('Важкий · весь екран','Heavy · screen-wide'):k==='pantsir'?tr('Компактний · швидкий вогонь зблизька','Compact · rapid short-range fire'):'';button(name+(count?' ×'+count:'')+(detail?'<small>'+detail+'</small>':'')+'<span>'+cost+tr(" млн ₽</span>"," M RUB</span>"),()=>{if(k==='turret'){selectedShip=null;helm();setPlacement(!placing);writeMessage(()=>placing?tr("Оберіть жовтий майданчик на будь-якому прольоті. Повторне натискання скасовує вибір.","Choose a yellow pad on either span. Press the turret button again to cancel."):tr("Розміщення скасовано.","Placement cancelled."))}else purchase(k)},paused||phase==='over'||cash<cost||(k==='turret'&&count===pads.length))}
  for(const channel of [false,true])button(tr("Баржа · ","Barge · ")+(channel?tr("фарватер","channel"):tr("біля краю","edge"))+' ×'+barges.filter(b=>b.channel===channel).length+'<span>'+price(110)+tr(" млн ₽</span>"," M RUB</span>"),()=>buyBarge(channel),paused||phase==='over'||cash<price(110)||barges.filter(b=>b.channel===channel).length>=4);
  if(live){
  for(const [key,o] of Object.entries(orders))button(tr("Вимкнути ","Disable ")+o.name+tr(" · 10 с<span>"," · 10 s<span>")+price(o.cost)+tr(" млн ₽</span>"," M RUB</span>"),()=>issueOrder(key),paused||o.end>time||cash<price(o.cost));
- const patch=repairCost();button(tr("Латати полотно +25%<span>","Patch deck +25%<span>")+patch+tr(" млн ₽</span>"," M RUB</span>"),()=>{cash-=patch;hp=Math.min(100,hp+25);ui()},paused||hp===100||cash<patch)}
+ const patch=repairCost();button(tr("Латати полотно +25%<span>","Patch deck +25%<span>")+patch+tr(" млн ₽</span>"," M RUB</span>"),repairDeck,paused||hp===100||cash<patch)}
  for(const [k,[name,effect]] of Object.entries(techs)){const c=techCost(tech[k]),b=document.createElement('button');b.className='unit';b.innerHTML=name+(tech[k]?tr(" · рів. "," · lvl ")+tech[k]:'')+'<small>'+effect+'</small><span>'+c+' ⚙</span>';b.disabled=paused||phase==='over'||rp<c;b.onclick=()=>researchTech(k);$('tech').append(b)}
  $('start').textContent=buy?tr("Почати облогу →","Start siege →"):live?(paused?tr("Продовжити ▸","Resume ▸"):tr("Пауза Ⅱ","Pause Ⅱ")):tr("Нова зміна ↻","New shift ↻");$('start').disabled=buy&&!units.length;$('pause').disabled=!live;$('pause').textContent=paused?'▸':'Ⅱ';$('caption').textContent=buy?tr("ОГЛЯД ОБ’ЄКТА","SITE OVERVIEW"):live?tr("ВІДБИТО: ","REPELLED: ")+score:tr("ЕФІР ЗАВЕРШЕНО","END OF BROADCAST")}
+function repairDeck(){
+ const cost=repairCost();
+ if(phase!=='live'||paused||hp>=100||cash<cost)return;
+ cash-=cost;hp=Math.min(100,hp+25);ui();
+}
+function arcadeHud(){
+ const {capacity,stock,each,amount}=supplyQuote();
+ const money=n=>n+tr(' млн ₽',' M RUB');
+ const life=3-hits,poor=reserve<=reserve0*.25;
+ $('arch-life').textContent=tr('Арка ','Arch ')+('◆'.repeat(life))+('◇'.repeat(hits))+' '+life+'/3';
+ $('arcade').dataset.danger=hits>=2||poor?'high':hits?'medium':'low';
+ $('arcade-cash').textContent=money(cash);
+ $('reserve-trend').textContent=!reserve?tr('Казна порожня','Treasury empty'):poor?tr('Казна майже порожня','Treasury running dry'):tr('Базова виплата ↓ ','Base grant ↓ ')+money(grant(Math.max(1,wave)));
+ const act=$('order-act'),msg=$('order-copy');
+ function order(text,label,action){
+  if(msg.textContent!==text)msg.textContent=text;
+  act.hidden=!action;act.textContent=label??'';act.onclick=action??null;
+ }
+ if(phase==='over')return order(tr('Арка впала. Хвиля ','Arch down. Wave ')+wave,tr('Нова гра','New game'),confirmNewGame);
+ if(paused)return order(tr('Партія на паузі.','Game paused.'),tr('Продовжити ▸','Resume ▸'),toggle);
+ if(phase==='buy'){
+  const kit=price(specs.sam[1])+price(specs.cruiser[1]);
+  if(!units.length&&!barges.length&&cash>=kit)return order(tr('Зберіть стартову оборону: С-400 і крейсер.','Deploy a starter defence: S-400 and cruiser.'),tr('Розгорнути · ','Deploy · ')+money(kit),()=>{purchase('sam');purchase('cruiser')});
+  if(!units.length)return order(tr('Для початку купіть гарнізон в арсеналі.','Buy a defender in the arsenal to start.'),tr('Арсенал','Arsenal'),()=>{if($('arsenal-panel').hidden)document.querySelector('.panel-toggles [aria-controls="arsenal-panel"]').click()});
+  return order(tr('Гарнізон готовий. Третій прорив обвалить арку.','Garrison ready. The third flamingo hit brings down the arch.'),tr('Почати облогу →','Start siege →'),()=>$('start').click());
+ }
+ const low=capacity&&stock<=Math.ceil(capacity*.3);
+ const canPatch=hp<100&&cash>=repairCost();
+ if(canPatch&&(!low||breakLeft>0||!amount)){
+  return order(tr('Полотно ','Deck ')+hp+tr('%. Для виплати відновіть до 100%.','%. Restore to 100% for the grant.'),tr('Латати · ','Repair · ')+money(repairCost()),repairDeck);
+ }
+ if(low&&amount)return order(tr('Ракет залишилось: ','Missiles remaining: ')+stock+'/'+capacity,tr('Поповнити +','Restock +')+amount+' · '+money(each*amount),()=>$('resupply').click());
+ if(low&&!amount)return order(tr('Ракет залишилось: ','Missiles remaining: ')+stock+'/'+capacity+tr('. На наступну потрібно ','. Next missile costs ')+money(each));
+ if(hp<100)return order(tr('Полотно ','Deck ')+hp+tr('%. Для ремонту потрібно ','%. Repair costs ')+money(repairCost()));
+ if(breakLeft>0&&capacity&&stock<capacity&&amount)return order(tr('Перерва. Поповніть запас перед хвилею.','Intermission. Top up before the next wave.'),tr('Поповнити +','Restock +')+amount+' · '+money(each*amount),()=>$('resupply').click());
+ if(hits===2)return order(tr('Останній шанс: ще один фламінго обвалить арку.','Last chance: one more flamingo hit will bring down the arch.'));
+ return order(tr('Гарнізон веде вогонь самостійно. Хвиля ','Garrison firing automatically. Wave ')+wave+(capacity?tr(' · ракети ',' · missiles ')+stock+'/'+capacity:''));
+}
 function purchase(k,pad){const cost=price(specs[k][1]);cash-=cost;const n=units.filter(u=>u.k===k).length;const side=n%2?1:-1;
  const marine=k==='dolphin'||k==='cruiser';const x=side*(2+Math.floor(n/2)*2.7)+(k==='turret'?1:0);const z=marine?(k==='cruiser'?-10:6)+side*(n%3):k==='sam'?-1.2:1.2;
  if(k==='cruiser'&&barges.some(b=>Math.hypot(x-b.m.position.x,z-b.m.position.z)<4.1)){cash+=cost;writeMessage(()=>tr("Місце спуску зайняте баржею.","A barge blocks the launch site."));return}
@@ -306,7 +344,7 @@ function step(dt){
  if(Math.floor(time)>elapsed){const loss=Math.min(reserve,blocked*4);reserve-=loss;seaCosts+=loss}
  roadStep(dt);untilSpawn-=dt;if(waveElapsed<=17&&untilSpawn<=0){const pool=['flamingo','flamingo','bird','baby','loaf'];spawn(pool[Math.floor(Math.random()*pool.length)]);untilSpawn=Math.max(.19,1.9/(1+.2*wave))}
  for(const u of units){u.cd-=dt;if(u.cd>0||u.ammo===0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.hp>fx.pendingDamage(e)&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range))){closest=d;target=e}}
- if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);const damage=specs[u.k][2]*(1+.3*tech.dmg);u.cd=specs[u.k][3]*Math.pow(.85,tech.rate)/unpaid;if(magazine[u.k]){u.ammo--;supplyHud();fx.launch(u.m,target,damage);continue}target.hp-=damage;const m=new T.Mesh(shotGeo,shotMat);m.position.copy(p);m.position.y+=.9;world.scene.add(m);effects.push({m,to:to.clone(),life:.16})}}
+ if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);const damage=specs[u.k][2]*(1+.3*tech.dmg);u.cd=specs[u.k][3]*Math.pow(.85,tech.rate)/unpaid;if(magazine[u.k]){u.ammo--;arcadeHud();supplyHud();fx.launch(u.m,target,damage);continue}target.hp-=damage;const m=new T.Mesh(shotGeo,shotMat);m.position.copy(p);m.position.y+=.9;world.scene.add(m);effects.push({m,to:to.clone(),life:.16})}}
  const offline=orders.net.end>time,retreat=orders.gps.end>time;
  const crashed=new Set();
  if(offline){

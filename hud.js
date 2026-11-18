@@ -68,7 +68,7 @@ for(const restore of document.querySelectorAll('.panel-toggles button')){
   (open?fold:restore).focus({preventScroll:true});
  }
  fold.onclick=()=>toggle(false);restore.onclick=()=>toggle(panel.hidden);
- panel.hidden=localStorage.getItem(key)==='closed';render();
+ panel.hidden=localStorage.getItem(key)!=='open';render();
  document.addEventListener('siege-language',render);
 }
 document.addEventListener('siege-reset',()=>{previous=undefined;log.replaceChildren()});

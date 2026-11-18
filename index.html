@@ -41,7 +41,7 @@
    <details><summary>Перебої зв’язку</summary>Без GPS нападники розвертаються до межі зони. Без інтернету вони рухаються до запам’ятованої точки з похибкою й можуть зіткнутися. Коли зв’язок відновлено, вони знову обирають живу ціль.</details>
   </section>
  </aside>
- <section id="view" class="br br-accent">
+ <div class="play-column"><section id="view" class="br br-accent">
   <div class="hud hud-tl"><b><i class="dot" aria-hidden="true"></i>REC</b> CAM 01 / VHS</div>
   <div class="hud hud-tr">SP ▸ · СІТКА 50 М</div>
   <div class="helm"><select id="ship-list"></select><button id="course" type="button"></button><span id="course-hint" role="status"></span></div><div id="break-banner" role="status" hidden></div><div class="reticle" aria-hidden="true"></div>
@@ -49,6 +49,10 @@
   <canvas id="arena-radar" role="img" aria-label="Радар нападників"></canvas>
   <div class="zoom"><button id="minus" aria-label="Віддалити">−</button><button id="plus" aria-label="Наблизити">+</button></div>
  </section>
+ <section id="arcade" class="arcade">
+  <div class="arcade-status"><b id="arch-life"></b><span id="arcade-cash"></span><span id="reserve-trend"></span></div>
+  <div class="arcade-order"><p id="order-copy" role="status"></p><button id="order-act" type="button" hidden></button></div>
+ </section></div>
  <aside id="arsenal-panel" class="col right"><button type="button" class="fold" aria-controls="arsenal-panel">Згорнути арсенал ‹</button>
   <section class="panel br">
    <div class="label">АРСЕНАЛ</div>
