@@ -1,3 +1,4 @@
+import {showRecords} from './records.js';
 import {LANDFALL} from './terrain.js';
 import {railTraffic} from './rail-traffic.js';
 import {tankerTraffic} from './tanker-traffic.js';
@@ -90,6 +91,7 @@ const reserves = {easy: 7000, normal: 4500, hard: 2600};
 let reserve, waveDamage;
 const BREAK_SECONDS=8;
 let waveElapsed=0,breakLeft=0,die=1;
+let runId=crypto.randomUUID();
 let autoplay=false,botDelay=0,nextDeckWave=0,lastSmokeWave=0;
 const deckInterval=()=>3+Math.floor(Math.random()*2);
 let flockPressure=1;
@@ -278,7 +280,7 @@ function roadStep(dt){
  showTraffic();
 }
 function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);m.traverse(o=>{if(o.isMesh)o.castShadow=true});world.scene.add(m);return m}
-function reset(){flockPressure=2**((Math.random()-.5)*3);spent=0;partialLedger=0;guestWave=guestUntil=guestPickWave=0;seenTrump=seenMusk=false;incoming=null;guest.hidden=true;road.reset();world.setDeckHoles([]);clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.clear();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;trafficTime=0;tankers.restore();tankers.move(0);orders.smoke.end=orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
+function reset(){runId=crypto.randomUUID();flockPressure=2**((Math.random()-.5)*3);spent=0;partialLedger=0;guestWave=guestUntil=guestPickWave=0;seenTrump=seenMusk=false;incoming=null;guest.hidden=true;road.reset();world.setDeckHoles([]);clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.clear();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;trafficTime=0;tankers.restore();tankers.move(0);orders.smoke.end=orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
@@ -302,7 +304,7 @@ const nightLevel=()=>1-world.daylight();
 let flakTimer=0;
 {const v=$('view'),b=document.createElement('div'),tag=document.createElement('div'),hint=document.createElement('div');b.className='cine-bottom';tag.className='cine-tag';hint.className='cine-hint';v.append(b,tag,hint);
  const label=()=>{tag.textContent=tr('ПОВТОР · ×0.15','REPLAY · ×0.15');hint.textContent=tr('клік — пропустити','click to skip')};label();document.addEventListener('siege-language',label)}
-function damageDeck(amount,position){
+function damageDeck(amount,position,awaitingCamera=false){
  const loss=armored(amount);
  if(!loss)return 0;
  const point=new T.Vector3(position.x,3.23,T.MathUtils.clamp(position.z,-2,2));
@@ -313,14 +315,24 @@ function damageDeck(amount,position){
   if(v.m.visible&&v.m.position.distanceToSquared(point)<36){fx.throwCar(v.m.clone(),point);v.wrecked=true}
   v.m.visible=false;
  }
+ spot.awaitingCamera=awaitingCamera;spot.repairAfter=time+1.2;
  road.impact(spot,time);world.setDeckHoles(damageSpots);spot.loss+=loss;hp-=loss;waveDamage+=loss;hype+=loss;return loss;
+}
+function updateRoadCrew(){
+ if(world.cinematicActive())return;
+ for(const spot of damageSpots){
+  if(!spot.awaitingCamera)continue;
+  spot.awaitingCamera=false;spot.repairAfter=time+1.2;
+ }
 }
 function patchDeck(spot){
  if(phase!=='live'||paused||hp>=100||(spot&&!damageSpots.includes(spot)))return;
- const amount=Math.min(25,spot?.loss??100-hp),cost=price(PATCH*amount/25);
+ const available=(spot?[spot]:damageSpots).filter(s=>!s.awaitingCamera&&time>=(s.repairAfter??0));
+ if(!available.length)return;
+ const amount=Math.min(25,available.reduce((sum,s)=>sum+s.loss,0)),cost=price(PATCH*amount/25);
  if(cash<cost)return;
  let left=amount;
- for(const site of spot?[spot]:[...damageSpots]){
+ for(const site of available){
   const fill=Math.min(left,site.loss);site.loss-=fill;left-=fill;
   if(fill)road.repair(site,time);
   if(!site.loss)damageSpots.splice(damageSpots.indexOf(site),1);
@@ -388,6 +400,8 @@ function arcadeHud(){
   const button=card.querySelector('button');
   button.textContent=autoplay?tr('До моєї гри','Return to my game'):tr('Нова гра','New game');
   button.onclick=autoplay?watchGame:confirmNewGame;
+  if(!autoplay)showRecords(card,{id:runId,difficulty:$('difficulty').value,wave,score});
+  const records=card.querySelector('.records');if(records)records.hidden=autoplay;
   return order(tr('Арка впала · хвиля ','Arch collapsed · wave ')+wave);
  }
  if(autoplay)return order(tr('Автогра','Autoplay'));
@@ -691,8 +705,8 @@ function step(dt){
    $('caption').textContent=crashed.has(e)?tr("ЗІТКНЕННЯ","COLLISION"):retreat?tr("ЦІЛЬ ЗАЛИШИЛА ЗОНУ","TARGET LEFT THE AREA"):tr("ПРОМАХ","MISS");
    continue;
   }
-  if(e.deckX!=null&&!retreat&&!offline&&!e.filmed&&d<5&&e.hp>0){
-   e.filmed=world.cinematic(p.clone(),2,{bomb:true,follow:e.m,radius:8,height:3});
+  if(e.deckX!=null&&!retreat&&!offline&&!e.filmed&&d<7&&e.hp>0){
+   e.filmed=world.cinematic(p.clone(),2,{bomb:true,deckShot:true,follow:e.m,radius:8,height:3});
   }
   if(e.k==='baby'&&e.hp>0&&!e.filmed&&e.hp>fx.pendingDamage(e)){
    const ramTanker=tankers.near(p,1.6),ramShip=e.target?.k==='cruiser'&&units.includes(e.target)&&p.distanceTo(e.target.m.position)<3.4;
@@ -721,8 +735,8 @@ function step(dt){
     writeMessage(()=>tr("Паляниця розсипалася! Вантажівки стоять 4 секунди.","The loaf burst into crumbs! Trucks stop for 4 seconds."));
    }else if(e.k==='flamingo'&&e.deckX!=null){
     const point=new T.Vector3(e.deckX,3.23,0);
-    if(e.filmed)world.cinematicBoom(point,{subject:e.m});
-    fx.explosion(point,1);damageDeck(12,point);
+    const filmed=e.filmed&&world.cinematicBoom(point,{subject:e.m});
+    damageDeck(12,point,filmed);
    }else if(e.k==='flamingo'&&autoplay&&Math.random()>.055*flockPressure){
     fx.feathers(p,0xff86ac);
    }else if(e.k==='flamingo'){hits=Math.min(3,hits+1);world.cinematic(p.clone(),hits>=3?2:1.5);world.setHits(hits);damageDeck(12,p);hype+=25;casualties(new T.Vector3())}
@@ -741,7 +755,7 @@ function step(dt){
 function flap(m,t){for(const wing of m.userData.wings||[])wing.rotation.x=wing.scale.z*Math.sin(t*6)*.32}
 let clockText='';
 function frame(now){const dt=Math.min((now-last)/1000,.08)*world.timeScale();last=now;if(phase==='live'&&!paused&&!$('restart').open){step(dt);if(autoplay&&!paused&&phase==='live')step(dt)};if(selectedShip)ring.position.copy(selectedShip.m.position);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
- {const c=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');if(clockText!==c){clockText=c;$('clock').textContent=c}}road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;moveTrain(trafficTime);tankers.draw(time);beams.update(now,nightLevel(),[...enemies,flyby].filter(Boolean));world.draw(time,trafficTime,phase==="live"&&orders.smoke.end>time);if(flyby?.flight?.atContact)flyby.flight.contactShown=true;updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
+ {const c=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');if(clockText!==c){clockText=c;$('clock').textContent=c}}updateRoadCrew();road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;moveTrain(trafficTime);tankers.draw(time);beams.update(now,nightLevel(),[...enemies,flyby].filter(Boolean));world.draw(time,trafficTime,phase==="live"&&orders.smoke.end>time);if(flyby?.flight?.atContact)flyby.flight.contactShown=true;updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
 document.addEventListener('siege-language',()=>{
  specs=getSpecs();techs=getTechs();ui();showTraffic();showSignals();
 });
@@ -763,7 +777,7 @@ function saveMatch(){
  if(autoplay)return;
  try{
   const state={flockPressure,spent,partialLedger,guestWave,die,waveElapsed,breakLeft,cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught};
-  localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,state,tech,patches:road.patchedMeshes().map(m=>m.position.toArray()),damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss})),difficulty:$('difficulty').value,inspection:$('inspection').value,
+  localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,runId,state,tech,patches:road.patchedMeshes().map(m=>m.position.toArray()),damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss})),difficulty:$('difficulty').value,inspection:$('inspection').value,
    trafficTime,oilSlicks:tankers.snapshot(),lostTankers:tankers.losses(),orders:[orders.gps.end,orders.net.end,orders.smoke.end],units:units.map(packEntity),enemies:enemies.map(packEntity),vehicles:vehicles.map(packEntity),
    barges:barges.map(packEntity),flights:fx.snapshot(enemies),camera:world.cameraPosition(),selectedShip:units.indexOf(selectedShip),placing}));
  }catch(err){console.warn('Could not save match',err)}
@@ -771,6 +785,7 @@ function saveMatch(){
 function restoreMatch(){
  const data=JSON.parse(localStorage.getItem(SAVE_KEY));
  if(!data||data.version!==1)return;
+ runId=data.runId??crypto.randomUUID();
  const state={...data.state};
  if(!Object.hasOwn(reserves,data.difficulty)||!['buy','live','over'].includes(state.phase)||!Number.isInteger(state.wave))return;
  // JSON stores a previously corrupted monetary balance as null. Resume conservatively.

@@ -284,10 +284,7 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
  .strip{position:static;min-height:0;padding:2px 8px;gap:8px}
  #pause{height:28px}.arcade{padding:3px 8px}.arcade-order{flex-direction:row;align-items:center}
 }
-@media(pointer:coarse) and (max-width:600px) and (orientation:portrait){
- body{position:fixed;left:100dvw;top:0;width:100dvh;height:100dvw;transform-origin:0 0;transform:rotate(90deg);padding:env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left) env(safe-area-inset-top)}
- #restart{transform:rotate(90deg);width:min(380px,80dvh);max-width:none;max-height:88dvw;overflow:auto}
-}
+
 
 /* ---- Scene labels v3: compact chips, expand on hover/focus ---- */
 .scene-marker{gap:5px;padding:2px 8px 2px 2px;border-radius:999px;background:rgba(10,14,20,.55);box-shadow:0 2px 8px rgba(0,0,0,.35);border-color:rgba(255,255,255,.12);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
@@ -316,7 +313,7 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
 #loading-status{margin:10px 0 16px}
 #loading-screen progress{width:100%;height:6px;accent-color:var(--accent);appearance:auto}
 #loading-screen button{padding:8px 12px;background:var(--accent);color:#111;border:0;border-radius:4px}
-@media(pointer:coarse) and (max-width:600px) and (orientation:portrait){#loading-screen{transform:rotate(90deg)}}
+
 
 /* ---- Disclaimer ---- */
 .legal{margin:0 auto;padding:10px 16px 14px;max-width:880px;text-align:center;font:500 10.5px/1.5 var(--mono);color:#8b96a3;letter-spacing:.01em;opacity:.85}
@@ -333,3 +330,5 @@ html{touch-action:pan-x pan-y}
 #defeat-card h2{margin:0;color:#ef665d;font:900 clamp(26px,5vw,54px)/1.15 var(--display);letter-spacing:.03em;text-shadow:2px 3px #000}
 #defeat-card p{margin:8px 0}#defeat-card button{background:var(--accent);color:#15171b;padding:7px 14px;border:0;font-weight:700}
 @keyframes defeat-in{from{opacity:0}to{opacity:1}}
+
+#defeat-card{max-height:95%;overflow:auto}.records{padding-top:8px}.records form{display:flex;justify-content:center;gap:4px;margin:6px}.records form[hidden]{display:none}.records input{min-width:0;width:45%}.records ol{text-align:start;max-height:8em;overflow:auto}

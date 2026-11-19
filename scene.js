@@ -96,28 +96,6 @@ export function landscape(view) {
  camera.layers.enable(1); // land (see terrain.js)
  const controls = new OrbitControls(camera, renderer.domElement);
  controls.target.set(0, 5, 0);
- const sideways=matchMedia('(pointer:coarse) and (max-width:600px) and (orientation:portrait)');
- const canvas=renderer.domElement;
- const fingers=new Map();
- function orientTouch(){
-  fingers.clear();
-  controls.touches.ONE=sideways.matches?-1:T.TOUCH.ROTATE;
- }
- orientTouch();sideways.addEventListener('change',orientTouch);
- canvas.addEventListener('pointerdown',e=>{
-  if(sideways.matches&&e.pointerType==='touch')fingers.set(e.pointerId,[e.clientX,e.clientY]);
- });
- canvas.addEventListener('pointermove',e=>{
-  const previous=fingers.get(e.pointerId);
-  if(!previous)return;
-  if(fingers.size===1){
-   const factor=2*Math.PI/canvas.clientHeight;
-   controls.rotateLeft((e.clientY-previous[1])*factor);
-   controls.rotateUp((previous[0]-e.clientX)*factor);
-  }
-  fingers.set(e.pointerId,[e.clientX,e.clientY]);
- });
- for(const event of ['pointerup','pointercancel','lostpointercapture'])canvas.addEventListener(event,e=>fingers.delete(e.pointerId));
  controls.enablePan = false;
  controls.enableDamping = true;
  controls.minDistance = MIN_DIST;
@@ -414,7 +392,7 @@ export function landscape(view) {
  function aim(event) {
   const r = renderer.domElement.getBoundingClientRect();
   const x=(event.clientX-r.left)/r.width,y=(event.clientY-r.top)/r.height;
-  ray.setFromCamera(sideways.matches?new T.Vector2(2*y-1,2*x-1):new T.Vector2(2*x-1,1-2*y),camera);
+  ray.setFromCamera(new T.Vector2(2*x-1,1-2*y),camera);
  }
  function pick(event, groups) {
   aim(event);
@@ -474,12 +452,12 @@ export function landscape(view) {
   onScreen(point){const p=point.clone().project(camera);return Math.abs(p.x)<=1&&Math.abs(p.y)<=1&&Math.abs(p.z)<=1},
   waterPoint(event) { aim(event); return ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), 0), new T.Vector3()); },
   cinematic(point, strength = 1, opts = {}) {
-   if (reduceMotion.matches || (cineCooldown > 0 && !opts.bomb) || (cine && (cine.bomb || cine.strength >= strength) && !opts.bomb)) return false;
+   if (cine?.deckShot || reduceMotion.matches || (cineCooldown > 0 && !opts.bomb) || (cine && (cine.bomb || cine.strength >= strength) && !opts.bomb)) return false;
    const fromPos = cine ? cine.fromPos : camera.position.clone(), fromTarget = cine ? cine.fromTarget : controls.target.clone();
    const rel = fromPos.clone().sub(point);
    const duration = 2.4 + .8 * strength;
    cine = {point: point.clone(), age: 0, duration, end: opts.bomb ? null : duration, strength, fromPos, fromTarget,
-    follow: opts.follow ?? null, lift: new T.Vector3(0, opts.lift ?? 0, 0), bomb: !!opts.bomb, boomAt: null,
+    deckShot: !!opts.deckShot, follow: opts.follow ?? null, lift: new T.Vector3(0, opts.lift ?? 0, 0), bomb: !!opts.bomb, boomAt: null,
     angle: Math.atan2(rel.z, rel.x) + (Math.random() - .5) * .6, sweep: (Math.random() < .5 ? -1 : 1) * (opts.bomb ? 1.5 : 1.6 + .6 * strength),
     radius: opts.radius ?? 7 + 2.5 * strength, height: opts.height ?? 2.4 + 1.2 * strength};
    cineCooldown = 9; controls.enabled = false; view.classList.add('cinematic');
@@ -487,7 +465,7 @@ export function landscape(view) {
   },
   // Detonation inside a bomb shot: freeze-frame, then a very slow release.
   cinematicBoom(point, opts = {}) {
-   if (!cine || !cine.bomb || cine.boomAt != null || (opts.subject && cine.follow !== opts.subject)) return false;
+   if (!cine || !cine.bomb || cine.boomAt != null || (cine.deckShot && cine.follow !== opts.subject) || (opts.subject && cine.follow !== opts.subject)) return false;
    if (point) cine.point.copy(point);
    cine.follow = opts.follow ?? null; cine.lift.set(0, 0, 0); cine.boomAt = cine.age;
    cine.end = opts.hold ? null : cine.age + 4.6;
@@ -499,13 +477,14 @@ export function landscape(view) {
    cine.boomAt = cine.age - 10; cine.end = cine.age + .6; cine.follow = null; return true;
   },
   // Let a held shot (e.g. following a falling wreck) wind down.
-  cinematicRelease(extra = 1.4) { if (cine) cine.end = cine.age + extra; },
+  cinematicRelease(extra = 1.4) { if (cine && !cine.deckShot) cine.end = cine.age + extra; },
   timeScale() {
    if (!cine) return 1;
    const c = cine;
    if (c.bomb) {
     if (c.boomAt == null) return Math.max(.25, 1 - c.age * 1.2);            // approach: crawl toward the blast
     const s = c.age - c.boomAt;
+    if (c.deckShot) return .18 + .82 * T.MathUtils.smoothstep(s, 3.5, 4.6);
     if (s < .35) return .006;                                              // near freeze-frame
     if (s < 3.3) return .006 + .06 * ((s - .35) / 2.95) ** 2;              // bullet-time release
     return Math.min(1, .066 + (s - 3.3) / 1.3);                          // back to real time
