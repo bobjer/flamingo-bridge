@@ -1,3 +1,4 @@
+import {archSmoke} from './arch-smoke.js';
 import {DAY_SECONDS} from './tanker-traffic.js';
 import * as T from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
@@ -353,6 +354,7 @@ export function landscape(view) {
   b.position.set((rand() - .5) * 24, .05, (rand() < .5 ? -1 : 1) * (14 + rand() * 40));
   scene.add(b);
  }
+ const drawArchSmoke=archSmoke(scene);
  const boat = new T.Group();
  const hull = new T.Mesh(new T.BoxGeometry(1.8, .35, .6), new T.MeshStandardMaterial({color: 0xf2b21a, roughness: .5}));
  const sail = new T.Mesh(new T.PlaneGeometry(.9, 1.6), new T.MeshStandardMaterial({color: 0xfafafa, side: T.DoubleSide, roughness: .8}));
@@ -516,7 +518,7 @@ export function landscape(view) {
    if (!filming) prevDist = dist;
    // sea haze swallows the far ends of the viaduct; it thins out from high orbit so the whole sea is visible
    scene.fog.density = .0019 * Math.min(1, 140 / dist) ** 1.6;
-   scene.fog.density += smoke ? .028 : 0;
+   drawArchSmoke(gameTime,smoke,day,camera);
    const passage=trafficTime*.052;
    boat.position.x=2.4;
    boat.position.z=32*Math.cos(passage);
