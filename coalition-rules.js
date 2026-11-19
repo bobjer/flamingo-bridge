@@ -61,7 +61,8 @@ export function dealWave(s, random = Math.random) {
 }
 
 export const openingBudget = {easy: 140, normal: CFG.start, hard: 70};
-export const donorRetention = {easy: .965, normal: CFG.fatigue, hard: .935};
+export const donorRetention = {easy: .965, normal: CFG.fatigue, hard: .88};
+export const offContractRate = difficulty => difficulty === 'hard' ? 8 : CFG.hitOther;
 export function newSeason(random = Math.random, difficulty = 'normal') {
   const s = { version: saveVersion, difficulty, wave: 1, phase: 'plan', funds: openingBudget[difficulty], views: 0, bestCombo: 0, fatigue: 1,
     stock: emptyStock(), bought: emptyStock(), ious: [], offer: null, aa: [], cameo: '', deal: '', event: '',
@@ -133,7 +134,7 @@ export function launch(s, random = Math.random) {
     at += (count - 1) * CFG.spacing + CFG.groupGap;
   }
   const end = lastImpact(flights);
-  const report = { wave: s.wave, flights, units: flights.length, sponsor: card.id, contract: card.marker, fatigue: s.fatigue,
+  const report = { wave: s.wave, flights, units: flights.length, sponsor: card.id, contract: card.marker, fatigue: s.fatigue, offContract: offContractRate(s.difficulty),
     duration: end + CFG.tail, cameo: s.cameo, event: s.event, rebate, musk: null, ew: null, press: null, committee: null, decree: false, seed: [random(), random()] };
   if (s.cameo === 'musk') report.musk = { from: Math.round(.3 * end), dur: CFG.muskDur };
   if (s.cameo === 'trump' && s.deal === 'declined') {
@@ -153,7 +154,7 @@ export function launch(s, random = Math.random) {
 // Money and views of one successful impact that was filmed as `kind` ('drone' | 'far' | 'none').
 export function hitValue(r, f, kind) {
   if (kind === 'none' || f.decree) return { value: 0, pay: 0 };
-  const base = f.marker === r.contract ? CFG.hitContract : CFG.hitOther;
+  const base = f.marker === r.contract ? CFG.hitContract : (r.offContract ?? CFG.hitOther);
   let value = base * r.fatigue * (f.type === 2 ? CFG.loaf : 1);
   if (kind === 'far') value *= f.type === 2 ? CFG.loafFar : CFG.far;
   let pay;

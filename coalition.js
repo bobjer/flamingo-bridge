@@ -1,6 +1,6 @@
 import {tr} from './language.js';
 import {changeSide, languageButton, read, write, levelField, preferredLevel, rememberLevel} from './factions.js';
-import {CFG, costs, openingBudget, newSeason, pickSponsor, purchase, launch, finishWave, nextWave, acceptDeal, declineDeal, evaluate, total, aaChance, cameraSubjects} from './coalition-rules.js';
+import {CFG, costs, openingBudget, donorRetention, offContractRate, newSeason, pickSponsor, purchase, launch, finishWave, nextWave, acceptDeal, declineDeal, evaluate, total, aaChance, cameraSubjects} from './coalition-rules.js';
 import {units, unitHints, subjectName, fmtViews, sponsor, cameo, donorLines, ending, wavesWord, icon} from './coalition-copy.js';
 import {createStage} from './coalition-world.js';
 import {createFeed} from './coalition-video.js';
@@ -169,6 +169,7 @@ export function startCoalition() {
  }
  function left() {
   const tired = Math.round((1 - s.fatigue) * 100);
+  const cut = num(Math.round(1000 * (1 - donorRetention[s.difficulty])) / 10);
   return '<aside class="col c-left" aria-label="' + tr('Штаб','HQ') + '">' +
    '<section class="panel br"><div class="label">' + tr('ПОТОЧНА ФАЗА','CURRENT PHASE') + '</div><div class="phase-row"><b class="big" aria-hidden="true">' + String(s.wave).padStart(2, '0') + '</b><div><h1>' + tr('Нема відео — <i>не було</i>','No video — <i>no happened</i>') + '</h1><div class="c-phase">● ' + phaseWord() + '</div></div></div></section>' +
    '<section class="panel br"><div class="label">' + tr('ЗВЕДЕННЯ','SUMMARY') + '</div>' +
@@ -181,7 +182,7 @@ export function startCoalition() {
    '<section class="panel br brief"><div class="label">' + tr('ІНСТРУКТАЖ','BRIEFING') + '</div>' +
     '<details><summary>' + tr('Як це працює','How it works') + '</summary><p>' + tr('Спонсори платять не за влучання, а за відео влучання. Влучання зняте, якщо в момент удару відкритий дрон його маркера і в нього є сигнал: він платить 100%. Дальня камера дає 50% за паляницю й 30% за решту, з урахуванням умов спонсора. Незнято — 0.','Sponsors pay for the video of a hit, not for the hit. A hit counts as filmed if, at impact, the drone of that marker is open and has signal: it pays 100%. The far camera gives 50% for Palianytsia and 30% for other units, subject to sponsor terms. Not filmed pays 0.') + '</p><p>' + tr('Кожне наступне влучання, зняте дроном, дає +25% переглядів. Промах камери скидає комбо.','Each next hit filmed by a drone adds +25% views. A missed camera resets the combo.') + '</p><p>' + tr('«Автогра» віддає ефір підряднику: він купує зграю й перемикає дрони. Забіг позначається в лідерборді.','“Autoplay” outsources the broadcast to a contractor who buys the flock and switches drones. The run is marked on the leaderboard.') + '</p></details>' +
     '<details><summary>' + tr('Камери','Cameras') + '</summary><p>' + tr('Три камери висвітлюють три сюжети хвилі. Назву сюжету видно на вкладці. Іноді на четвертій камері доступний супутниковий проліт за тарифом дальньої камери. На вкладці «▲N» — скільки юнітів летить до маркера; за 1,5 с до удару вона блимає. Клавіші 1–4 (5 — пресконференція).','Three cameras cover three stories each wave. Each tab names its story. Occasionally the fourth tab receives a satellite pass at the far-camera rate. “▲N” on a tab is how many units are heading to that marker; it blinks 1.5 s before impact. Keys 1–4 (5 is the press tab).') + '</p></details>' +
-    '<details><summary>' + tr('Гарнізон і втома','Garrison and fatigue') + '</summary><p>' + tr('Над маркерами видно значки ППО. Шанс збиття 8% + 4,5% за хвилю, максимум 70%; Малюків збивають вдвічі рідше. З кожною хвилею донори втомлюються швидше на вищій складності.','Anti-air icons sit above covered markers. Kill chance is 8% + 4.5% per wave, capped at 70%; Maliuk is hit half as often. Donor funding declines faster on higher difficulties.') + '</p></details>' +
+    '<details><summary>' + tr('Гарнізон і втома','Garrison and fatigue') + '</summary><p>' + tr('Над маркерами видно значки ППО. Шанс збиття 8% + 4,5% за хвилю, максимум 70%; Малюків збивають вдвічі рідше. На цій складності ставки за наступну хвилю падають на ' + cut + '%. Базова ставка за контрактний кадр — ' + CFG.hitContract + ', за інший — ' + offContractRate(s.difficulty) + '.','Anti-air icons sit above covered markers. Kill chance is 8% + 4.5% per wave, capped at 70%; Maliuk is hit half as often. At this difficulty rates fall by ' + cut + '% each wave. Base rates are ' + CFG.hitContract + ' for a contract shot and ' + offContractRate(s.difficulty) + ' for other footage.') + '</p></details>' +
     '<details><summary>' + tr('Юніти','Units') + '</summary><p>' + units().map((n, i) => n + ' ' + costs[i] + ' — ' + unitHints()[i]).join('; ') + '.</p></details></section></aside>';
  }
  const unitList = list => list.map(([n, i]) => n + ' ×' + i).join(' → ');
