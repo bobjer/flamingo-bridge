@@ -656,11 +656,15 @@ function step(dt){
   const actual=e.target?.m.position;
   const missed=offline&&((e.target&&!units.includes(e.target))||Math.hypot(p.x-(actual?.x??0),p.z-(actual?.z??0))>1.3);
   if(crashed.has(e)||(e.hp>0&&d<1.3&&(retreat||missed))){
-   world.scene.remove(e.m);enemies.splice(i,1);
+   if(e.filmed)world.cinematicCancel(e.m);world.scene.remove(e.m);enemies.splice(i,1);
    $('caption').textContent=crashed.has(e)?tr("ЗІТКНЕННЯ","COLLISION"):retreat?tr("ЦІЛЬ ЗАЛИШИЛА ЗОНУ","TARGET LEFT THE AREA"):tr("ПРОМАХ","MISS");
    continue;
   }
-  if(e.k==='baby'&&e.hp>0&&!e.filmed&&tankers.near(p,3.2)){e.filmed=true;world.cinematic(p.clone(),2,{bomb:true,follow:e.m,lift:.6,radius:7.5,height:2.4})}
+  if(e.k==='baby'&&e.hp>0&&!e.filmed&&e.hp>fx.pendingDamage(e)){
+   const ramTanker=tankers.near(p,1.6),ramShip=e.target?.k==='cruiser'&&units.includes(e.target)&&p.distanceTo(e.target.m.position)<3.4;
+   if(ramTanker||ramShip){e.filmed=true;world.cinematic(p.clone(),2,{bomb:true,follow:e.m,lift:.6,radius:7.5,height:2.4})}
+  }
+  if(e.filmed&&e.k==='baby'&&e.hp<=fx.pendingDamage(e))world.cinematicCancel(e.m);
   if(e.k==='baby'&&e.hp>0&&tankers.collide(p,time)){
    const blast=p.clone().setY(.9);world.cinematicBoom(blast);
    fx.explosion(blast,2.6);fx.explosion(blast.clone().add(new T.Vector3(0,.4,1.4)),1.6);fx.explosion(blast.clone().add(new T.Vector3(0,.3,-1.5)),1.5);
@@ -671,9 +675,10 @@ function step(dt){
   }
   const intercepted=e.k==='baby'&&barges.some(b=>Math.abs(p.x-b.m.position.x)<2.3&&Math.abs(p.z-b.m.position.z)<1.25);
   if(e.hp<=0||intercepted||d<1.3){
-   if(e.hp<=0||intercepted){score++;reward(e.k);if(intercepted)fx.splash(p,.8);else fx.kill(p.clone(),e.k)}
+   if(e.hp<=0||intercepted){if(e.filmed)world.cinematicCancel(e.m);score++;reward(e.k);if(intercepted)fx.splash(p,.8);else fx.kill(p.clone(),e.k)}
    else if(e.target){
     const u=e.target;
+    if(e.k==='baby'&&units.includes(u)){const blast=p.clone().setY(.9);world.cinematicBoom(blast);fx.explosion(blast,1.8);fx.splash(p,1.8)}
     if(units.includes(u)&&--u.hull<=0)removeUnit(u);
     writeMessage(()=>getSpecs()[u.k][0]+(u.hull?tr(" · міцність "," · hull ")+u.hull:tr(" вибув із ладу"," out of action")));
    }else if(e.k==='loaf'){

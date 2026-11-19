@@ -121,17 +121,46 @@ function dolphin(p) {
   }
   box(p,gold,-.24,.77,0,.35,.18,.49);
 }
+// "Malyuk": a cheeky baby pilot riding a tiny kamikaze sea drone.
+const blinkRed=new THREE.MeshBasicMaterial({color:0xff2a2a,toneMapped:false});
+const lensMat=new THREE.MeshStandardMaterial({color:0x7fe6ff,metalness:.6,roughness:.08,emissive:0x0b3a44});
 function baby(p) {
-  const ring = add(p,'tube',0xffcf55,0,.21,0,.83,.25,.63);
-  oval(p,coral,0,ring.position.y+.12,0,.82,.16,.63);
-  oval(p,skin,.04,.63,0,.36,.47,.3);
-  oval(p,skin,.16,1.17,0,.43,.42,.39);
-  oval(p,gold,.06,1.54,0,.11,.12,.09);
-  for(const s of [-1,1]) {
-    oval(p,ink,.49,1.24,s*.17,.037,.043,.038);
-    rod(p,skin,[.02,.85,s*.26],[.18,1.03,s*.53],.095);
+  const hull=0x37424c,stripe=0xffcf3a;
+  // drone hull: long wedge with a sharp bow
+  oval(p,hull,-.05,.12,0,.95,.17,.36);
+  add(p,'cone',hull,.95,.12,0,.2,.42,.2).rotation.z=-Math.PI/2;
+  box(p,stripe,-.05,.24,0,1.5,.035,.5);
+  box(p,0x1e252b,-.62,.28,0,.34,.16,.4);                     // engine pod
+  const prop=new THREE.Group();prop.position.set(-.86,.14,0);p.add(prop);
+  for(let i=0;i<3;i++){const b=box(prop,0xc9ced3,0,0,0,.02,.22,.07);b.rotation.x=i*Math.PI*2/3;}
+  prop.onBeforeRender=()=>{prop.rotation.x=performance.now()*.03};
+  // antenna with a blinking warning light
+  rod(p,ink,[-.5,.3,.14],[-.55,.78,.17],.012);
+  const led=new THREE.Mesh(geometry.oval,blinkRed);led.scale.setScalar(.04);led.position.set(-.55,.8,.17);p.add(led);
+  led.onBeforeRender=()=>{led.visible=Math.floor(performance.now()/350)%2===0};
+  // baby pilot
+  oval(p,0xf4f1ea,-.02,.36,0,.24,.15,.22);                    // diaper
+  oval(p,skin,0,.56,0,.24,.26,.22);                           // chubby body
+  oval(p,skin,.06,.92,0,.27,.25,.25);                         // big head
+  oval(p,0x8a5a3a,-.02,1.14,.03,.06,.07,.05);                 // hair curl
+  rod(p,0x8a5a3a,[-.02,1.17,.03],[.08,1.24,.06],.02,true);
+  for(const s of [-1,1]){
+   oval(p,blush,.25,.86,s*.13,.06,.045,.05);                  // rosy cheeks
+   oval(p,ink,.28,.96,s*.08,.03,.035,.03);                    // eyes
+   // aviator goggles pushed up on the forehead
+   const ring=add(p,'tube',0x5a3a26,.29,1.05,s*.095,.068,.05,.068);ring.rotation.z=Math.PI/2;
+   const lens=new THREE.Mesh(geometry.tube,lensMat);lens.scale.set(.055,.055,.055);lens.position.set(.305,1.05,s*.095);lens.rotation.z=Math.PI/2;p.add(lens);
+   rod(p,skin,[.03,.66,s*.2],[.34,.6,s*.17],.06);             // arms forward
+   oval(p,skin,.36,.6,s*.16,.055,.05,.05);                    // fists
+   oval(p,skin,.12,.36,s*.16,.14,.08,.08);                    // little legs
   }
-  oval(p,0x66d6be,.55,1.08,0,.085,.094,.12);
+  add(p,new THREE.TorusGeometry(.255,.018,6,28),0x5a3a26,.06,1.05,0,1,1,1).rotation.x=Math.PI/2; // goggle strap
+  // pacifier
+  oval(p,coral,.33,.83,0,.03,.05,.07);
+  add(p,'tube',gold,.36,.83,0,.04,.015,.04).rotation.z=Math.PI/2;
+  // handlebar
+  rod(p,ink,[.42,.26,0],[.42,.6,0],.022);
+  rod(p,ink,[.42,.6,-.18],[.42,.6,.18],.025);
 }
 function truck(p) {
   box(p,ink,0,.38,0,2.32,.24,1.04);

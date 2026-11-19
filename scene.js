@@ -462,6 +462,11 @@ export function landscape(view) {
    cine.end = opts.hold ? null : cine.age + 4.6;
    return true;
   },
+  // Abort a pre-roll whose subject died before the big moment (e.g. a baby shot down en route).
+  cinematicCancel(obj) {
+   if (!cine || !cine.bomb || cine.boomAt != null || (obj && cine.follow !== obj)) return false;
+   cine.boomAt = cine.age - 10; cine.end = cine.age + .6; cine.follow = null; return true;
+  },
   // Let a held shot (e.g. following a falling wreck) wind down.
   cinematicRelease(extra = 1.4) { if (cine) cine.end = cine.age + extra; },
   timeScale() {
