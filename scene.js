@@ -348,17 +348,18 @@ export function landscape(view) {
  water.material.uniforms.size.value = 14;
  // Storm: swell displacement on the near grid, whitecaps on crests and in wind streaks.
  water.material.uniforms.storm = {value: 0};
+ water.material.uniforms.ring = {value: new T.Vector4(0, 0, -1, 0)}; // x, z, age (s, <0 = off), amplitude
  const SWELL = `
-  uniform float storm; varying float vCrest;
+  uniform float storm; uniform vec4 ring; varying float vCrest; varying float vRing;
   float swell(vec2 p, float t) {
    return sin(dot(p, vec2(.21, .13)) + t * 1.3) * .5 + sin(dot(p, vec2(-.11, .27)) + t * 1.7) * .32 + sin(dot(p, vec2(.37, -.19)) + t * 2.3) * .18;
   }`;
  water.material.vertexShader = water.material.vertexShader
-  .replace('void main() {', SWELL + '\nvoid main() {\n vec3 pos = position;\n float fade = 1. - smoothstep(110., 155., length(pos.xy));\n float h = swell(vec2(pos.x, -pos.y), time * 3.) * fade;\n pos.z += storm * .55 * h; vCrest = h;')
+  .replace('void main() {', SWELL + '\nvoid main() {\n vec3 pos = position;\n float fade = 1. - smoothstep(110., 155., length(pos.xy));\n float h = swell(vec2(pos.x, -pos.y), time * 3.) * fade;\n pos.z += storm * .55 * h; vCrest = h;\n vRing = 0.;\n if (ring.z >= 0.) { float rr = ring.z * 9., dd = length(vec2(pos.x, -pos.y) - ring.xy); vRing = exp(-pow((dd - rr) / (2.2 + ring.z * .5), 2.)) * exp(-ring.z * .22) * fade; pos.z += ring.w * vRing; }')
   .replace('mirrorCoord = modelMatrix * vec4( position, 1.0 );', 'mirrorCoord = modelMatrix * vec4( pos, 1.0 );')
   .replace('vec4 mvPosition =  modelViewMatrix * vec4( position, 1.0 );', 'vec4 mvPosition = modelViewMatrix * vec4( pos, 1.0 );');
  water.material.fragmentShader = water.material.fragmentShader
-  .replace('void main() {', `uniform float storm; varying float vCrest;
+  .replace('void main() {', `uniform float storm; varying float vCrest; varying float vRing;
    float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
    float vnoise(vec2 p) {
     vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
@@ -376,6 +377,10 @@ export function landscape(view) {
     float foam = storm * group * cap * (1. - smoothstep(160., 700., distance));
     vec3 foamColor = vec3(.84, .88, .9) * clamp(length(sunColor) * .95, .14, 1.);
     outgoingLight = mix(outgoingLight, foamColor, foam * .8);
+   }
+   if (vRing > .02) {
+    float spray = smoothstep(.25, .9, vRing) * smoothstep(.3, .7, vnoise(worldPosition.xz * 1.4 + time));
+    outgoingLight = mix(outgoingLight * (1. + .35 * vRing), vec3(.86, .9, .92) * clamp(length(sunColor) * 1.1, .2, 1.), spray * .75);
    }`);
  if (!water.material.vertexShader.includes('vCrest = h') || !water.material.fragmentShader.includes('foamColor')) console.warn('storm water patch did not apply');
  scene.add(water);
@@ -444,6 +449,7 @@ export function landscape(view) {
  let storm = 0, stormTarget = 0, waveClock = 0, lastDraw = 0;
  const stormWater = new T.Color(0x3c5658), stormHaze = new T.Color(0x6e7a84);
  const swellAt = (x, z, t) => Math.sin(x * .21 + z * .13 + t * 1.3) * .5 + Math.sin(x * -.11 + z * .27 + t * 1.7) * .32 + Math.sin(x * .37 + z * -.19 + t * 2.3) * .18;
+ let collapseAge = 0, splashed = false, ringStart = null, onCollapseSplash = null;
  let collapse = false, prevDist = camera.position.distanceTo(controls.target);
  // Bullet-time: fly in to an impact, sweep around it in slow motion, fly back.
  let cine = null, cineLast = 0, cineCooldown = 0;
@@ -528,13 +534,14 @@ export function landscape(view) {
   onScreen(point){const p=point.clone().project(camera);return Math.abs(p.x)<=1&&Math.abs(p.y)<=1&&Math.abs(p.z)<=1},
   waterPoint(event) { aim(event); return ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), 0), new T.Vector3()); },
   cinematic(point, strength = 1, opts = {}) {
-   if (cine?.deckShot || reduceMotion.matches || (cineCooldown > 0 && !opts.bomb) || (cine && (cine.bomb || cine.strength >= strength) && !opts.bomb)) return false;
+   const blocked = cine?.deckShot || reduceMotion.matches || (cineCooldown > 0 && !opts.bomb) || (cine && (cine.bomb || cine.strength >= strength) && !opts.bomb);
+   if ((blocked && !opts.force) || reduceMotion.matches) return false;
    const fromPos = cine ? cine.fromPos : camera.position.clone(), fromTarget = cine ? cine.fromTarget : controls.target.clone();
    const rel = fromPos.clone().sub(point);
-   const duration = 2.4 + .8 * strength;
+   const duration = opts.duration ?? 2.4 + .8 * strength;
    cine = {point: point.clone(), age: 0, duration, end: opts.bomb ? null : duration, strength, fromPos, fromTarget,
     deckShot: !!opts.deckShot, follow: opts.follow ?? null, lift: new T.Vector3(0, opts.lift ?? 0, 0), bomb: !!opts.bomb, boomAt: null,
-    angle: Math.atan2(rel.z, rel.x) + (Math.random() - .5) * .6, sweep: (Math.random() < .5 ? -1 : 1) * (opts.bomb ? 1.5 : 1.6 + .6 * strength),
+    angle: Math.atan2(rel.z, rel.x) + (Math.random() - .5) * .6, sweep: (Math.random() < .5 ? -1 : 1) * (opts.sweep ?? (opts.bomb ? 1.5 : 1.6 + .6 * strength)),
     radius: opts.radius ?? 7 + 2.5 * strength, height: opts.height ?? 2.4 + 1.2 * strength,
     baseFov: cine ? cine.baseFov : camera.fov, probeAt: 0, dodge: cine ? cine.dodge : {a: 0, h: 0, r: 1}, goal: cine ? cine.goal : {a: 0, h: 0, r: 1}};
    cineCooldown = 9; controls.enabled = false; view.classList.add('cinematic');
@@ -570,6 +577,7 @@ export function landscape(view) {
    return t < .08 ? 1 - t / .08 * .85 : t > .82 ? .15 + .85 * (t - .82) / .18 : .15;
   },
   cinematicActive: () => !!cine,
+  onCollapseSplash(fn) { onCollapseSplash = fn; },
   setStorm(on) { stormTarget = on ? 1 : 0; },
   stormLevel: () => storm,
   // surface height and tilt at a point, for floating things
@@ -579,9 +587,10 @@ export function landscape(view) {
    return {y: k * h, roll: k * (swellAt(x, z + e, t) - h) / e, pitch: k * (swellAt(x + e, z, t) - h) / e};
   },
   daylight: () => daylight,
-  setHits(hits) {
+  setHits(hits, instant = false) {
+   if (hits >= 3 && !collapse) { collapseAge = instant ? 30 : 0; splashed = instant; ringStart = null; }
    collapse = hits >= 3;
-   if (!hits) { falling.position.y = 0; falling.rotation.z = 0; }
+   if (!hits) { falling.position.y = 0; falling.rotation.z = 0; falling.rotation.x = 0; }
    span.scale.y = 1 - .035 * hits;
   },
   draw(gameTime=0,trafficTime=0,smoke=false) {
@@ -604,9 +613,17 @@ export function landscape(view) {
    water.material.uniforms.sunColor.value.copy(sun.color).multiplyScalar(.38+.5*day);
 
    if (collapse) {
-    falling.position.y = T.MathUtils.lerp(falling.position.y, -6.5, .045);
-    falling.rotation.z = T.MathUtils.lerp(falling.rotation.z, -.26, .045);
+    // sag and groan, then a long slow fall; the deck slaps the water and pushes out a ring wave
+    collapseAge += realDt;
+    const a = collapseAge, sag = T.MathUtils.smoothstep(a, 0, 1.1), fall = T.MathUtils.clamp((a - 1.1) / 4.2, 0, 1), f = fall * fall * (1.6 - .6 * fall);
+    const shiver = a < 1.4 ? Math.sin(a * 60) * .012 * (1.4 - a) : 0;
+    falling.position.y = -.35 * sag - 7.2 * f;
+    falling.rotation.z = -.05 * sag - .27 * f + shiver;
+    falling.rotation.x = .06 * f;
+    if (!splashed && falling.position.y < -2.7) { splashed = true; ringStart = collapseAge; onCollapseSplash?.(); }
    }
+   const ringU = water.material.uniforms.ring.value;
+   if (ringStart != null && collapseAge - ringStart < 18) ringU.set(0, 0, collapseAge - ringStart, .9); else ringU.z = -1;
    const filming = cineStep();
    const dist = camera.position.distanceTo(controls.target);
    // any zoom-out (buttons, wheel, trackpad pinch) also tilts the camera toward straight-down, like climbing to orbit

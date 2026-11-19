@@ -144,5 +144,36 @@ export function setupGameMenu(){
   select(current);
  }
  layout();phone.addEventListener('change',layout);
+ enhanceRestart();
  return board;
+}
+
+// New-game dialog: the difficulty <select> stays the source of truth; three tappable cards drive it.
+function enhanceRestart(){
+ const dialog=document.getElementById('restart'),select=document.getElementById('new-difficulty');
+ const label=select.closest('label'),cards=document.createElement('div');
+ cards.className='difficulty-cards';cards.setAttribute('role','radiogroup');
+ label.after(cards);label.classList.add('difficulty-native');
+ const blurbs={easy:()=>tr('Повна казна, повільні фламінго','Fat treasury, lazy flamingos'),normal:()=>tr('Чесна гра: бюджет тане','Fair fight: the budget melts'),hard:()=>tr('Пуста казна, злі птахи','Empty treasury, angry birds')};
+ const pips={easy:1,normal:2,hard:3};
+ function render(){
+  cards.setAttribute('aria-label',tr('Складність','Difficulty'));
+  cards.replaceChildren(...[...select.options].map(option=>{
+   const b=document.createElement('button');b.type='button';b.className='difficulty-card';b.setAttribute('role','radio');b.dataset.level=option.value;
+   const on=select.value===option.value;b.setAttribute('aria-checked',String(on));b.tabIndex=on?0:-1;
+   const meter=document.createElement('span');meter.className='difficulty-meter';meter.innerHTML='<i></i><i></i><i></i>';meter.dataset.n=pips[option.value]??2;
+   const name=document.createElement('strong');name.textContent=option.textContent;
+   const note=document.createElement('small');note.textContent=blurbs[option.value]?.()??'';
+   b.append(meter,name,note);
+   b.onclick=()=>{select.value=option.value;select.dispatchEvent(new Event('change',{bubbles:true}));render();b.focus()};
+   return b;
+  }));
+ }
+ cards.addEventListener('keydown',event=>{
+  const step={ArrowDown:1,ArrowRight:1,ArrowUp:-1,ArrowLeft:-1}[event.key];if(!step)return;event.preventDefault();
+  const options=[...select.options],i=options.findIndex(o=>o.value===select.value);
+  select.value=options[(i+step+options.length)%options.length].value;render();cards.querySelector('[aria-checked=true]').focus();
+ });
+ new MutationObserver(()=>{if(dialog.open)render()}).observe(dialog,{attributes:true,attributeFilter:['open']});
+ document.addEventListener('siege-language',render);render();
 }

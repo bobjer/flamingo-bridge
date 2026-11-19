@@ -292,6 +292,13 @@ export function fireworks(scene){
   fire.emit({pos:p.clone().add(around(.2)),v:around(.6),drag:2,life:.35+rnd()*.3,s0:.9*k,s1:.3,c0:C(0xffd890,3),c1:C(0xff4a10,1.4),alpha:.5,fadeIn:.02});
   smoke.emit({pos:p.clone().add(around(.2)),v:around(.4).add(v3(0,.6,0)),drag:.8,gravity:-.3,life:2.2+rnd()*1.6,s0:.6*k,s1:(2.4+rnd())*k,c0:C(0x1e1915),c1:C(0x5f5b57),cRate:1.2,alpha:.6,fadeIn:.04});
  }
+ // A standing fire with its own smoke column (per-site clock so many can burn at once).
+ function blaze(site,dt){
+  site.t=(site.t??0)-dt;if(site.t>0)return;site.t=.05;
+  const k=site.k??1,p=site.p;
+  fire.emit({pos:p.clone().add(around(.35*k)),v:around(.5).add(v3(0,1.1*k,0)),drag:2,life:.45+rnd()*.4,s0:1.1*k,s1:.35*k,c0:C(0xffd890,3),c1:C(0xff4a10,1.4),alpha:.55,fadeIn:.03});
+  if(rnd()<.6)smoke.emit({pos:p.clone().add(v3(0,.9*k,0)).add(around(.3)),v:around(.3).add(v3(.25,1.1,0)),drag:.5,gravity:-.5,life:4+rnd()*3,s0:1*k,s1:(4+rnd()*2)*k,c0:C(0x1e1915),c1:C(0x55504b),cRate:1,alpha:.55,fadeIn:.06});
+ }
  function kill(p,kind){
   const k=kind==='neptune'?2.4:.7;
   explosion(p,k);
@@ -389,7 +396,7 @@ export function fireworks(scene){
   reset();for(const d of decals){d.m.removeFromParent();d.m.material.dispose()}decals.length=0;for(const c of chunks)c.m.removeFromParent();chunks.length=0;
   for(const f of flashes)f.l.intensity=0;flashes.length=0;smoke.reset();spray.reset();fire.reset();glow.reset();
  }
- return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,flak,kill,feathers,wreck,throwCar,breakup,burnTrail,
+ return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,flak,kill,feathers,wreck,throwCar,breakup,burnTrail,blaze,
   burst:p=>explosion(p,1.5),
   pendingDamage(target){return flights.reduce((sum,f)=>sum+(f.target===target?f.damage:0),0)},
   snapshot(enemies){return flights.filter(f=>enemies.includes(f.target)).map(f=>({origin:f.origin.toArray(),target:enemies.indexOf(f.target),damage:f.damage,age:f.age,duration:f.duration,position:f.rocket.position.toArray()}))},

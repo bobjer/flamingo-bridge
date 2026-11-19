@@ -326,12 +326,48 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
 }
 html{touch-action:pan-x pan-y}
 
-#defeat-card{position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);z-index:15;width:min(430px,92%);padding:14px 20px;text-align:center;color:#fff;background:#101318ed;border-block:2px solid #d45850;box-shadow:0 8px 36px #0009;animation:defeat-in .8s ease-out both}
-#defeat-card h2{margin:0;color:#ef665d;font:900 clamp(26px,5vw,54px)/1.15 var(--display);letter-spacing:.03em;text-shadow:2px 3px #000}
-#defeat-card p{margin:8px 0}#defeat-card button{background:var(--accent);color:#15171b;padding:7px 14px;border:0;font-weight:700}
+/* ---- WASTED card: glass panel, kicker, title, stat tiles, punchline, one primary action, records ---- */
+#defeat-card{position:absolute;left:50%;top:50%;translate:-50% -50%;z-index:15;box-sizing:border-box;width:min(420px,calc(100% - 32px));max-height:min(86%,640px);overflow:auto;overscroll-behavior:contain;
+ padding:22px 20px 18px;text-align:center;color:var(--fg);border-radius:20px;
+ background:linear-gradient(180deg,rgba(40,14,14,.82),rgba(12,15,20,.9) 42%);border:1px solid rgba(255,107,94,.28);
+ box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 0 1px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.06);
+ -webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);
+ animation:wasted-in .7s cubic-bezier(.2,.8,.2,1) both}
+#defeat-card::before{content:'';position:absolute;inset:0 18% auto;height:2px;border-radius:2px;background:linear-gradient(90deg,transparent,var(--bad),transparent);box-shadow:0 0 18px var(--bad)}
+#defeat-card[data-entrance=epic]{animation-duration:1.6s;animation-delay:6.6s}
+#defeat-card[data-entrance=epic]>*{animation:wasted-rise .9s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(6.9s + var(--i,0) * .12s)}
+#defeat-card .defeat-kicker{--i:0;font:600 10.5px/1 var(--mono);letter-spacing:.24em;text-transform:uppercase;color:var(--bad);opacity:.9}
+#defeat-card h2{--i:1;margin:10px 0 2px;color:#ff6f62;font:700 clamp(40px,11vw,60px)/1 var(--display);letter-spacing:.06em;text-shadow:0 0 24px rgba(255,80,60,.45),0 2px 0 rgba(0,0,0,.6)}
+.defeat-stats{--i:2;display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:8px;margin:18px 0 0;padding:0}
+.defeat-stats>div{min-width:0;padding:10px 10px 9px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);text-align:left}
+.defeat-stats dt{font:600 9.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.defeat-stats dd{margin:7px 0 0;font:700 22px/1 var(--mono);font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.defeat-stats dd small{margin-left:4px;font:600 11px var(--body);color:var(--muted)}
+.defeat-stats>div:first-child{background:rgba(255,154,31,.08);border-color:rgba(255,154,31,.25)}
+.defeat-stats>div:first-child dd{color:var(--accent)}
+#defeat-card p{--i:3;margin:14px 4px 16px;font:500 14px/1.45 var(--body);color:#c7d0d8}
+#defeat-card>button{--i:4;width:100%;min-height:50px;border:0;border-radius:14px;background:var(--accent);color:var(--accent-ink);font:700 15px var(--body);letter-spacing:.02em;box-shadow:0 8px 24px rgba(255,154,31,.25);cursor:pointer;transition:filter .15s,translate .15s}
+#defeat-card>button:hover{filter:brightness(1.08)}#defeat-card>button:active{translate:0 1px}
+#defeat-card>button:focus-visible{outline:2px solid #fff;outline-offset:3px}
+#defeat-card .records{--i:5;margin-top:16px;padding-top:14px;border-top:1px solid rgba(255,255,255,.08);text-align:left}
+#defeat-card .records strong{display:block;font:600 10.5px/1 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+#defeat-card .records form{display:flex;gap:6px;margin:10px 0 6px}
+#defeat-card .records form[hidden]{display:none}
+#defeat-card .records input{flex:1;min-width:0;min-height:44px;padding:0 12px;border-radius:12px;border:1px solid var(--line-2);background:rgba(0,0,0,.25);color:var(--fg);font:500 14px var(--body)}
+#defeat-card .records input:focus{outline:none;border-color:var(--accent)}
+#defeat-card .records form button{min-height:44px;padding:0 14px;border-radius:12px;border:1px solid rgba(255,154,31,.5);background:rgba(255,154,31,.12);color:var(--accent);font:600 13px var(--body);white-space:nowrap}
+#defeat-card .records small{display:block;margin:6px 0;color:var(--muted);font-size:11px}
+#defeat-card .records small:empty{display:none}
+#defeat-card .records ol{margin:8px 0 0;padding:0;list-style:none;counter-reset:rank;max-height:9.5em;overflow:auto}
+#defeat-card .records li{counter-increment:rank;display:flex;gap:10px;align-items:baseline;padding:6px 2px;border-bottom:1px dashed rgba(255,255,255,.06);font:500 12.5px/1.3 var(--body);color:#c7d0d8}
+#defeat-card .records li::before{content:counter(rank,decimal-leading-zero);font:600 11px var(--mono);color:var(--accent);min-width:2ch}
+#defeat-card .records li:last-child{border-bottom:0}
+@keyframes wasted-in{from{opacity:0;scale:.94;filter:blur(10px)}to{opacity:1;scale:1;filter:none}}
+@keyframes wasted-rise{from{opacity:0;translate:0 10px}to{opacity:1;translate:0 0}}
 @keyframes defeat-in{from{opacity:0}to{opacity:1}}
-
-#defeat-card{max-height:95%;overflow:auto}.records{padding-top:8px}.records form{display:flex;justify-content:center;gap:4px;margin:6px}.records form[hidden]{display:none}.records input{min-width:0;width:45%}.records ol{text-align:start;max-height:8em;overflow:auto}
+.defeat-fx[data-entrance=epic]{animation-duration:3s;animation-delay:3.4s}
+@media(prefers-reduced-motion:reduce){#defeat-card,#defeat-card>*{animation:none!important}}
+@media(max-height:560px){#defeat-card{padding:14px 16px}#defeat-card h2{font-size:36px;margin-top:6px}.defeat-stats{margin-top:10px}#defeat-card p{margin:8px 4px 10px}}
 
 /* ---- Leaderboard dialog ---- */
 #score-board{color:var(--fg);background:var(--panel);border:1px solid var(--line-2);border-radius:14px;padding:16px;overscroll-behavior:contain;width:min(380px,90vw);max-height:85dvh;overflow:auto}
@@ -451,8 +487,22 @@ body[data-phase=buy] .m-dock-btn[data-tab=arsenal]{color:var(--fg)}
 @keyframes sheet-side{from{translate:100% 0}}
 @media(prefers-reduced-motion:reduce){#game-drawer[open]{animation:none}.m-wave::before{animation:none}}
 
-#release-notice:not([hidden]){position:fixed;z-index:50;top:max(8px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:max-content;max-width:94vw;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;padding:8px 12px;background:var(--panel);color:var(--fg);border:1px solid var(--accent);box-shadow:0 3px 18px #0008}
-#release-notice button{min-height:40px;padding:4px 10px;background:var(--panel-2);color:var(--fg);border:1px solid var(--line-2)}
+/* ---- Update toast: same glass language as the HUD ---- */
+#release-notice:not([hidden]){position:fixed;z-index:50;top:calc(env(safe-area-inset-top,0px) + 12px);left:50%;translate:-50% 0;box-sizing:border-box;width:max-content;max-width:calc(100vw - 24px);
+ display:flex;align-items:center;gap:10px;padding:8px 8px 8px 14px;border-radius:16px;color:var(--fg);
+ background:rgba(9,14,20,.82);border:1px solid rgba(255,154,31,.35);box-shadow:0 12px 36px rgba(0,0,0,.45);
+ -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);animation:toast-in .45s cubic-bezier(.2,.9,.3,1.2) both}
+#release-notice span{display:flex;align-items:center;gap:8px;font:600 13px/1.3 var(--body)}
+#release-notice span::before{content:'';flex:none;width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 0 rgba(255,154,31,.6);animation:toast-ping 1.8s ease-out infinite}
+#release-notice button{min-height:40px;padding:0 14px;border-radius:11px;font:600 13px var(--body);white-space:nowrap;cursor:pointer}
+#release-notice button:nth-of-type(1){border:0;background:var(--accent);color:var(--accent-ink)}
+#release-notice button:nth-of-type(2){border:1px solid transparent;background:transparent;color:var(--muted)}
+#release-notice button:nth-of-type(2):hover{color:var(--fg);border-color:var(--line-2)}
+.phone-game #release-notice:not([hidden]){top:calc(env(safe-area-inset-top,0px) + 60px);flex-wrap:wrap;justify-content:flex-end;max-width:calc(100vw - 20px)}
+.phone-game #release-notice span{flex:1 1 100%}
+@keyframes toast-in{from{opacity:0;translate:-50% -12px}}
+@keyframes toast-ping{70%{box-shadow:0 0 0 8px rgba(255,154,31,0)}100%{box-shadow:0 0 0 0 rgba(255,154,31,0)}}
+@media(prefers-reduced-motion:reduce){#release-notice,#release-notice span::before{animation:none}}
 
 /* ---- WASTED backdrop: smoke columns and a burning horizon ---- */
 .defeat-fx{position:absolute;inset:0;z-index:14;overflow:hidden;pointer-events:none;animation:defeat-in 1.2s ease-out both;
@@ -505,3 +555,33 @@ body[data-phase=buy] .m-dock-btn[data-tab=arsenal]{color:var(--fg)}
 @media(prefers-reduced-motion:reduce){.tantrum,.tantrum *{animation:none!important}}
 
 .legal a{display:inline-block;color:var(--accent);padding:4px 6px;text-underline-offset:3px}
+.defeat-stats dd small{display:inline}
+/* game over on phones: the card is the whole story, keep only the dock */
+.phone-game[data-phase=over] .m-bottom #arcade,.phone-game[data-phase=over] .m-side,.phone-game[data-phase=over] #arena-radar{display:none}
+
+/* ---- New-game dialog: glass card with difficulty cards ---- */
+#restart{box-sizing:border-box;width:min(420px,calc(100vw - 32px));max-width:none;padding:22px 20px 18px;border-radius:20px;color:var(--fg);
+ background:linear-gradient(180deg,rgba(30,22,12,.92),rgba(11,15,20,.96) 45%);border:1px solid rgba(255,154,31,.3);
+ box-shadow:0 30px 80px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06)}
+#restart[open]{animation:wasted-in .35s cubic-bezier(.2,.8,.2,1) both}
+#restart::backdrop{background:rgba(3,6,10,.62);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
+#restart h2{margin:0;font:700 24px/1.15 var(--display);letter-spacing:.02em}
+#restart p{margin:8px 0 16px;color:#aeb9c3;font:500 13.5px/1.45 var(--body)}
+#restart .difficulty-native{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+#restart .difficulty-cards{display:grid;gap:8px}
+#restart .difficulty-card{display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:12px;row-gap:3px;align-items:center;width:100%;min-height:58px;padding:10px 14px;
+ border-radius:14px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);color:var(--fg);text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
+#restart .difficulty-card strong{font:600 14.5px/1.2 var(--body)}
+#restart .difficulty-card small{grid-column:2;font:500 12px/1.3 var(--body);color:var(--muted)}
+.difficulty-meter{grid-row:1/span 2;display:flex;gap:3px;align-items:flex-end;height:18px}
+.difficulty-meter i{width:5px;border-radius:2px;background:var(--line-2)}
+.difficulty-meter i:nth-child(1){height:8px}.difficulty-meter i:nth-child(2){height:13px}.difficulty-meter i:nth-child(3){height:18px}
+.difficulty-meter[data-n="1"] i:nth-child(-n+1),.difficulty-meter[data-n="2"] i:nth-child(-n+2),.difficulty-meter[data-n="3"] i{background:var(--accent)}
+#restart .difficulty-card[data-level=hard] .difficulty-meter i{background:var(--bad)}
+#restart .difficulty-card:hover{border-color:rgba(255,255,255,.18)}
+#restart .difficulty-card[aria-checked=true]{border-color:var(--accent);background:rgba(255,154,31,.1);box-shadow:inset 0 0 0 1px rgba(255,154,31,.35)}
+#restart .difficulty-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#restart form>div{display:grid;grid-template-columns:1fr 1.4fr;gap:8px;margin-top:18px}
+#restart form>div button{min-height:48px;border-radius:14px;font:700 14px var(--body);padding:0 14px;cursor:pointer}
+#restart button[value=cancel]{background:transparent;border:1px solid var(--line-2);color:#c7d0d8}
+#restart button[value=replace]{background:var(--accent);border:0;color:var(--accent-ink);box-shadow:0 8px 24px rgba(255,154,31,.22)}
