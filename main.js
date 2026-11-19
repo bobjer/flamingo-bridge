@@ -282,7 +282,7 @@ function roadStep(dt){
   const v=vehicles[i],a=along(v);
   const hit=v.manure&&!v.stopped&&a>=0;
   if(hit||a>LANDFALL||(v.stopped&&v.hold<=0)){
-   if(hit){const blast=v.m.position.clone().setY(v.m.position.y+.7);world.cinematicBoom(blast);fx.explosion(blast,2.2);fx.wreck(blast,v.direction);const loss=damageDeck(6,v.m.position);world.scene.remove(v.m);vehicles.splice(i,1);casualties(v.m.position);}
+   if(hit){const blast=v.m.position.clone().setY(v.m.position.y+.7);world.cinematicBoom(blast,{subject:v.m});fx.explosion(blast,2.2);fx.wreck(blast,v.direction);const loss=damageDeck(6,v.m.position);world.scene.remove(v.m);vehicles.splice(i,1);casualties(v.m.position);}
    else{world.scene.remove(v.m);vehicles.splice(i,1)}
    if(v.stopped)score++;
    ui();
@@ -334,9 +334,9 @@ function ignite(withSplash=true){
  fx.spill(new T.Vector3(0,0,0),2.2,80);fx.dust(new T.Vector3(0,1,0),2.4);
 }
 world.onCollapseSplash(()=>ignite(true));
-function railStrike(point,filmed=false){
+function railStrike(point,filmed,subject){
  fx.explosion(point.clone().setY(3.9),1.9);fx.explosion(point.clone().add(new T.Vector3(0,.5,-1.2)),1.2);fx.dust(point,1.4);
- const derailed=moveTrain.derail(point,fx,filmed?()=>world.cinematicRelease(2.6):null),loss=armored(6);
+ const derailed=moveTrain.derail(point,fx,filmed?()=>world.cinematicRelease(subject,2.6):null),loss=armored(6);
  hp-=loss;waveDamage+=loss;hype+=derailed?30:8;rage();
  writeMessage(()=>derailed?tr('Фламінго влучив у залізницю. Ешелон із технікою пішов на дно протоки.','A flamingo hit the railway. The military train went to the bottom of the strait.'):tr('Фламінго влучив у залізничне полотно: −','A flamingo hit the railway deck: −')+loss+'%');
  return derailed;
@@ -499,7 +499,7 @@ function nextWave(){
 waveElapsed=0;untilSpawn=0;
  if(wave===nextDeckWave){
   const n=1+Math.floor(Math.random()*2);
-  for(let i=0;i<n;i++){const k=Math.random()<.35?'loaf':'flamingo';spawn(k,(i?-1:1)*(14+Math.random()*6));if(k==='flamingo'&&Math.random()<.5)Object.assign(enemies.at(-1),{rail:true,railWait:0})}
+  for(let i=0;i<n;i++){const k=Math.random()<.35?'loaf':'flamingo';spawn(k,(i?-1:1)*(14+Math.random()*6));if(k==='flamingo'&&Math.random()<.5)Object.assign(enemies.at(-1),{rail:true})}
   nextDeckWave+=deckInterval();
  }
  if(wave%5===0){
@@ -620,13 +620,13 @@ function aircraftStep(dt){
   return;
  }
  if(!j.fall){j.fall={start:p.clone(),age:0,smoke:0,end:new T.Vector3(T.MathUtils.clamp(p.x+8,-10,10),.08,11)};j.confused=false;
-  world.cinematicBoom(p.clone(),{follow:j.m,hold:true});fx.breakup(j.m,new T.Vector3(rotors?3.6:6,0,0));}
+  world.cinematicBoom(p.clone(),{subject:j.anchor,follow:j.m,hold:true});fx.breakup(j.m,new T.Vector3(rotors?3.6:6,0,0));}
  const f=j.fall;f.age+=dt;
  const t=Math.min(1,f.age/2.4);
  p.lerpVectors(f.start,f.end,t);p.y=T.MathUtils.lerp(f.start.y,f.end.y,t*t);
  j.m.rotation.set(t*1.2,-Math.atan2(f.end.z-f.start.z,f.end.x-f.start.x),-t*.95,'YXZ');
  f.smoke-=dt;if(f.smoke<=0){crashArt.wake(p);f.smoke=.065}fx.burnTrail(p,dt,rotors?.9:1.1);
- if(t===1){crashArt.splash(p);fx.splash(p,2.2);fx.spill(p,1.6,60);fx.explosion(p,1.4);world.cinematicRelease(1.6);j.m.removeFromParent();flyby=null;tributeDelay=.65}
+ if(t===1){crashArt.splash(p);fx.splash(p,2.2);fx.spill(p,1.6,60);fx.explosion(p,1.4);world.cinematicRelease(j.anchor,1.6);j.m.removeFromParent();flyby=null;tributeDelay=.65}
 
 }
 const guest=document.createElement('div');guest.className='guest';guest.hidden=true;$('view').append(guest);
@@ -718,7 +718,7 @@ function step(dt){
    for(let i=0;i<flock;i++)spawn('flamingo');
   }
   untilSpawn=Math.max(.32,1.9/((1+.12*wave)*intensity()))}
- for(const u of units){if(unpaid<=0)continue;u.cd-=dt;if(u.cd>0||(u.ammo===0&&u.k!=='cruiser'))continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;if(e.filmed&&e.k==='loaf'&&e.target)continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.deckX==null&&e.hp>fx.pendingDamage(e)&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range))){closest=d;target=e}}
+ for(const u of units){if(unpaid<=0)continue;u.cd-=dt;if(u.cd>0||(u.ammo===0&&u.k!=='cruiser'))continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;if(e.filmed&&e.k==='loaf'&&e.target)continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if((e.deckX==null||(e.rail&&!e.filmed))&&e.hp>fx.pendingDamage(e)&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range))){closest=d;target=e}}
  if(flyby?.confused&&flyby.hp>0&&!flyby.flight&&u.k==='sam'&&!fx.pendingDamage(flyby)&&world.onScreen(flyby.m.position))target=flyby;
  if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);
   const cruiser=u.k==='cruiser';
@@ -756,14 +756,14 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
    if(d>4.6){p.x+=dx/d*dt*e.speed*1.7;p.z+=dz/d*dt*e.speed*1.7;p.y=.35+Math.sin(time*2+e.angle)*.08;e.swing=0;e.m.userData.trident.rotation.z=0;e.m.rotation.z=0;continue}
    // Choreographed strike: slow wind-up over the head, a violent swing, recovery.
    const WIND=1.1,SWING=.22,CYCLE=2.6,before=e.swing??0;e.swing=(before+dt)%CYCLE;
-   if(before===0||e.swing<before){const mid=p.clone().lerp(q,.5).setY(2.2);world.cinematic(mid,2,{bomb:true,radius:10,height:3.2})}
+   if(before===0||e.swing<before){const mid=p.clone().lerp(q,.5).setY(2.2);world.cinematic(mid,2,{bomb:true,subject:e.m,radius:10,height:3.2})}
    const tr3=e.m.userData.trident,sw=e.swing;
    if(sw<WIND){const k=sw/WIND,ease=k*k*(3-2*k);tr3.rotation.z=.85*ease;e.m.rotation.z=.12*ease}
    else if(sw<WIND+SWING){const k=(sw-WIND)/SWING;tr3.rotation.z=.85-2.05*k*k;e.m.rotation.z=.12-.3*k}
    else{const k=Math.min(1,(sw-WIND-SWING)/1);tr3.rotation.z=-1.2*(1-k*k*(3-2*k));e.m.rotation.z=-.18*(1-k)}
    if(before<WIND+SWING&&sw>=WIND+SWING){
     const u=e.prey,shore=u.k!=='cruiser',hit=q.clone().setY(shore?q.y+.6:1.1);u.hull=Math.max(0,u.hull-2);
-    world.cinematicBoom(hit);fx.explosion(hit,1.9);if(shore)fx.dust(hit,1.5);else{fx.splash(q,2.4);fx.splash(p.clone().lerp(q,.6),1.2);}
+    world.cinematicBoom(hit,{subject:e.m});fx.explosion(hit,1.9);if(shore)fx.dust(hit,1.5);else{fx.splash(q,2.4);fx.splash(p.clone().lerp(q,.6),1.2);}
     if(shore){
      if(u.hull===0){fx.breakup(u.m,new T.Vector3(0,1,0));removeUnit(u)}
      writeMessage(()=>getSpecs()[u.k][0]+tr(' · удар тризубом',' · trident strike'));
@@ -794,19 +794,18 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
    $('caption').textContent=crashed.has(e)?tr("ЗІТКНЕННЯ","COLLISION"):retreat?tr("ЦІЛЬ ЗАЛИШИЛА ЗОНУ","TARGET LEFT THE AREA"):tr("ПРОМАХ","MISS");
    continue;
   }
-  // Rail strikers wait above the tracks for the train, then dive.
-  let hover=false;
+  // Keep flying even when the train is delayed or traffic has stopped.
   if(e.rail&&!e.diving&&!retreat&&!offline&&e.hp>0){
-   e.railWait+=dt;if(!e.summoned)e.summoned=moveTrain.summon(e.deckX,trafficTime);
-   if(moveTrain.coming(e.deckX,trafficTime,1.4)||e.railWait>45)e.diving=true;else hover=d<4.5;
+   if(!e.summoned)e.summoned=moveTrain.summon(e.deckX,trafficTime);
+   if(d<7||moveTrain.coming(e.deckX,trafficTime,1.4))e.diving=true;
   }
   const ramming=e.k==='loaf'&&e.target&&units.includes(e.target);
-  if(ramming&&!retreat&&!offline&&!e.filmed&&d<6.5&&e.hp>fx.pendingDamage(e)){
-   const u=e.target.m.position;e.filmed=world.cinematic(u.clone().setY(u.y+.8),2,{bomb:true,follow:e.m,radius:8.5,height:2.6});
+  if(ramming&&!retreat&&!offline&&!e.filmAttempted&&d<6.5&&e.hp>fx.pendingDamage(e)){
+   const u=e.target.m.position;e.filmAttempted=true;e.filmed=world.cinematic(u.clone().setY(u.y+.8),2,{bomb:true,follow:e.m,radius:8.5,height:2.6});
   }
   if(e.filmed&&ramming&&e.hp<=fx.pendingDamage(e))world.cinematicCancel(e.m);
-  if((e.deckX!=null||e.k==='loaf')&&!ramming&&(!e.rail||e.diving)&&!retreat&&!offline&&!e.filmed&&d<7&&e.hp>0){
-   e.filmed=world.cinematic(p.clone(),2,{bomb:true,deckShot:true,follow:e.m,radius:13,height:5});
+  if((e.deckX!=null||e.k==='loaf')&&!ramming&&(!e.rail||e.diving)&&!retreat&&!offline&&!e.filmAttempted&&d<7&&e.hp>0){
+   e.filmAttempted=true;e.filmed=world.cinematic(p.clone(),2,{bomb:true,deckShot:true,follow:e.m,radius:13,height:5});
   }
   if(e.k==='baby'&&e.hp>0&&!e.filmed&&e.hp>fx.pendingDamage(e)){
    const ramTanker=tankers.near(p,1.6),ramShip=e.target?.k==='cruiser'&&units.includes(e.target)&&p.distanceTo(e.target.m.position)<3.4;
@@ -814,7 +813,7 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
   }
   if(e.filmed&&e.k==='baby'&&e.hp<=fx.pendingDamage(e))world.cinematicCancel(e.m);
   if(e.k==='baby'&&e.hp>0&&tankers.collide(p,time)){
-   const blast=p.clone().setY(.9);world.cinematicBoom(blast);
+   const blast=p.clone().setY(.9);world.cinematicBoom(blast,{subject:e.m});
    fx.explosion(blast,2.6);fx.explosion(blast.clone().add(new T.Vector3(0,.4,1.4)),1.6);fx.explosion(blast.clone().add(new T.Vector3(0,.3,-1.5)),1.5);
    fx.wreck(blast,Math.random()<.5?1:-1);crashArt.splash(p);fx.splash(p,2.2);
    e.m.removeFromParent();enemies.splice(i,1);
@@ -828,12 +827,12 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
     const u=e.target;
     if(e.k==='loaf'&&units.includes(u)){
      // the loaf rams the launcher: frozen frame, then the whole battery comes apart with its missiles cooking off
-     const hit=u.m.position.clone();hit.y+=.6;world.cinematicBoom(hit);
+     const hit=u.m.position.clone();hit.y+=.6;world.cinematicBoom(hit,{subject:e.m});
      fx.crumbs(hit);fx.explosion(hit,2.3);fx.explosion(hit.clone().add(new T.Vector3(.8,.5,-.6)),1.4);fx.dust(hit,1.4);
      fx.breakup(u.m,new T.Vector3((Math.random()-.5)*2,2.5,(Math.random()-.5)*2));u.hull=1;
      for(let k=0;k<3;k++)setTimeout(()=>fx.explosion(hit.clone().add(new T.Vector3((Math.random()-.5)*3,.8+Math.random()*2,(Math.random()-.5)*3)),.8+Math.random()*.6),900+k*700);
     }
-    if(e.k==='baby'&&units.includes(u)){const blast=p.clone().setY(.9);world.cinematicBoom(blast);fx.explosion(blast,1.8);fx.splash(p,1.8)}
+    if(e.k==='baby'&&units.includes(u)){const blast=p.clone().setY(.9);world.cinematicBoom(blast,{subject:e.m});fx.explosion(blast,1.8);fx.splash(p,1.8)}
     if(units.includes(u)&&--u.hull<=0)removeUnit(u);
     writeMessage(()=>getSpecs()[u.k][0]+(u.hull?tr(" · міцність "," · hull ")+u.hull:tr(" вибув із ладу"," out of action")));
    }else if(e.k==='loaf'){
@@ -845,7 +844,7 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
    }else if(e.k==='flamingo'&&e.deckX!=null&&e.rail){
     const point=new T.Vector3(e.deckX,3.2,-6),car=moveTrain.nearest(e.deckX);
     const filmed=e.filmed&&world.cinematicBoom(point,{subject:e.m,hold:true,follow:car&&Math.abs(car.position.x-e.deckX)<26?car:null});
-    if(!railStrike(point,filmed)&&filmed)world.cinematicRelease(1.5);
+    if(!railStrike(point,filmed,e.m)&&filmed)world.cinematicRelease(e.m,1.5);
    }else if(e.k==='flamingo'&&e.deckX!=null){
     const point=new T.Vector3(e.deckX,3.23,0);
     const filmed=e.filmed&&world.cinematicBoom(point,{subject:e.m});
@@ -856,7 +855,7 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
    else{const loss=damageDeck(e.k==='neptune'?23:6,p);if(loss)casualties(e.m.position)}
    world.scene.remove(e.m);enemies.splice(i,1);ui();continue;
   }
-  e.m.rotation.y=Math.atan2(-dz,dx);const travel=hover?0:dt*e.speed;p.x+=dx/d*travel;p.z+=dz/d*travel;
+  e.m.rotation.y=Math.atan2(-dz,dx);const travel=Math.min(d,dt*e.speed);p.x+=dx/d*travel;p.z+=dz/d*travel;
   p.y=(e.k==='loaf'||e.deckX!=null)&&!retreat?T.MathUtils.lerp(e.target?e.target.m.position.y+.6:3.27,e.y,T.MathUtils.clamp((d-1.3)/7,0,1)):(dest&&e.k==='bird'?T.MathUtils.lerp(dest.y+.65,e.y,Math.min(1,d/7)):e.y)+Math.sin(time*3+e.angle)*.18;
   flap(e.m,time+e.angle)}
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.m.position.lerp(e.to,Math.min(1,dt/e.life));e.life-=dt;if(e.life<=0){world.scene.remove(e.m);effects.splice(i,1)}}

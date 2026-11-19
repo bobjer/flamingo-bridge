@@ -534,22 +534,21 @@ export function landscape(view) {
   onScreen(point){const p=point.clone().project(camera);return Math.abs(p.x)<=1&&Math.abs(p.y)<=1&&Math.abs(p.z)<=1},
   waterPoint(event) { aim(event); return ray.ray.intersectPlane(new T.Plane(new T.Vector3(0, 1, 0), 0), new T.Vector3()); },
   cinematic(point, strength = 1, opts = {}) {
-   const blocked = cine?.deckShot || reduceMotion.matches || (cineCooldown > 0 && !opts.bomb) || (cine && (cine.bomb || cine.strength >= strength) && !opts.bomb);
-   if ((blocked && !opts.force) || reduceMotion.matches) return false;
-   const fromPos = cine ? cine.fromPos : camera.position.clone(), fromTarget = cine ? cine.fromTarget : controls.target.clone();
+   if (cine || reduceMotion.matches || (cineCooldown > 0 && !opts.force && !opts.bomb)) return false;
+   const fromPos = camera.position.clone(), fromTarget = controls.target.clone();
    const rel = fromPos.clone().sub(point);
    const duration = opts.duration ?? 2.4 + .8 * strength;
    cine = {point: point.clone(), age: 0, duration, end: opts.bomb ? null : duration, strength, fromPos, fromTarget,
-    deckShot: !!opts.deckShot, follow: opts.follow ?? null, lift: new T.Vector3(0, opts.lift ?? 0, 0), bomb: !!opts.bomb, boomAt: null,
+    subject: opts.subject ?? opts.follow, deckShot: !!opts.deckShot, follow: opts.follow ?? null, lift: new T.Vector3(0, opts.lift ?? 0, 0), bomb: !!opts.bomb, boomAt: null,
     angle: Math.atan2(rel.z, rel.x) + (Math.random() - .5) * .6, sweep: (Math.random() < .5 ? -1 : 1) * (opts.sweep ?? (opts.bomb ? 1.5 : 1.6 + .6 * strength)),
     radius: opts.radius ?? 7 + 2.5 * strength, height: opts.height ?? 2.4 + 1.2 * strength,
-    baseFov: cine ? cine.baseFov : camera.fov, probeAt: 0, dodge: cine ? cine.dodge : {a: 0, h: 0, r: 1}, goal: cine ? cine.goal : {a: 0, h: 0, r: 1}};
+    baseFov: camera.fov, probeAt: 0, dodge: {a: 0, h: 0, r: 1}, goal: {a: 0, h: 0, r: 1}};
    cineCooldown = 9; controls.enabled = false; view.classList.add('cinematic');
    return true;
   },
   // Detonation inside a bomb shot: freeze-frame, then a very slow release.
   cinematicBoom(point, opts = {}) {
-   if (!cine || !cine.bomb || cine.boomAt != null || (cine.deckShot && cine.follow !== opts.subject) || (opts.subject && cine.follow !== opts.subject)) return false;
+   if (!cine || !cine.bomb || cine.boomAt != null || !opts.subject || cine.subject !== opts.subject) return false;
    if (point) cine.point.copy(point);
    cine.follow = opts.follow ?? null; cine.lift.set(0, 0, 0); cine.boomAt = cine.age;
    cine.end = opts.hold ? null : cine.age + 4.6;
@@ -557,11 +556,11 @@ export function landscape(view) {
   },
   // Abort a pre-roll whose subject died before the big moment (e.g. a baby shot down en route).
   cinematicCancel(obj) {
-   if (!cine || !cine.bomb || cine.boomAt != null || (obj && cine.follow !== obj)) return false;
+   if (!cine || !cine.bomb || cine.boomAt != null || cine.subject !== obj) return false;
    cine.boomAt = cine.age - 10; cine.end = cine.age + .6; cine.follow = null; return true;
   },
   // Let a held shot (e.g. following a falling wreck) wind down.
-  cinematicRelease(extra = 1.4) { if (cine && (!cine.deckShot || cine.end == null)) cine.end = cine.age + extra; },
+  cinematicRelease(subject, extra = 1.4) { if (cine && cine.subject === subject && cine.end == null) cine.end = cine.age + extra; },
   timeScale() {
    if (!cine) return 1;
    const c = cine;

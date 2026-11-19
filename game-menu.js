@@ -16,6 +16,9 @@ const make=(tag,props={},...children)=>{const el=Object.assign(document.createEl
 export function setupGameMenu(){
  const $=id=>document.getElementById(id);
  const phone=matchMedia('(pointer:coarse) and (max-width:1100px), (pointer:coarse) and (max-height:600px)');
+ let minimal=false;
+ try{minimal=localStorage.getItem('pop-minimal-ui')==='1'}catch{}
+ const compact=()=>phone.matches||minimal;
  const drawer=make('dialog',{id:'game-drawer'}),board=make('dialog',{id:'score-board'});
  const button=(parent,handler,props={})=>{const el=make('button',{type:'button',...props});el.onclick=handler;parent.append(el);return el};
 
@@ -43,7 +46,7 @@ export function setupGameMenu(){
   }
   body.scrollTop=0;
  }
- function open(key){if(!phone.matches)return;select(key);if(!drawer.open)drawer.showModal();select(key);tabButtons[key].focus({preventScroll:true})}
+ function open(key){if(!compact())return;select(key);if(!drawer.open)drawer.showModal();select(key);tabButtons[key].focus({preventScroll:true})}
  tablist.addEventListener('keydown',event=>{
   const i=tabs.findIndex(([k])=>k===current),step={ArrowRight:1,ArrowLeft:-1}[event.key];
   if(!step)return;event.preventDefault();const next=tabs[(i+step+tabs.length)%tabs.length][0];select(next);tabButtons[next].focus();
@@ -93,7 +96,15 @@ export function setupGameMenu(){
   showRecords(content,{difficulty:$('difficulty').value});
  },{className:'scores'});
 
+ const toggle=button($('view'),()=>{
+  minimal=!minimal;
+  try{localStorage.setItem('pop-minimal-ui',minimal?'1':'0')}catch{}
+  layout();translate();
+  toggle.focus({preventScroll:true});
+ },{className:'interface-switch'});
  function translate(){
+  toggle.textContent=minimal?tr('Повний інтерфейс','Full interface'):tr('Мінімальний інтерфейс','Minimal interface');
+
   drawer.setAttribute('aria-label',tr('Меню гри','Game menu'));
   for(const [key,label] of tabs){
    tabButtons[key].textContent=label();
@@ -135,7 +146,8 @@ export function setupGameMenu(){
  });
  const panels=[$('hq-panel'),$('arsenal-panel')];let folded=null;
  function layout(){
-  const on=phone.matches;
+  const on=compact();
+  toggle.hidden=phone.matches;
   document.body.classList.toggle('phone-game',on);
   if(drawer.open)drawer.close();
   for(const {node,where,slot} of placements){if(on)where.append(node);else if(slot)slot.after(node);else node.remove()}
