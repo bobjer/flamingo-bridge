@@ -561,7 +561,7 @@ const guest=document.createElement('div');guest.className='guest';guest.hidden=t
 let guestUntil=0,guestWave=0,incoming=null,seenTrump=false,seenMusk=false,guestPickWave=0,guestPick='';
 function showGuest(trump){
  const name=trump?tr('Трамп','Trump'):tr('Маск','Musk');
- const comment=trump?tr('Угода століття!','Deal of the century!'):tr('Оновлення прошивки…','Firmware update…');
+ const comment=trump?tr('Піс діл!','Peace deal'):tr('Оновлення прошивки…','Firmware update…');
  const hair=trump?'M13 35Q0 16 22 14Q42 -1 59 14L70 12Q64 28 33 26L17 41Z':'M13 36Q6 18 24 15L20 7L35 12L47 5L45 12Q65 10 65 32L52 24L31 25Z';
  guest.innerHTML='<svg viewBox="0 0 80 90" aria-hidden="true"><path fill="'+(trump?'#254568':'#282733')+'" d="M4 90Q4 65 32 62H50Q75 65 78 90Z"/><path fill="'+(trump?'#ffa871':'#f2c7ac')+'" stroke="#362635" stroke-width="2" d="M13 35Q10 13 41 14Q69 17 65 40L70 50L60 52Q61 67 45 70Q19 71 16 52Q7 53 11 43Z"/><path fill="'+(trump?'#ffcf64':'#493934')+'" d="'+hair+'"/><path fill="none" stroke="#372c37" stroke-width="3" d="M27 37l10 3m13-3 9-2m-18 9 5 7-6 1"/><path fill="#853f44" d="'+(trump?'M34 59q9-7 17-2l-7 5Z':'M29 55q14 9 27-2-10 19-27 2Z')+'"/><path fill="'+(trump?'#e2413b':'#ddd')+'" d="'+(trump?'M37 70h8l3 20H34Z':'M34 77l11 2-5 4 8 2-15-2 5-4Z')+'"/></svg><span><b>'+name+'</b><br>'+comment+'</span>';
  guest.hidden=false;guestUntil=time+4;
