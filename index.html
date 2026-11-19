@@ -32,12 +32,16 @@
  screen.addEventListener('cancel',event=>event.preventDefault());
  const status=document.getElementById('loading-status'),retry=screen.querySelector('button');
  retry.onclick=()=>location.reload();
- function failed(event){
-  if(!screen.open||!(event instanceof ErrorEvent||event.target instanceof HTMLScriptElement))return;
+ function failed(){
+  if(!screen.open)return;
   status.textContent=status.dataset.error;screen.querySelector('progress').hidden=true;retry.hidden=false;
  }
- window.addEventListener('error',failed,true);
- window.addEventListener('game-ready',()=>{window.removeEventListener('error',failed,true);screen.close();screen.remove()},{once:true});
+ function moduleFailed(event){
+  if(event.target instanceof HTMLScriptElement && event.target.type==='module' && event.target.src.startsWith(location.origin+'/'))failed();
+ }
+ window.addEventListener('error',moduleFailed,true);
+ window.addEventListener('game-load-failed',failed,{once:true});
+ window.addEventListener('game-ready',()=>{window.removeEventListener('error',moduleFailed,true);window.removeEventListener('game-load-failed',failed);screen.close();screen.remove()},{once:true});
 }
 </script>
 <header class="top">
@@ -114,7 +118,6 @@
  <b id="clock" class="big">00:00</b>
 </footer>
 <p class="legal">© No Sense 2026. Розважальна гра, зроблена just for fun. Усі персонажі, техніка, фламінго, Нептун і мости вигадані, а будь-які збіги з реальними подіями, людьми чи спорудами випадкові. Якщо ви бачите тут політику, це ваші проблеми: ми бачимо тут фламінго.</p>
-<script type="module" src="./hud.js"></script>
-<script type="module" src="./main.js"></script>
+<script type="module" src="./boot.js"></script>
 <script>/* Cloudflare Insights only on the published site, not on local dev */if(!/^(localhost|127\.0\.0\.1|\[::1\])$|\.local$/.test(location.hostname)){const s=document.createElement('script');s.defer=true;s.src='https://static.cloudflareinsights.com/beacon.min.js';s.dataset.cfBeacon='{"token":"5b9971ecea8b4d9e854b9cf75fa123f0"}';document.head.append(s)}</script>
 </body></html>

@@ -836,6 +836,6 @@ function pauseAway(){
 window.addEventListener('blur',pauseAway);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseAway()});
 requestAnimationFrame(now=>{
- frame(now);
+ try{frame(now)}catch(error){console.error('First frame failed',error);window.dispatchEvent(new Event('game-load-failed'));return}
  requestAnimationFrame(()=>window.dispatchEvent(new Event('game-ready')));
 });
