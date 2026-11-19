@@ -291,7 +291,7 @@ function roadStep(dt){
  showTraffic();
 }
 function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);m.traverse(o=>{if(o.isMesh)o.castShadow=true});world.scene.add(m);return m}
-function reset(){runId=crypto.randomUUID();assisted=false;autoplay=false;botDelay=0;lastSmokeWave=0;nextDeckWave=deckInterval();flockPressure=2**((Math.random()-.5)*3);spent=0;partialLedger=0;guestWave=guestUntil=guestPickWave=0;seenTrump=seenMusk=false;incoming=null;guest.hidden=true;road.reset();world.setDeckHoles([]);clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.clear();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;trafficTime=0;tankers.restore();tankers.move(0);orders.smoke.end=orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
+function reset(){runId=crypto.randomUUID();assisted=false;moveTrain.reset();autoplay=false;botDelay=0;lastSmokeWave=0;nextDeckWave=deckInterval();flockPressure=2**((Math.random()-.5)*3);spent=0;partialLedger=0;guestWave=guestUntil=guestPickWave=0;seenTrump=seenMusk=false;incoming=null;guest.hidden=true;road.reset();world.setDeckHoles([]);clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.clear();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;trafficTime=0;tankers.restore();tankers.move(0);orders.smoke.end=orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
@@ -315,6 +315,21 @@ const nightLevel=()=>1-world.daylight();
 let flakTimer=0;
 {const v=$('view'),b=document.createElement('div'),tag=document.createElement('div'),hint=document.createElement('div');b.className='cine-bottom';tag.className='cine-tag';hint.className='cine-hint';v.append(b,tag,hint);
  const label=()=>{tag.textContent=tr('ПОВТОР · ×0.15','REPLAY · ×0.15');hint.textContent=tr('клік — пропустити','click to skip')};label();document.addEventListener('siege-language',label)}
+// Billowing smoke and fire behind the WASTED card (pure CSS: transforms and opacity only).
+const defeatFx=document.createElement('div');defeatFx.className='defeat-fx';defeatFx.hidden=true;defeatFx.setAttribute('aria-hidden','true');
+{const r=(a,b)=>(a+Math.random()*(b-a)).toFixed(2);
+ const puff=(cls,n,style)=>{for(let i=0;i<n;i++){const s=document.createElement('i');s.className=cls;s.style.cssText=style(i,n);defeatFx.append(s)}};
+ puff('smoke',20,(i,n)=>`left:${r(-10,95)}%;--s:${r(.8,1.6)};--d:${r(7,12)}s;animation-delay:-${r(0,12)}s;--x:${r(-14,14)}vw;--g:${r(.55,.9)}`);
+ puff('flame',14,(i,n)=>`left:${(i/(n-1)*100-12+Math.random()*8).toFixed(1)}%;--s:${r(.7,1.5)};--b:${r(6,22)}vh;--d:${r(1.1,2)}s;animation-delay:-${r(0,2)}s`);
+ puff('ember',22,()=>`left:${r(0,100)}%;--d:${r(3,6)}s;animation-delay:-${r(0,6)}s;--x:${r(-8,8)}vw`);
+ $('defeat-card').before(defeatFx)}
+function railStrike(point,filmed=false){
+ fx.explosion(point.clone().setY(3.9),1.9);fx.explosion(point.clone().add(new T.Vector3(0,.5,-1.2)),1.2);fx.dust(point,1.4);
+ const derailed=moveTrain.derail(point,fx,filmed?()=>world.cinematicRelease(2.6):null),loss=armored(6);
+ hp-=loss;waveDamage+=loss;hype+=derailed?30:8;rage();
+ writeMessage(()=>derailed?tr('Фламінго влучив у залізницю. Ешелон із технікою пішов на дно протоки.','A flamingo hit the railway. The military train went to the bottom of the strait.'):tr('Фламінго влучив у залізничне полотно: −','A flamingo hit the railway deck: −')+loss+'%');
+ return derailed;
+}
 function damageDeck(amount,position,awaitingCamera=false){
  const loss=armored(amount);
  if(!loss)return 0;
@@ -326,7 +341,7 @@ function damageDeck(amount,position,awaitingCamera=false){
   if(v.m.visible&&Math.abs(v.m.position.x-point.x)<8){fx.throwCar(v.m.clone(),point);v.wrecked=true}
   v.m.visible=false;
  }
- spot.awaitingCamera=awaitingCamera;spot.repairAfter=time+1.2;
+ spot.awaitingCamera=awaitingCamera;spot.repairAfter=time+1.2;rage();
  road.impact(spot,time);world.setDeckHoles(damageSpots);spot.loss+=loss;hp-=loss;waveDamage+=loss;hype+=loss;return loss;
 }
 function updateRoadCrew(){
@@ -402,9 +417,10 @@ function arcadeHud(){
   if(msg.textContent!==text)msg.textContent=text;
   act.hidden=!action;act.textContent=label??'';act.onclick=action??null;
  }
- const card=$('defeat-card');card.hidden=phase!=='over';
+ const card=$('defeat-card');card.hidden=phase!=='over';defeatFx.hidden=card.hidden;
  if(phase==='over'){
-  const cost=(partialLedger?tr('щонайменше ','at least '):'')+money(spent);
+  const big=n=>n>=1e6?[n/1e6,tr(' трлн ₽',' trillion RUB')]:n>=1e3?[n/1e3,tr(' млрд ₽',' billion RUB')]:[n,tr(' млн ₽',' M RUB')];
+  const [sum,unit]=big(spent),cost=(partialLedger?tr('щонайменше ','at least '):'')+(Math.round(sum*10)/10).toLocaleString(tr('uk','en'))+unit;
   const verdict=tr('Вітаю! Ви вгатили '+cost+' з бюджету. Відбито цілей — '+score+'. А міст усе одно булькнув.','Congratulations! You blew '+cost+' of the budget. Targets repelled: '+score+'. The bridge went splash anyway.');
   card.querySelector('h2').textContent=tr('ПОТРАЧЕНО','WASTED');
   card.querySelector('p').textContent=verdict;
@@ -462,7 +478,7 @@ function nextWave(){
  wave++;die=1+Math.floor(Math.random()*6);waveElapsed=0;untilSpawn=0;
  if(wave===nextDeckWave){
   const n=1+Math.floor(Math.random()*2);
-  for(let i=0;i<n;i++)spawn(Math.random()<.35?'loaf':'flamingo',(i?-1:1)*(14+Math.random()*6));
+  for(let i=0;i<n;i++){const k=Math.random()<.35?'loaf':'flamingo';spawn(k,(i?-1:1)*(14+Math.random()*6));if(k==='flamingo'&&Math.random()<.5)Object.assign(enemies.at(-1),{rail:true,railWait:0})}
   nextDeckWave+=deckInterval();
  }
  ui();
@@ -501,6 +517,16 @@ function showSignals(){ $('signals').textContent=Object.values(orders).filter(o=
 }
 const crashArt=ditching(world.scene);
 let flyby=null,tributeUntil=0,tributeDelay=0;
+// Every time the bridge takes a hit, a cartoon dictator throws a tantrum in the corner.
+const tantrum=document.createElement('div');tantrum.className='tribute rage-banner';tantrum.hidden=true;
+tantrum.innerHTML='<svg class="tantrum" viewBox="0 0 100 130" aria-hidden="true"><g class="steam"><circle cx="30" cy="10" r="5"/><circle cx="70" cy="8" r="6"/><circle cx="50" cy="3" r="4"/></g><g class="leg l"><rect x="38" y="98" width="9" height="20" rx="3" fill="#20242c"/><ellipse cx="40" cy="120" rx="9" ry="4.5" fill="#111"/></g><g class="leg r"><rect x="53" y="98" width="9" height="20" rx="3" fill="#20242c"/><ellipse cx="60" cy="120" rx="9" ry="4.5" fill="#111"/></g><path d="M33 66h34l5 34H28z" fill="#272c35"/><path d="M44 66h12l-6 14z" fill="#f2f2f2"/><path d="M48.5 69h3l1.5 16-3 4-3-4z" fill="#b3202a"/><g class="arm l"><path d="M35 69 18 80" stroke="#272c35" stroke-width="8" stroke-linecap="round"/><circle cx="16" cy="82" r="5" fill="#f1c1a0" stroke="#7a3f2c" stroke-width="1.2"/></g><g class="arm r"><path d="M65 69 82 80" stroke="#272c35" stroke-width="8" stroke-linecap="round"/><circle cx="84" cy="82" r="5" fill="#f1c1a0" stroke="#7a3f2c" stroke-width="1.2"/></g><g class="head"><path d="M50 14c17 0 25 13 25 28 0 16-10 27-25 27S25 58 25 42c0-15 8-28 25-28z" fill="#f0a487" stroke="#7a3f2c" stroke-width="1.6"/><path d="M26 40c-1-6 1-11 4-13M74 40c1-6-1-11-4-13" stroke="#c9b9a6" stroke-width="3" fill="none" stroke-linecap="round"/><ellipse cx="36" cy="52" rx="6" ry="3.5" fill="#e0534a" opacity=".55"/><ellipse cx="64" cy="52" rx="6" ry="3.5" fill="#e0534a" opacity=".55"/><path d="M32 33l13 5M68 33l-13 5" stroke="#5a3324" stroke-width="3.2" stroke-linecap="round"/><g class="eye"><ellipse cx="40" cy="43" rx="6.5" ry="5.5" fill="#fff2ee"/><path d="M34 42l4 1M35 46l3-1.5M46 41l-3 1.5M46 45l-3-.5" stroke="#d3262a" stroke-width=".9"/><circle cx="41" cy="43.5" r="2.6" fill="#d01020"/><circle cx="41" cy="43.5" r="1" fill="#2a0000"/></g><g class="eye"><ellipse cx="60" cy="43" rx="6.5" ry="5.5" fill="#fff2ee"/><path d="M66 42l-4 1M65 46l-3-1.5M54 41l3 1.5M54 45l3-.5" stroke="#d3262a" stroke-width=".9"/><circle cx="59" cy="43.5" r="2.6" fill="#d01020"/><circle cx="59" cy="43.5" r="1" fill="#2a0000"/></g><path d="M47 49q3 4 6 0" stroke="#7a3f2c" stroke-width="1.6" fill="none"/><path class="mouth" d="M41 59q9-6 18 0q-9 3-18 0z" fill="#5a1414" stroke="#7a3f2c" stroke-width="1.2"/></g></svg><span></span>';$('view').append(tantrum);
+let rageUntil=0,rageReady=0;
+function rage(){
+ if(time<rageReady||phase==='over')return;
+ rageReady=time+14;rageUntil=time+4.2;
+ tantrum.querySelector('span').textContent=tr(['«Ето правакация!!!»','«Червоні лінії! ЩЕ червоніші!»','«Ми ещьо даже нє начінаді!»'][Math.floor(Math.random()*3)],['“It’s a PROVOCATION!!!”','“Red lines! REDDER lines!”','“We haven’t even started yet!”'][Math.floor(Math.random()*3)]);
+ tantrum.hidden=false;
+}
 const tribute=document.createElement('div');tribute.className='tribute rooster-banner';tribute.hidden=true;
 tribute.innerHTML='<img class="cartoon-rooster" alt="" src="'+roosterUrl+'"><span></span>';$('view').append(tribute);
 const sinking=[];
@@ -527,7 +553,7 @@ function sinkStep(dt){
   if(t===1){wreck.mesh.removeFromParent();sinking.splice(i,1)}
  }
 }
-function clearFlyby(){for(const wreck of sinking)wreck.mesh.removeFromParent();sinking.length=0;sinkingBannerEnd=0;sinkingBanner.hidden=true;crashArt.reset();tributeDelay=0;flyby?.m.removeFromParent();flyby=null;tributeUntil=0;tribute.hidden=true}
+function clearFlyby(){tantrum.hidden=true;rageUntil=rageReady=0;for(const wreck of sinking)wreck.mesh.removeFromParent();sinking.length=0;sinkingBannerEnd=0;sinkingBanner.hidden=true;crashArt.reset();tributeDelay=0;flyby?.m.removeFromParent();flyby=null;tributeUntil=0;tribute.hidden=true}
 function aircraftStep(dt){
  crashArt.tick(dt);
  if(tributeDelay>0){tributeDelay-=dt;if(tributeDelay<=0)tributeUntil=time+4}
@@ -706,7 +732,7 @@ function step(dt){
    continue;
   }
   if(e.k==='neptune'){e.swing=0;e.m.userData.trident.rotation.z=0}
-  const aim=e.deckX!=null?{x:e.deckX,y:3.23,z:0}:destination(e,offline),dest=retreat?e.exitPoint:aim;
+  const aim=e.deckX!=null?{x:e.deckX,y:3.23,z:e.rail?-6:0}:destination(e,offline),dest=retreat?e.exitPoint:aim;
   const dx=(dest?.x??0)-p.x,dz=(dest?.z??0)-p.z,d=Math.hypot(dx,dz);
   const actual=e.target?.m.position;
   const missed=offline&&((e.target&&!units.includes(e.target))||Math.hypot(p.x-(actual?.x??0),p.z-(actual?.z??0))>1.3);
@@ -715,7 +741,13 @@ function step(dt){
    $('caption').textContent=crashed.has(e)?tr("ЗІТКНЕННЯ","COLLISION"):retreat?tr("ЦІЛЬ ЗАЛИШИЛА ЗОНУ","TARGET LEFT THE AREA"):tr("ПРОМАХ","MISS");
    continue;
   }
-  if((e.deckX!=null||e.k==='loaf')&&!retreat&&!offline&&!e.filmed&&d<7&&e.hp>0){
+  // Rail strikers wait above the tracks for the train, then dive.
+  let hover=false;
+  if(e.rail&&!e.diving&&!retreat&&!offline&&e.hp>0){
+   e.railWait+=dt;if(!e.summoned)e.summoned=moveTrain.summon(e.deckX,trafficTime);
+   if(moveTrain.coming(e.deckX,trafficTime,1.4)||e.railWait>45)e.diving=true;else hover=d<4.5;
+  }
+  if((e.deckX!=null||e.k==='loaf')&&(!e.rail||e.diving)&&!retreat&&!offline&&!e.filmed&&d<7&&e.hp>0){
    e.filmed=world.cinematic(p.clone(),2,{bomb:true,deckShot:true,follow:e.m,radius:13,height:5});
   }
   if(e.k==='baby'&&e.hp>0&&!e.filmed&&e.hp>fx.pendingDamage(e)){
@@ -745,6 +777,10 @@ function step(dt){
     fx.crumbs(point);damageDeck(8,point,filmed);
     for(const v of vehicles)v.hold=Math.max(v.hold,4);
     writeMessage(()=>tr("Паляниця розсипалася! Вантажівки стоять 4 секунди.","The loaf burst into crumbs! Trucks stop for 4 seconds."));
+   }else if(e.k==='flamingo'&&e.deckX!=null&&e.rail){
+    const point=new T.Vector3(e.deckX,3.2,-6),car=moveTrain.nearest(e.deckX);
+    const filmed=e.filmed&&world.cinematicBoom(point,{subject:e.m,hold:true,follow:car&&Math.abs(car.position.x-e.deckX)<26?car:null});
+    if(!railStrike(point,filmed)&&filmed)world.cinematicRelease(1.5);
    }else if(e.k==='flamingo'&&e.deckX!=null){
     const point=new T.Vector3(e.deckX,3.23,0);
     const filmed=e.filmed&&world.cinematicBoom(point,{subject:e.m});
@@ -755,7 +791,7 @@ function step(dt){
    else{const loss=damageDeck(e.k==='neptune'?23:6,p);if(loss)casualties(e.m.position)}
    world.scene.remove(e.m);enemies.splice(i,1);ui();continue;
   }
-  e.m.rotation.y=Math.atan2(-dz,dx);const travel=dt*e.speed;p.x+=dx/d*travel;p.z+=dz/d*travel;
+  e.m.rotation.y=Math.atan2(-dz,dx);const travel=hover?0:dt*e.speed;p.x+=dx/d*travel;p.z+=dz/d*travel;
   p.y=(e.k==='loaf'||e.deckX!=null)&&!retreat?T.MathUtils.lerp(3.27,e.y,T.MathUtils.clamp((d-1.3)/7,0,1)):(dest&&e.k==='bird'?T.MathUtils.lerp(dest.y+.65,e.y,Math.min(1,d/7)):e.y)+Math.sin(time*3+e.angle)*.18;
   flap(e.m,time+e.angle)}
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.m.position.lerp(e.to,Math.min(1,dt/e.life));e.life-=dt;if(e.life<=0){world.scene.remove(e.m);effects.splice(i,1)}}
@@ -768,7 +804,7 @@ function flap(m,t){for(const wing of m.userData.wings||[])wing.rotation.x=wing.s
 const scoreBoard=setupGameMenu();
 let clockText='';
 function frame(now){const dt=Math.min((now-last)/1000,.08)*world.timeScale();last=now;if(scoreBoard.open){requestAnimationFrame(frame);return}if(phase==='live'&&!paused&&!$('restart').open){step(dt)};if(selectedShip)ring.position.copy(selectedShip.m.position);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
- {const c=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');if(clockText!==c){clockText=c;$('clock').textContent=c}}updateRoadCrew();road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;moveTrain(trafficTime);tankers.draw(time);beams.update(now,nightLevel(),[...enemies,flyby].filter(Boolean));world.draw(time,trafficTime,phase==="live"&&orders.smoke.end>time);if(flyby?.flight?.atContact)flyby.flight.contactShown=true;updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
+ {const c=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');if(clockText!==c){clockText=c;$('clock').textContent=c}}updateRoadCrew();road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;if(!tantrum.hidden&&time>=rageUntil)tantrum.hidden=true;moveTrain(trafficTime);tankers.draw(time);beams.update(now,nightLevel(),[...enemies,flyby].filter(Boolean));world.draw(time,trafficTime,phase==="live"&&orders.smoke.end>time);if(flyby?.flight?.atContact)flyby.flight.contactShown=true;updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
 document.addEventListener('siege-language',()=>{
  specs=getSpecs();techs=getTechs();ui();showTraffic();showSignals();
 });

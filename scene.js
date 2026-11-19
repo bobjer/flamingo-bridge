@@ -514,7 +514,7 @@ export function landscape(view) {
    cine.boomAt = cine.age - 10; cine.end = cine.age + .6; cine.follow = null; return true;
   },
   // Let a held shot (e.g. following a falling wreck) wind down.
-  cinematicRelease(extra = 1.4) { if (cine && !cine.deckShot) cine.end = cine.age + extra; },
+  cinematicRelease(extra = 1.4) { if (cine && (!cine.deckShot || cine.end == null)) cine.end = cine.age + extra; },
   timeScale() {
    if (!cine) return 1;
    const c = cine;
