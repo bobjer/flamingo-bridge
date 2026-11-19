@@ -123,6 +123,7 @@ function layer(scene,map,{additive=false,capacity=1800,lit=false,order=5}={}){
    for(let i=live.length-1;i>=0;i--){
     const p=live[i];p.age+=dt;
     if(p.age>=p.life){live[i]=live[live.length-1];live.pop();continue}
+    if(p.age<0)continue;
     const t=p.age/p.life;
     p.v.y-=p.gravity*dt;p.v.multiplyScalar(Math.max(0,1-p.drag*dt));p.pos.addScaledVector(p.v,dt);p.rot+=p.spin*dt;
     if(p.floor!=null&&p.pos.y<p.floor){p.pos.y=p.floor;p.v.y*=-.25;p.v.x*=.6;p.v.z*=.6}
@@ -232,11 +233,23 @@ export function fireworks(scene){
    if(rnd()<.5)fire.emit({pos:point.clone().add(around(.25)).setY(3.36),v:v3(0,.8+rnd(),0),drag:1,life:.35+rnd()*.3,s0:.5*k,s1:.15,c0:C(0xffb050,2.6),c1:C(0x9a1e06),alpha:.6,fadeIn:.05});
   }
  }
- function tracer(from,to){
-  const v=to.clone().sub(from).divideScalar(.11);
-  glow.emit({pos:from.clone(),v:v3(0,0,0),life:.07,s0:.9,s1:.6,c0:C(0xffd890,6),alpha:1,fadeIn:.01,fadePow:1}); // muzzle flash
-  for(let i=0;i<3;i++)glow.emit({pos:from.clone().addScaledVector(v,-.012*i),v:v.clone(),life:.11,s0:.28-.07*i,s1:.2,c0:C(0xffe7a8,5-i),alpha:1,fadeIn:.01,fadePow:.5});
+ function tracer(from,to,night=0){
+  const v=to.clone().sub(from).divideScalar(.11),n=3+Math.round(6*night);
+  glow.emit({pos:from.clone(),v:v3(0,0,0),life:.07,s0:.9+night,s1:.6,c0:C(0xffd890,6),alpha:1,fadeIn:.01,fadePow:1}); // muzzle flash
+  for(let i=0;i<n;i++)glow.emit({pos:from.clone().addScaledVector(v,-.012*i),v:v.clone(),life:.11+.04*night,s0:Math.max(.08,.28+.06*night-.035*i),s1:.16,c0:C(night>.5?0xffb070:0xffe7a8,Math.max(2,5+2*night-i*.5)),alpha:1,fadeIn:.01,fadePow:.5});
   setTimeout(()=>sparks(to,.35,6,0xfff0c0),110);
+ }
+ // Night anti-aircraft burst: a short string of glowing rounds arcing into the sky.
+ function flak(from,dir,rounds=7){
+  const speed=26+rnd()*8,d=dir.clone().normalize();
+  for(let r=0;r<rounds;r++){
+   const jitter=around(.035),v=d.clone().add(jitter).normalize().multiplyScalar(speed);
+   const col=r%3===2?0xff5040:0xffb060;
+   for(let k=0;k<7;k++)glow.emit({pos:from.clone().addScaledVector(v,-.007*k),v:v.clone(),gravity:6,drag:.05,life:1.5+rnd()*.4,s0:.75-.08*k,s1:.4,c0:C(col,Math.max(2,7-k)),alpha:1,fadeIn:.01,fadePow:.4,age:-r*.075});
+  }
+  glow.emit({pos:from.clone(),v:v3(0,0,0),life:.5,s0:1.2,s1:.4,c0:C(0xffc080,4),alpha:1,fadeIn:.01,fadePow:1.5});
+  // a few rounds burst at altitude
+  if(rnd()<.6){const at=from.clone().addScaledVector(d,speed*1.1).add(v3(0,-3,0));setTimeout(()=>{glow.emit({pos:at,v:v3(0,0,0),life:.22,s0:2.2,s1:2.8,c0:C(0xffd0a0,3),alpha:.9,fadeIn:.01,fadePow:1});smokeColumn(at,.35,.5)},1100)}
  }
  function feathers(p,color,n=10){
   for(let i=0;i<n;i++)
@@ -368,7 +381,7 @@ export function fireworks(scene){
   reset();for(const d of decals){d.m.removeFromParent();d.m.material.dispose()}decals.length=0;for(const c of chunks)c.m.removeFromParent();chunks.length=0;
   for(const f of flashes)f.l.intensity=0;flashes.length=0;smoke.reset();spray.reset();fire.reset();glow.reset();
  }
- return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,kill,feathers,wreck,breakup,burnTrail,
+ return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,flak,kill,feathers,wreck,breakup,burnTrail,
   burst:p=>explosion(p,1.5),
   pendingDamage(target){return flights.reduce((sum,f)=>sum+(f.target===target?f.damage:0),0)},
   snapshot(enemies){return flights.filter(f=>enemies.includes(f.target)).map(f=>({origin:f.origin.toArray(),target:enemies.indexOf(f.target),damage:f.damage,age:f.age,duration:f.duration,position:f.rocket.position.toArray()}))},

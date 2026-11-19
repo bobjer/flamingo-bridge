@@ -392,6 +392,7 @@ export function landscape(view) {
   return hit;
  }
  const daySun=new T.Color(0xfff0dc),sunset=new T.Color(0xffa56d),nightHaze=new T.Color(0x162a49),nightWater=new T.Color(0x163d51),dayWater=new T.Color(0x2aa3ad);
+ let daylight = 1;
  let collapse = false, prevDist = camera.position.distanceTo(controls.target);
  // Bullet-time: fly in to an impact, sweep around it in slow motion, fly back.
  let cine = null, cineLast = 0, cineCooldown = 0;
@@ -477,6 +478,7 @@ export function landscape(view) {
    return t < .08 ? 1 - t / .08 * .85 : t > .82 ? .15 + .85 * (t - .82) / .18 : .15;
   },
   cinematicActive: () => !!cine,
+  daylight: () => daylight,
   setHits(hits) {
    collapse = hits >= 3;
    if (!hits) { falling.position.y = 0; falling.rotation.z = 0; }
@@ -484,7 +486,7 @@ export function landscape(view) {
   },
   draw(gameTime=0,trafficTime=0,smoke=false) {
    const angle=2*Math.PI*gameTime/DAY_SECONDS,altitude=Math.cos(angle);
-   const day=T.MathUtils.smoothstep(altitude,-.32,.6),dusk=1-Math.min(1,Math.abs(altitude)*3);
+   const day=T.MathUtils.smoothstep(altitude,-.32,.6),dusk=1-Math.min(1,Math.abs(altitude)*3);daylight=day;
    sun.position.set(35*Math.cos(angle),13+40*Math.abs(altitude),46+20*Math.sin(angle));
    sun.intensity=.32+2.68*day;
    sun.color.setHex(0x9bbfff).lerp(daySun,day).lerp(sunset,dusk*.68);
