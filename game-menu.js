@@ -74,7 +74,8 @@ export function setupGameMenu(){
   b.setAttribute('aria-controls',drawer.id);b.setAttribute('aria-expanded','false');b.dataset.tab=key;dockButtons[key]=b;
  }
  const bottom=make('div',{className:'m-bottom'});
- const hud=make('div',{className:'m-hud'},bar,bottom);
+ const side=make('div',{className:'m-side'});
+ const hud=make('div',{className:'m-hud'},bar,side,bottom);
 
  // ---- menu tab content ----
  const brand=make('div',{className:'sheet-brand'},make('img',{src:'/flamingo.svg',width:34,height:34,alt:''}),make('div',{},make('strong'),make('span')));
@@ -125,7 +126,7 @@ export function setupGameMenu(){
   ['#arcade',bottom],[dock,bottom],
   ['.helm',panes.arsenal],['#arsenal-panel',panes.arsenal],
   ['#wave-roll',panes.hq],['#hq-panel',panes.hq],['#timeline',panes.hq],
-  ['#watch-game',menuList],['.panel-toggles .scores',menuList],['#new-game',menuList],
+  ['#watch-game',side],['.panel-toggles .scores',menuList],['#new-game',menuList],
   ['.top .lang',langRow],['.legal',panes.game]
  ].map(([what,where])=>{
   const node=typeof what==='string'?document.querySelector(what):what;

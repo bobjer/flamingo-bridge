@@ -352,7 +352,13 @@ body.phone-game{display:block;position:fixed;inset:0;width:100%;height:100dvh;mi
 .m-bar,.m-bottom{transition:opacity .35s,translate .35s}
 .phone-game:has(#view.cinematic) .m-bar{opacity:0;translate:0 -12px;pointer-events:none}
 .phone-game:has(#view.cinematic) .m-bottom{opacity:0;translate:0 16px;pointer-events:none}
-.phone-game:has(#view.cinematic) #arena-radar{opacity:0}
+.phone-game:has(#view.cinematic) :is(#arena-radar,.m-side){opacity:0;pointer-events:none}
+/* autoplay toggle sits right under the radar */
+.m-side{position:fixed;z-index:16;top:calc(var(--safe-t) + 144px);right:calc(var(--safe-r) + 10px);transition:opacity .35s}
+.m-side #watch-game{min-height:36px;padding:0 12px;border-radius:999px;background:var(--glass);border:1px solid var(--glass-line);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:var(--fg);font:600 12px var(--body);white-space:nowrap}
+.m-side #watch-game::before{content:none}
+.m-side #watch-game:active{border-color:var(--accent);color:var(--accent)}
+.m-side #watch-game.on{min-height:var(--tap);padding:0 16px;background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:700;box-shadow:0 4px 18px rgba(255,154,31,.35)}
 @media(max-aspect-ratio:4/5){#view.cinematic::before,#view.cinematic .cine-bottom{height:7%}#view .cine-tag{top:calc(7% + 10px)}}
 .phone-game #arena-radar{display:block;top:calc(var(--safe-t) + 62px);right:calc(var(--safe-r) + 10px);bottom:auto;left:auto;width:74px;opacity:.85}
 .phone-game #view #break-banner{top:calc(var(--safe-t) + 62px)}
@@ -436,6 +442,7 @@ body[data-phase=buy] .m-dock-btn[data-tab=arsenal]{color:var(--fg)}
 @media(orientation:landscape) and (max-height:600px){
  .m-bottom{left:auto;width:min(400px,50vw)}
  .phone-game #arena-radar{width:64px}
+ .m-side{top:calc(var(--safe-t) + 134px)}
  #game-drawer{inset:0 0 0 auto;margin:0;width:min(420px,60vw);height:100dvh;max-height:100dvh;border-radius:var(--sheet-r) 0 0 var(--sheet-r);border:1px solid var(--line-2);border-right:0}
  #game-drawer[open]{animation-name:sheet-side}
  .sheet-grip{display:none}.sheet-head{padding-top:10px;cursor:default}
