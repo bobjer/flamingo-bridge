@@ -1,3 +1,4 @@
+import {pickGuest} from './guest-roll.js';
 import {watchRelease} from './release-notice.js';
 import {setupGameMenu} from './game-menu.js';
 import {showRecords} from './records.js';
@@ -25,6 +26,15 @@ const getSpecs=()=>({sam:[tr("С-400 «Хлопавка»","S-400 Party Popper")
 let specs=getSpecs();
 const units=[],enemies=[],effects=[],scouts=[];
 let spent=0,partialLedger=0;
+// Run-level dice. A daily raid seeds them from the date, so everyone faces the same waves that day.
+let daily=null,seed=0,forecast=null,focus=null,seenStriker=false;
+function rng(){
+ if(daily==null)return Math.random();
+ seed=(seed+0x6D2B79F5)|0;let t=seed;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;
+}
+const today=()=>new Date().toISOString().slice(0,10);
+const seedOf=text=>[...text].reduce((h,c)=>Math.imul(h^c.charCodeAt(0),16777619),2166136261)|0;
+const boardKey=()=>$('difficulty').value+(daily?':'+daily:'');
 function spend(amount){cash-=amount;spent+=amount}
 let cash,hp,time,wave,phase,paused,untilSpawn,score,foam,rp,unpaid,last=performance.now();
 // Hidden national budget: player never sees it. All payouts come from it; time, blockade, jams, blackouts and victims drain it.
@@ -95,14 +105,21 @@ const BREAK_SECONDS=8;
 let waveElapsed=0,breakLeft=0,die=1;
 let runId=crypto.randomUUID();
 let autoplay=false,assisted=false,botDelay=0,nextDeckWave=0,lastSmokeWave=0;
-const deckInterval=()=>3+Math.floor(Math.random()*2);
+const deckInterval=()=>3+Math.floor(rng()*2);
 let flockPressure=1;
-const intensity=()=>wave%9===0?1.9+die*.09:.65+die*.115;
+const pressureOf=(w,d)=>w%9===0?1.9+d*.09:.65+d*.115;
+const intensity=()=>pressureOf(wave,die);
+// The next wave is rolled at the start of the intermission and shown in the briefing, so the player can prepare.
+function rollForecast(w){
+ const die=1+Math.floor(rng()*6),stormy=w%9===0||(w>=4&&rng()<.18),ambush=w%5===0?(rng()<.5?'loaf':'neptune'):null;
+ const start=Math.round(8/flockPressure),flock=w>=start?Math.min(8,Math.floor((w-start+die)*flockPressure/4)):0;
+ return {wave:w,die,stormy,ambush,deck:w===nextDeckWave,neptune:w%4===0,flock};
+}
 function waveHud(){
  $('watch-game').textContent=autoplay?tr('✋ Грати самому','✋ Take over'):tr('Увімкнути автогру','Enable autoplay');$('watch-game').classList.toggle('on',autoplay);
  $('watch-game').disabled=phase==='over';
  $('watch-game').setAttribute('aria-pressed',String(autoplay));
- $('wave-roll').textContent=wave?('⚄ '+die+'/6 · '+(stormy?tr('ШТОРМ','STORM'):tr('Натиск','Pressure'))+' ×'+intensity().toFixed(2)):'';
+ $('wave-roll').textContent=wave?((daily?tr('Наліт дня · ','Daily raid · '):'')+'⚄ '+die+'/6 · '+(stormy?tr('ШТОРМ','STORM'):tr('Натиск','Pressure'))+' ×'+intensity().toFixed(2)):'';
  $('wave-roll').hidden=!wave;
 }
 function watchGame(){
@@ -122,6 +139,8 @@ function watchGame(){
 $('watch-game').onclick=watchGame;
 function botTurn(dt){
  botDelay-=dt;if(botDelay>0)return;botDelay=.75;
+ const striker=enemies.filter(e=>e.striker&&e.hp>0).sort((a,b)=>a.m.position.length()-b.m.position.length())[0];
+ if(striker&&!locked()){focus=striker;ui();return}
  const supply=supplyQuote(),urgent=supply.capacity&&supply.stock<=supply.capacity*.35;
  if(!breakLeft&&wave>lastSmokeWave&&waveElapsed>=3&&(wave-lastSmokeWave>=2||die>=5)&&cash>=price(orders.smoke.cost)+supply.each*4){
   issueOrder('smoke');lastSmokeWave=wave;return;
@@ -137,11 +156,29 @@ function botTurn(dt){
   if(cash>=price(specs[k][1])&&(k!=='turret'||pad))purchase(k,k==='turret'?pad:null);
  }
 }
+function briefing(f){
+ if(!f)return [];
+ const stations=units.some(u=>u.k==='sam'||u.k==='pantsir'),chips=[['⚄ '+f.die+'/6 · ×'+pressureOf(f.wave,f.die).toFixed(2),f.die>=5?'hot':'']];
+ if(f.stormy)chips.push([tr('Шторм','Storm'),'storm']);
+ if(f.flock)chips.push([tr('Зграя ×','Flock ×')+f.flock,'hot']);
+ if(f.deck)chips.push([tr('Удар по полотну','Deck strike'),'']);
+ if(f.neptune)chips.push([tr('Нептун','Neptune'),'']);
+ if(f.ambush&&stations)chips.push([f.ambush==='loaf'?tr('Паляниця → ППО','Loaf → air defence'):tr('Нептун → ППО','Neptune → air defence'),'hot']);
+ return chips;
+}
+let breakKey='';
 function showBreak(){
  const banner=$('break-banner');
  banner.hidden=breakLeft<=0||paused;
- const text=breakLeft>0?tr('Перерва · Хвиля ','Intermission · Wave ')+(wave+1)+tr(' через ',' in ')+Math.ceil(breakLeft)+tr(' с',' s'):'';
- if(banner.textContent!==text)banner.textContent=text;
+ if(breakLeft<=0)return;
+ const chips=briefing(forecast);
+ const key=Math.ceil(breakLeft)+document.documentElement.lang+JSON.stringify(chips);
+ if(key===breakKey)return;breakKey=key;
+ const head=document.createElement('span');head.className='break-head';
+ head.textContent=tr('Перерва · Хвиля ','Intermission · Wave ')+(wave+1)+tr(' через ',' in ')+Math.ceil(breakLeft)+tr(' с',' s');
+ const row=document.createElement('span');row.className='break-chips';
+ row.append(...chips.map(([text,tone])=>{const c=document.createElement('b');c.textContent=text;if(tone)c.dataset.tone=tone;return c}));
+ banner.replaceChildren(head,row);
 }
 
 const vehicles = [], barges=[];
@@ -291,11 +328,12 @@ function roadStep(dt){
  showTraffic();
 }
 function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);m.traverse(o=>{if(o.isMesh)o.castShadow=true});world.scene.add(m);return m}
-function reset(){runId=crypto.randomUUID();assisted=false;moveTrain.reset();collapseFires.length=0;delete $('defeat-card').dataset.entrance;delete defeatFx.dataset.entrance;stormy=false;tankerTime=0;world.setStorm(false);autoplay=false;botDelay=0;lastSmokeWave=0;nextDeckWave=deckInterval();flockPressure=2**((Math.random()-.5)*3);spent=0;partialLedger=0;guestWave=guestUntil=guestPickWave=0;seenTrump=seenMusk=false;incoming=null;guest.hidden=true;road.reset();world.setDeckHoles([]);clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.clear();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;trafficTime=0;tankers.restore();tankers.move(0);orders.smoke.end=orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
+function reset(){seed=daily?seedOf(daily+':'+$('difficulty').value):0;forecast=null;focus=null;seenStriker=false;runId=crypto.randomUUID();assisted=false;moveTrain.reset();collapseFires.length=0;delete $('defeat-card').dataset.entrance;delete defeatFx.dataset.entrance;stormy=false;tankerTime=0;world.setStorm(false);autoplay=false;botDelay=0;lastSmokeWave=0;nextDeckWave=deckInterval();flockPressure=2**((rng()-.5)*1.2);spent=0;partialLedger=0;guestWave=guestUntil=guestPickWave=0;seenTrump=seenMusk=false;incoming=null;guest.hidden=true;road.reset();world.setDeckHoles([]);clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.clear();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;trafficTime=0;tankers.restore();tankers.move(0);orders.smoke.end=orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
 function ui(){
+ document.body.dataset.board=boardKey();
  const resume=$('resume-game');
  resume.hidden=phase!=='live'||!paused;
  resume.textContent=tr('▶ Продовжити гру','▶ Resume game');
@@ -350,6 +388,16 @@ function damageDeck(amount,position,awaitingCamera=false){
  spot.awaitingCamera=awaitingCamera;spot.repairAfter=time+1.2;rage();
  road.impact(spot,time);world.setDeckHoles(damageSpots);spot.loss+=loss;hp-=loss;waveDamage+=loss;hype+=loss;return loss;
 }
+function dropSideSpan(){
+ if(wave < 3 || hp < 12 || damageSpots.some(s => s.fallenSide) || Math.random() >= .12)return;
+ const side = Math.random() < .5 ? -1 : 1;
+ const point = new T.Vector3(side * 18.5,3.23,.5), loss = 12;
+ const site = {point,loss,fallenSide:side,fallenAt:time,repairAfter:time+4};
+ damageSpots.push(site); hp-=loss; waveDamage+=loss;
+ for(const v of vehicles)v.m.visible=false;
+ world.setDeckHoles(damageSpots); road.impact(site,time); fx.dust(point,1);
+ writeMessage(()=>tr('Просів бічний проліт. Рух перекрито до ремонту.','A side span has fallen. Road traffic is closed until repairs are complete.'));
+}
 function updateRoadCrew(){
  if(world.cinematicActive())return;
  for(const spot of damageSpots){
@@ -398,7 +446,7 @@ function updateMarkers(){
   const currency=tr(' млн ₽',' M RUB');
   for(const spot of damageSpots){
    const amount=Math.min(25,spot.loss),cost=price(PATCH*amount/25);
-   items.push({key:spot,kind:'deck',point:spot.point,label:tr('Латати +','Patch +')+amount+'%',short:'−'+amount+'%',detail:cost+currency,disabled:paused||cash<cost,action:()=>patchDeck(spot)});
+   items.push({key:spot,kind:'deck',point:spot.point,label:(spot.fallenSide?tr('Підняти проліт +','Raise span +'):tr('Латати +','Patch +'))+amount+'%',short:'−'+amount+'%',detail:cost+currency,disabled:paused||cash<cost,action:()=>patchDeck(spot)});
   }
   for(const u of units){
    const capacity=magazine[u.k];if(!capacity||u.ammo>Math.ceil(capacity*.3))continue;
@@ -406,6 +454,12 @@ function updateMarkers(){
    const label=specs[u.k][0]+' · '+u.ammo+'/'+capacity;
    const detail=(amount?tr('Поповнити +','Restock +')+amount:tr('Бракує коштів','Low funds'))+' · '+cost+currency;
    items.push({key:u,kind:'ammo',point:u.m.position,label,short:u.ammo+'/'+capacity,urgent:!u.ammo,detail,disabled:paused||!amount,action:()=>refillUnit(u)});
+  }
+  for(const e of enemies){
+   if(!e.striker||e.hp<=0)continue;
+   const on=focus===e;
+   items.push({key:e,kind:on?'striker locked':'striker',point:e.m.position,label:tr('Ударний фламінго','Strike flamingo'),short:on?tr('ЦІЛЬ','LOCK'):'⌖',
+    detail:on?tr('ППО наведено','Air defence locked'):tr('Навести ППО','Lock air defence'),urgent:!on,disabled:paused,action:()=>{if(!paused){focus=e;ui()}}});
   }
  }
  drawMarkers(items);
@@ -415,9 +469,10 @@ function arcadeHud(){
  const money=n=>n+tr(' млн ₽',' M RUB');
  const life=3-hits,poor=reserve<=reserve0*.25;
  $('arch-life').textContent=tr('Арка ','Arch ')+('◆'.repeat(life))+('◇'.repeat(hits))+' '+life+'/3';
- $('arcade').dataset.danger=hits>=2||poor?'high':hits?'medium':'low';
+ $('arcade').dataset.danger=hits>=2||poor||(wave>0&&unpaid<=0)?'high':hits?'medium':'low';
  $('arcade-cash').textContent=money(cash);
- $('reserve-trend').textContent=!reserve?tr('Казна порожня','Treasury empty'):poor?tr('Казна майже порожня','Treasury running dry'):tr('Базова виплата ','Base grant ')+money(grant(Math.max(1,wave)));
+ const owed=wave>0&&unpaid<1;$('arcade').dataset.strike=owed?(unpaid<=0?'full':'part'):'';
+ $('reserve-trend').textContent=owed?(unpaid<=0?tr('ППО страйкує: зарплату не виплачено','Air defence on strike: wages unpaid'):tr('Борг по зарплаті · темп вогню −','Wages owed · fire rate −')+Math.round((1-unpaid)*100)+'%'):!reserve?tr('Казна порожня','Treasury empty'):poor?tr('Казна майже порожня','Treasury running dry'):tr('Базова виплата ','Base grant ')+money(grant(Math.max(1,wave)));
  const act=$('order-act'),msg=$('order-copy');
  function order(text,label,action){
   if(msg.textContent!==text)msg.textContent=text;
@@ -425,7 +480,7 @@ function arcadeHud(){
  }
  const card=$('defeat-card');card.hidden=phase!=='over';defeatFx.hidden=card.hidden;
  if(phase==='over'){
-  const resultKey=JSON.stringify([runId,document.documentElement.lang,wave,score,spent,partialLedger,assisted,$('difficulty').value]);
+  const resultKey=JSON.stringify([runId,document.documentElement.lang,wave,score,spent,partialLedger,assisted,boardKey()]);
   if(card.dataset.result===resultKey)return order(tr('Арка впала · хвиля ','Arch collapsed · wave ')+wave);
   card.dataset.result=resultKey;
   const big=n=>n>=1e6?[n/1e6,tr(' трлн ₽',' trillion RUB')]:n>=1e3?[n/1e3,tr(' млрд ₽',' billion RUB')]:[n,tr(' млн ₽',' M RUB')];
@@ -441,7 +496,7 @@ function arcadeHud(){
   }
   quote.firstElementChild.textContent=tr('«Його з усіх чотирьох боків оточує океан».','“It’s surrounded on four sides by ocean.”');
   if(!tiles){tiles=document.createElement('dl');tiles.className='defeat-stats';quote.after(tiles)}
-  kicker.textContent=tr('Арку закрито · хвиля ','Arch closed · wave ')+wave;
+  kicker.textContent=(daily?tr('Наліт дня · ','Daily raid · '):'')+tr('Арку закрито · хвиля ','Arch closed · wave ')+wave;
   card.querySelector('h2').textContent=tr('ПОТРАЧЕНО','WASTED');
   const tile=(label,value,unitText='')=>{const d=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;if(unitText){const u=document.createElement('small');u.textContent=unitText;dd.append(u)}d.append(dt,dd);return d};
   const shown=(partialLedger?'≥ ':'')+(Math.round(sum*10)/10).toLocaleString(tr('uk','en'));
@@ -452,7 +507,7 @@ function arcadeHud(){
   button.onclick=confirmNewGame;
   card.querySelector('.coffee-note span').textContent=tr('Посміялися чи просто залипли ще на одну хвилю?', 'Had a laugh or stayed for one more wave?');
   card.querySelector('.coffee-note a').textContent=tr('Пригостіть мене кавою ☕', 'Buy me a coffee ☕');
-  showRecords(card,{id:runId,difficulty:$('difficulty').value,wave,score,assisted});
+  showRecords(card,{id:runId,difficulty:boardKey(),wave,score,assisted});
   return order(tr('Арка впала · хвиля ','Arch collapsed · wave ')+wave);
  }
  if(paused)return order(tr('Партія на паузі.','Game paused.'),tr('Продовжити ▸','Resume ▸'),toggle);
@@ -495,25 +550,27 @@ function nextWave(){
   const bill=upkeepBill(),paid=Math.min(cash,bill);
   const regen=reserve>0&&paid===bill&&wave%3===0&&hits>0&&hits<3;if(regen){hits--;world.setHits(hits)}
   spend(paid);unpaid=bill?paid/bill:1;
+  if(unpaid<1)$('caption').textContent=unpaid<=0?tr('ЗАРПЛАТУ НЕ ВИПЛАЧЕНО · ППО СТРАЙКУЄ','WAGES UNPAID · AIR DEFENCE ON STRIKE'):tr('БОРГ ПО ЗАРПЛАТІ · ТЕМП ВОГНЮ −','WAGES OWED · FIRE RATE −')+Math.round((1-unpaid)*100)+'%';
   writeMessage(()=>tr("Хвиля ","Wave ")+wave+tr(" · пошкодження "," · damage ")+waveDamage+tr(" од. · втрати "," pts · casualties ")+waveVictims+tr(" · розголос "," · publicity ")+Math.round(hype)+tr(" · на ремонт і оборону "," · repair and defence grant ")+pay+tr(" млн ₽ · утримання −"," M RUB · upkeep −")+paid+tr(" млн ₽."," M RUB.")+(unpaid<1?tr(" Платню затримано. Темп стрільби гарнізону впав на "," Payroll shortfall. Garrison fire rate down ")+Math.round(100*(1-unpaid))+tr("%.","%."):'')+(regen?tr(" Інженери підсилили арку: +1 життя."," Engineers reinforced the arch: +1 life."):'')+' '+headline());
   hype*=.55;
  }
  signalPenalty=seaCosts=jamLoss=waveVictims=0;arrivals=checks=caught=0;showTraffic();
  waveDamage=0;
- wave++;die=1+Math.floor(Math.random()*6);
+ wave++;const f=forecast?.wave===wave?forecast:rollForecast(wave);forecast=null;die=f.die;
+ dropSideSpan();
  // Weather: storms roll in now and then (always on every ninth wave). Tankers anchor, babies stay home.
- stormy=wave%9===0||(wave>=4&&Math.random()<.18);world.setStorm(stormy);if(stormy)$('caption').textContent=tr('ШТОРМ · ТАНКЕРИ НА ЯКОРІ','STORM · TANKERS AT ANCHOR');
+ stormy=f.stormy;world.setStorm(stormy);if(stormy)$('caption').textContent=tr('ШТОРМ · ТАНКЕРИ НА ЯКОРІ','STORM · TANKERS AT ANCHOR');
 waveElapsed=0;untilSpawn=0;
  if(wave===nextDeckWave){
   const n=1+Math.floor(Math.random()*2);
-  for(let i=0;i<n;i++){const k=Math.random()<.35?'loaf':'flamingo';spawn(k,(i?-1:1)*(14+Math.random()*6));if(k==='flamingo'&&Math.random()<.5)Object.assign(enemies.at(-1),{rail:true})}
+  for(let i=0;i<n;i++){const k=rng()<.35?'loaf':'flamingo';spawn(k,(i?-1:1)*(14+Math.random()*6));if(k==='flamingo'&&rng()<.5)Object.assign(enemies.at(-1),{rail:true})}
   nextDeckWave+=deckInterval();
  }
- if(wave%5===0){
+ if(f.ambush){
   const stations=units.filter(u=>u.k==='sam'||u.k==='pantsir');
   if(stations.length){
    const station=stations[Math.floor(Math.random()*stations.length)];
-   const actor=spawn(Math.random()<.5?'loaf':'neptune');
+   const actor=spawn(f.ambush??(rng()<.5?'loaf':'neptune'));
    const bread=actor.k==='loaf',point=station.m.position;
    actor.m.position.set(point.x,bread?4.2:.35,point.z+(point.z<0?-1:1)*(bread?5:6));
    if(bread)actor.target=station;else actor.prey=station;
@@ -532,9 +589,55 @@ function spawn(k,deckX=null){let a=Math.random()*Math.PI*2;const r=23+Math.rando
  const target=Math.random()<(k==='baby'?.82:k==='loaf'?.75:.65)?candidates[Math.floor(Math.random()*candidates.length)]:null;
  const ships=units.filter(u=>u.k==='cruiser'&&u.m.position.z*z>0),prey=k==='neptune'&&ships.length&&Math.random()<.6?ships[Math.floor(Math.random()*ships.length)]:null;
  const enemy={m,k,y,deckX,target,prey,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:Math.max(1,Math.round((stats[0]+Math.floor((wave-1)/4))*(.75+.25*intensity()))),speed:stats[1]*(1+wave*.018),angle:a};
- enemies.push(enemy);return enemy;}
+ enemies.push(enemy);
+ // Only a strike flamingo can close the arch, and it is marked; the rest of the flock only soaks up missiles.
+ if(k==='flamingo'&&deckX===null&&enemies.filter(x=>x.striker&&x.hp>0).length<2&&rng()<.06*flockPressure){
+  enemy.striker=true;enemy.hp=Math.round(enemy.hp*1.4);enemy.speed*=.85;dressStriker(m);
+  $('caption').textContent=tr('⌖ УДАРНИЙ ФЛАМІНГО · ЛЕТИТЬ НА АРКУ','⌖ STRIKE FLAMINGO · HEADING FOR THE ARCH');
+  if(!seenStriker){seenStriker=true;writeMessage(()=>tr('Ударний фламінго (червоний, з прицілом) — єдиний, хто може влучити в арку. Торкніться його мітки, щоб навести ППО.','The strike flamingo (red, with a reticle) is the only one that can hit the arch. Tap its marker to lock air defence on it.'))}
+ }
+ return enemy;}
+// Strike flamingo look: darker crimson plumage and a reticle that stays visible through the scene.
+const reticleTexture=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');g.strokeStyle='#fff';g.lineWidth=9;g.beginPath();g.arc(64,64,40,0,Math.PI*2);g.stroke();g.lineWidth=10;for(const [x,y,u,v] of [[64,4,64,30],[64,98,64,124],[4,64,30,64],[98,64,124,64]]){g.beginPath();g.moveTo(x,y);g.lineTo(u,v);g.stroke()}return new T.CanvasTexture(c)})();
+function dressStriker(m){
+ m.traverse(o=>{if(o.isMesh){o.material=o.material.clone();o.material.color.multiplyScalar(.5).lerp(new T.Color(0xb3122e),.35);o.material.emissive=new T.Color(0x3a0008)}});
+ const reticle=new T.Sprite(new T.SpriteMaterial({map:reticleTexture,color:0xff3b4e,depthTest:false,transparent:true,toneMapped:false}));
+ reticle.position.set(0,1.1,0);reticle.scale.setScalar(1.7);reticle.renderOrder=11;m.add(reticle);m.userData.reticle=reticle;
+}
+const locked=()=>focus&&focus.hp>0&&enemies.includes(focus);
+function strikerFx(){
+ const now=performance.now(),k=.85+.15*Math.sin(now*.008);
+ for(const e of enemies){
+  const r=e.m.userData.reticle;if(!r)continue;const on=focus===e;
+  r.material.color.setHex(on?0xffd23f:0xff3b4e);r.scale.setScalar(on?1.3:1.7*k);r.material.rotation=on?now*.002:0;
+ }
+}
+// Unpaid crews: a crossed-out ruble floats over every unit while wages are owed.
+const wageTexture=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');g.fillStyle='#ffcf4a';g.font='bold 92px system-ui,sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText('₽',64,70);g.strokeStyle='#ff3b4e';g.lineWidth=12;g.lineCap='round';g.beginPath();g.moveTo(20,108);g.lineTo(108,20);g.stroke();return new T.CanvasTexture(c)})();
+function wageSigns(){
+ const show=phase==='live'&&wave>0&&unpaid<1;
+ for(const u of units){
+  let s=u.m.userData.wage;
+  if(!s&&show){s=new T.Sprite(new T.SpriteMaterial({map:wageTexture,depthTest:false,transparent:true,toneMapped:false}));s.renderOrder=11;s.position.y=2.6/u.m.scale.y;s.scale.setScalar(1.1/u.m.scale.x);u.m.add(s);u.m.userData.wage=s}
+  if(s){s.visible=show;if(show)s.material.opacity=unpaid<=0?1:.55+.45*Math.sin(performance.now()*.006)**2}
+ }
+}
 function gameTargets(kind){
  return units.filter(u=>(u.k==='cruiser'&&(kind==='baby'||kind==='bird'))||((u.k==='sam'||u.k==='pantsir')&&(kind==='bird'||kind==='loaf')));
+}
+// Neptune's trident: the swing angle that puts the centre prong at a height, and where that prong lands.
+function neptuneAngle(targetY,baseY){
+ const c=Math.max(-1,Math.min(1,((targetY-baseY)/2.6-1.56)/2.06));
+ return -Math.acos(c);
+}
+function neptuneTip(e,angle=e.m.userData.trident.rotation.z){
+ const v=new T.Vector3(.3-2.06*Math.sin(angle),1.56+2.06*Math.cos(angle),.86);
+ e.m.updateMatrixWorld(true);
+ return e.m.localToWorld(v);
+}
+function neptuneReach(e,angle){
+ const lx=.3-2.06*Math.sin(angle),lz=.86,th=e.m.rotation.y,s=e.m.scale.x;
+ return new T.Vector3(s*(lx*Math.cos(th)+lz*Math.sin(th)),0,s*(-lx*Math.sin(th)+lz*Math.cos(th)));
 }
 function destination(e,offline){
  if(offline){
@@ -683,11 +786,9 @@ function guestStep(dt){
  // One cameo roll per wave from wave 3; Musk waits (up to second 16) for drones on screen.
  // Pity timer: each guest is guaranteed by wave 5 (Trump) / 6 (Musk) if they have not shown yet.
  if(wave<3||guestWave===wave||waveElapsed<6||waveElapsed>16)return;
- if(!guestWave||guestWave<wave){
-  if(!seenTrump&&wave>=5){trumpCameo();guestWave=wave;return}
-  if(!seenMusk&&wave>=6){if(muskCameo())guestWave=wave;return}
+ if(guestPickWave!==wave){
+  guestPickWave=wave;guestPick=pickGuest(wave,[seenTrump && 'trump',seenMusk && 'musk']);
  }
- if(guestPickWave!==wave){guestPickWave=wave;const roll=Math.random();guestPick=roll<.2?'trump':roll<.45?'musk':''}
  if(guestPick==='trump'){trumpCameo();guestWave=wave}
  else if(guestPick==='musk'){if(muskCameo())guestWave=wave}
  else guestWave=wave;
@@ -731,14 +832,15 @@ function step(dt){
  showSignals();
  moveShips(dt);
  if(Math.floor(time)>elapsed){const loss=Math.min(reserve,blocked*4);reserve-=loss;seaCosts+=loss}
- advanceTraffic(before,time);untilSpawn-=dt;if(waveElapsed<=17&&untilSpawn<=0){const pool=stormy?['flamingo','flamingo','bird','bird','loaf','drone']:['flamingo','flamingo','bird','baby','loaf','drone'];spawn(pool[Math.floor(Math.random()*pool.length)]);
+ advanceTraffic(before,time);untilSpawn-=dt;if(waveElapsed<=17&&untilSpawn<=0){const pool=stormy?['flamingo','flamingo','bird','bird','loaf','drone']:['flamingo','flamingo','bird','baby','loaf','drone'];spawn(pool[Math.floor(rng()*pool.length)]);
   const flockStart=Math.round(8/flockPressure);
   if(wave>=flockStart){
    const flock=Math.min(8,Math.floor((wave-flockStart+die)*flockPressure/4));
    for(let i=0;i<flock;i++)spawn('flamingo');
   }
   untilSpawn=Math.max(.32,1.9/((1+.12*wave)*intensity()))}
- for(const u of units){if(unpaid<=0)continue;u.cd-=dt;if(u.cd>0||(u.ammo===0&&u.k!=='cruiser'))continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;if(e.filmed&&e.k==='loaf'&&e.target)continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if((e.deckX==null||(e.rail&&!e.filmed))&&e.hp>fx.pendingDamage(e)&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range))){closest=d;target=e}}
+ for(const u of units){if(unpaid<=0)continue;u.cd-=dt;if(u.cd>0||(u.ammo===0&&u.k!=='cruiser'))continue;let target=null,closest=Infinity;const reach=e=>u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range);
+ if(u.k!=='dolphin'&&locked()&&focus.hp>fx.pendingDamage(focus)&&reach(focus))target=focus;else for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;if(e.filmed&&e.k==='loaf'&&e.target)continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if((e.deckX==null||(e.rail&&!e.filmed))&&e.hp>fx.pendingDamage(e)&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range))){closest=d;target=e}}
  if(flyby?.confused&&flyby.hp>0&&!flyby.flight&&u.k==='sam'&&!fx.pendingDamage(flyby)&&world.onScreen(flyby.m.position))target=flyby;
  if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);
   const cruiser=u.k==='cruiser';
@@ -881,7 +983,7 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
     const point=new T.Vector3(e.deckX,3.23,0);
     const filmed=e.filmed&&world.cinematicBoom(point,{subject:e.m});
     damageDeck(12,point,filmed);
-   }else if(e.k==='flamingo'&&Math.random()>.055*flockPressure){
+   }else if(e.k==='flamingo'&&!e.striker){
     fx.feathers(p,0xff86ac);
    }else if(e.k==='flamingo'){hits=Math.min(3,hits+1);if(hits>=3)world.cinematic(new T.Vector3(0,3.5,0),3,{force:true,duration:11,panorama:true,radius:80,height:25,sweep:.32});else world.cinematic(p.clone(),1.5);world.setHits(hits);damageDeck(12,p);hype+=25;casualties(new T.Vector3())}
    else{const loss=damageDeck(e.k==='neptune'?23:6,p);if(loss)casualties(e.m.position)}
@@ -894,14 +996,15 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.m.position.lerp(e.to,Math.min(1,dt/e.life));e.life-=dt;if(e.life<=0){world.scene.remove(e.m);effects.splice(i,1)}}
  if(hits<3&&waveElapsed>=17&&(!enemies.length||waveElapsed>=37)){
   for(const e of enemies)e.m.removeFromParent();
-  enemies.length=0;fx.reset(flyby?.flight);breakLeft=BREAK_SECONDS;ui();
+  enemies.length=0;focus=null;fx.reset(flyby?.flight);breakLeft=BREAK_SECONDS;
+  forecast=rollForecast(wave+1);if(forecast.stormy!==stormy){stormy=forecast.stormy;world.setStorm(stormy);$('caption').textContent=stormy?tr('НАСУВАЄТЬСЯ ШТОРМ · ТАНКЕРИ НА ЯКОРІ','STORM ROLLING IN · TANKERS AT ANCHOR'):tr('ШТОРМ ВЩУХАЄ','THE STORM IS EASING')}ui();
  }
  if(hits===3){breakLeft=0;$('defeat-card').dataset.entrance='epic';defeatFx.dataset.entrance='epic';world.carryDown(road.patchedMeshes());world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));phase='over';selectedShip=null;setPlacement(false);writeMessage(()=>tr("Третій фламінго обвалив арку. Хвиль протрималися: ","A third flamingo brought down the arch. Waves reached: ")+wave+tr(". Відбито цілей: ",". Targets repelled: ")+score+'.');ui()}}
 function flap(m,t){for(const wing of m.userData.wings||[])wing.rotation.x=wing.scale.z*Math.sin(t*6)*.32}
 const scoreBoard=setupGameMenu();
 let clockText='';
 function frame(now){const dt=Math.min((now-last)/1000,.08)*world.timeScale();last=now;if(scoreBoard.open){requestAnimationFrame(frame);return}if(phase==='live'&&!paused&&!$('restart').open){step(dt)};if(phase==='over'){fx.tick(dt,[]);for(const site of collapseFires)fx.blaze(site,dt)};if(selectedShip)ring.position.copy(selectedShip.m.position);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
- {const c=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');if(clockText!==c){clockText=c;$('clock').textContent=c}}updateRoadCrew();road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;if(!tantrum.hidden&&time>=rageUntil)tantrum.hidden=true;moveTrain(trafficTime);tankers.draw(time);floatOnSea();beams.update(now,nightLevel(),[...enemies,flyby].filter(Boolean));world.draw(time,trafficTime,phase==="live"&&orders.smoke.end>time);if(flyby?.flight?.atContact)flyby.flight.contactShown=true;updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
+ {const c=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');if(clockText!==c){clockText=c;$('clock').textContent=c}}updateRoadCrew();road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;if(!tantrum.hidden&&time>=rageUntil)tantrum.hidden=true;moveTrain(trafficTime);tankers.draw(time);floatOnSea();beams.update(now,nightLevel(),[...enemies,flyby].filter(Boolean));world.draw(time,trafficTime,phase==="live"&&orders.smoke.end>time);if(flyby?.flight?.atContact)flyby.flight.contactShown=true;updateMarkers();strikerFx();wageSigns();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
 document.addEventListener('siege-language',()=>{
  specs=getSpecs();techs=getTechs();ui();showTraffic();showSignals();
 });
@@ -922,7 +1025,7 @@ function unpackEntity(item){
 function saveMatch(){
  try{
   const state={flockPressure,spent,partialLedger,guestWave,die,waveElapsed,breakLeft,cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught};
-  localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,runId,assisted,autoplay,botDelay,nextDeckWave,lastSmokeWave,state,tech,patches:road.patchedMeshes().map(m=>m.position.toArray()),damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss})),difficulty:$('difficulty').value,inspection:$('inspection').value,
+  localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,daily,seed,forecast,focus:enemies.indexOf(focus),seenStriker,runId,assisted,autoplay,botDelay,nextDeckWave,lastSmokeWave,state,tech,patches:road.patchedMeshes().map(m=>m.position.toArray()),damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss,fallenSide:s.fallenSide,fallenAt:s.fallenAt,repairAfter:s.repairAfter})),difficulty:$('difficulty').value,inspection:$('inspection').value,
    trafficTime,tankerTime,stormy,oilSlicks:tankers.snapshot(),lostTankers:tankers.losses(),orders:[orders.gps.end,orders.net.end,orders.smoke.end],units:units.map(packEntity),enemies:enemies.map(packEntity),vehicles:vehicles.map(packEntity),
    barges:barges.map(packEntity),flights:fx.snapshot(enemies),camera:world.cameraPosition(),selectedShip:units.indexOf(selectedShip),placing}));
   return true;
@@ -940,13 +1043,15 @@ function restoreMatch(){
  for(const key of "cash hp time wave untilSpawn score rp unpaid reserve0 hype victims waveVictims jamLoss reserve waveDamage seaCosts hits signalPenalty roadTimer inspectionCredit arrivals checks caught".split(" "))if(!Number.isFinite(state[key]))return;
  for(const value of Object.values({...state,phase:0}))if(!Number.isFinite(value))return;
  autoplay=data.autoplay===true;
+ daily=/^\d{4}-\d{2}-\d{2}$/.test(data.daily)?data.daily:null;seed=Number.isSafeInteger(data.seed)?data.seed|0:0;seenStriker=data.seenStriker===true;
+ forecast=data.forecast&&Number.isInteger(data.forecast.wave)&&data.forecast.wave===state.wave+1&&Number.isInteger(data.forecast.die)?data.forecast:null;
  assisted=assisted||autoplay;
  nextDeckWave=Number.isInteger(data.nextDeckWave)&&data.nextDeckWave>state.wave?data.nextDeckWave:state.wave+deckInterval();
  lastSmokeWave=Number.isInteger(data.lastSmokeWave)?data.lastSmokeWave:0;
  botDelay=Number.isFinite(data.botDelay)?data.botDelay:0;
  flockPressure=state.flockPressure??1;spent=state.spent??0;partialLedger=state.partialLedger??Number(state.spent===undefined);
  ({cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught}=state);
- for(const s of data.damageSpots??[])damageSpots.push({point:new T.Vector3(...s.point),loss:s.loss});
+ for(const s of data.damageSpots??[])damageSpots.push({point:new T.Vector3(...s.point),loss:s.loss,fallenSide:s.fallenSide,fallenAt:s.fallenAt,repairAfter:s.repairAfter});
  if(!damageSpots.length&&hp<100)damageSpots.push({point:new T.Vector3(0,3.23,0),loss:100-hp});
  for(const pos of data.patches??[])road.repair({point:new T.Vector3(...pos)},time-1);
  for(const site of damageSpots)road.impact(site,time-6);
@@ -958,6 +1063,7 @@ function restoreMatch(){
   for(const item of saved)list.push(unpackEntity(item));
  }
  world.setDeckHoles(damageSpots);for(const v of vehicles)v.m.visible=hp===100&&!v.wrecked;
+ for(const e of enemies)if(e.striker)dressStriker(e.m);focus=enemies[data.focus]??null;
  fx.restore(data.flights,enemies);world.restoreCamera(data.camera);world.setHits(hits,true);if(phase==='over')ignite(false);
  if(phase==='over')world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));
  selectedShip=units[data.selectedShip]??null;setPlacement(data.placing);
@@ -966,12 +1072,12 @@ function restoreMatch(){
 }
 function confirmNewGame(){
  const dialog=$('restart');dialog.returnValue='cancel';
- $('new-difficulty').value=$('difficulty').value;dialog.showModal();
+ $('new-difficulty').value=$('difficulty').value;const box=$('new-daily');if(box)box.checked=!!daily;dialog.showModal();
 }
 $('new-game').onclick=confirmNewGame;
 $('restart').addEventListener('close',()=>{
  if($('restart').returnValue!=='replace')return;
- $('difficulty').value=$('new-difficulty').value;
+ $('difficulty').value=$('new-difficulty').value;daily=$('new-daily')?.checked?today():null;
  reset();document.dispatchEvent(new Event('siege-reset'));saveMatch();
 });
 reset();

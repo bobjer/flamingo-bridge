@@ -21,6 +21,7 @@ export function sceneMarkers(view,project){
     const text=document.createElement('span'),short=document.createElement('b');text.className='marker-text';short.className='marker-short';text.append(title,detail);button.append(short,text);layer.append(button);svg.append(line,dot);entry={button,line,dot,title,detail,short};entries.set(item.key,entry);
    }
    const {button,line,dot}=entry,pos=project(item.point);
+   if(entry.kind!==item.kind){entry.kind=item.kind;button.className='scene-marker '+item.kind;dot.setAttribute('class','marker-dot '+item.kind);line.setAttribute('class','marker-line '+item.kind)}
    button.hidden=!pos;line.style.display=dot.style.display=pos?'':'none';if(!pos)continue;
    dot.setAttribute('transform','translate('+pos.x.toFixed(1)+','+pos.y.toFixed(1)+')');
    if(entry.title.textContent!==item.label){entry.title.textContent=item.label;entry.size=null}

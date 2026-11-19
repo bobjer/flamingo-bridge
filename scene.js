@@ -63,9 +63,9 @@ function waterNormals(renderer) {
 
 export function landscape(view) {
  const renderer = new T.WebGLRenderer({antialias: true, logarithmicDepthBuffer: true});
- const maxRatio = Math.min(devicePixelRatio, 1.6);
+ let maxRatio = Math.min(devicePixelRatio, 1.6);
  // Never drop below native resolution on 1x screens; on Retina stay at 1.2x or more.
- const minRatio = Math.min(maxRatio, Math.max(1, maxRatio * .75));
+ let minRatio = Math.min(maxRatio, Math.max(1, maxRatio * .75));
  let pixelRatio = maxRatio;
  renderer.setPixelRatio(pixelRatio);
  // Adaptive resolution: drop render scale when frames run long, recover when there is headroom.
@@ -180,8 +180,9 @@ export function landscape(view) {
  }
  const piers = [-48, -40, -32, -24, -18, -12, 12, 18, 24, 32, 40, 48];
 
+ const sideDecks = [new Map(), new Map()];
  // --- road deck ---
- for(const [left,right,collection] of [[-55,-12,scenery],[-12,12,pavement],[12,55,scenery]]){
+ for(const [left,right,collection] of [[-55,-18,scenery],[-18,-12,sideDecks[0]],[-12,12,pavement],[12,18,sideDecks[1]],[18,55,scenery]]){
   parts=collection;
   const mid=(left+right)/2,w=right-left;
   box('asphalt',mid,2.9,0,w,.52,4.8);
@@ -287,9 +288,11 @@ export function landscape(view) {
  const holeCanvas=document.createElement('canvas');holeCanvas.width=1024;holeCanvas.height=64;
  const holeCtx=holeCanvas.getContext('2d'),holeMap=new T.CanvasTexture(holeCanvas);
  function setDeckHoles(sites){
+  for (const deck of looseDecks) deck.since = sites.find(s => s.fallenSide === deck.side)?.fallenAt ?? null;
   holeCtx.clearRect(0,0,1024,64);
   holeCtx.fillStyle='white';
   for(const site of sites){
+   if (site.fallenSide) continue;
    holeCtx.beginPath();
    for(let i=0;i<18;i++){
     const a=i*Math.PI/9,r=1+.13*Math.sin(i*7.2);
@@ -314,7 +317,7 @@ export function landscape(view) {
  }
 
  const sceneryMeshes = [];
- for (const [collection, parent] of [[scenery, scene], [steel, null], [pavement,null]]) {
+ for (const [collection, parent] of [[scenery, scene], [steel, null], [pavement,null], ...sideDecks.map(parts => [parts,null])]) {
   for (const [key, geos] of collection) {
    const m = new T.Mesh(mergeGeometries(geos), material(key));
    m.castShadow = m.receiveShadow = true;
@@ -323,6 +326,13 @@ export function landscape(view) {
    geos.forEach(g => g.dispose());
   }
  }
+ const looseDecks = sideDecks.map((parts, i) => {
+  const edge = i === 0 ? -18 : 18, pivot = new T.Group();
+  pivot.position.set(edge, 3.16, 0);
+  parts.group.position.set(-edge, -3.16, 0);
+  pivot.add(parts.group); scene.add(pivot);
+  return {pivot, side: i === 0 ? -1 : 1, since: null};
+ });
  const span = steel.group;
  scene.add(span);
  const railway = span.clone();
@@ -477,9 +487,9 @@ export function landscape(view) {
  let collapseAge = 0, splashed = false, ringStart = null, onCollapseSplash = null;
  let collapse = false, prevDist = camera.position.distanceTo(controls.target);
  // Bullet-time: fly in to an impact, sweep around it in slow motion, fly back.
- let cine = null, cineLast = 0, cineCooldown = 0;
+ let cine = null, cineLast = 0, cineCooldown = 0, pose = null, poseSaved = null;
  const sight = new T.Raycaster(), sightTo = new T.Vector3(), sightDir = new T.Vector3();
- const occluders = [falling, railway, ...sceneryMeshes];
+ const occluders = [falling, railway, ...looseDecks.map(d => d.pivot), ...sceneryMeshes];
  function blocked(point, ang, r, h) {
   sightTo.set(point.x + Math.cos(ang) * r, Math.max(.8, point.y + h), point.z + Math.sin(ang) * r);
   sightDir.subVectors(sightTo, point); const dist = sightDir.length(); sightDir.divideScalar(dist);
@@ -547,7 +557,20 @@ export function landscape(view) {
   return true;
  }
  return {
-  scene, zoom, pick, deckTop, setDeckHoles,
+  scene, zoom, pick, deckTop, setDeckHoles, camera,
+  // Optional external camera (coalition FPV drones). pose = {position, target, fov, roll}; null restores the orbit camera.
+  setPose(p) {
+   if (p) {
+    if (!pose) { poseSaved = {pos: camera.position.clone(), target: controls.target.clone(), fov: camera.fov}; if (cine) endCine(); controls.enabled = false; }
+    pose = p;
+   } else if (pose) {
+    pose = null; camera.position.copy(poseSaved.pos); controls.target.copy(poseSaved.target); camera.up.copy(UP); camera.fov = poseSaved.fov; camera.updateProjectionMatrix();
+    controls.enabled = true; controls.update(); prevDist = camera.position.distanceTo(controls.target);
+   }
+  },
+  // Render once and return the canvas as a data URL (for the share card).
+  snapshot(type = 'image/jpeg', quality = .9) { renderer.render(scene, camera); return renderer.domElement.toDataURL(type, quality); },
+  setMaxPixelRatio(r) { maxRatio = Math.min(maxRatio, r); minRatio = Math.min(maxRatio, minRatio); pixelRatio = Math.min(pixelRatio, maxRatio); renderer.setPixelRatio(pixelRatio); },
   bridgeClearance(x,z) {
    if (Math.min(Math.abs(z), Math.abs(z + 6)) > 2.8) return 0;
    return Math.max(deckTop(x) + 2, arch(x) + .8);
@@ -623,6 +646,11 @@ export function landscape(view) {
    span.scale.y = 1 - .035 * hits;
   },
   draw(gameTime=0,trafficTime=0,smoke=false) {
+   for (const deck of looseDecks) {
+    const drop = deck.since === null ? 0 : T.MathUtils.clamp((gameTime - deck.since) / 1.35, 0, 1);
+    deck.pivot.rotation.z = deck.side * .59 * drop * drop;
+    deck.pivot.position.y = 3.16 - .35 * drop;
+   }
    const angle=2*Math.PI*gameTime/DAY_SECONDS,altitude=Math.cos(angle);
    const day=T.MathUtils.smoothstep(altitude,-.32,.6),dusk=1-Math.min(1,Math.abs(altitude)*3);daylight=day;
    sun.position.set(35*Math.cos(angle),13+40*Math.abs(altitude),46+20*Math.sin(angle));
@@ -653,10 +681,15 @@ export function landscape(view) {
    }
    const ringU = water.material.uniforms.ring.value;
    if (ringStart != null && collapseAge - ringStart < 18) ringU.set(0, 0, collapseAge - ringStart, .9); else ringU.z = -1;
-   const filming = cineStep();
-   const dist = camera.position.distanceTo(controls.target);
+   const filming = pose ? false : cineStep();
+   if (pose) { // external FPV / tripod camera: no orbit logic at all
+    camera.position.copy(pose.position); camera.up.copy(UP); camera.lookAt(pose.target);
+    if (pose.roll) camera.rotateZ(pose.roll);
+    if (Math.abs(camera.fov - pose.fov) > .001) { camera.fov = pose.fov; camera.updateProjectionMatrix(); }
+   }
+   const dist = camera.position.distanceTo(pose ? pose.target : controls.target);
    // any zoom-out (buttons, wheel, trackpad pinch) also tilts the camera toward straight-down, like climbing to orbit
-   if (!filming && dist > prevDist + .01 && dist > 120) {
+   if (!filming && !pose && dist > prevDist + .01 && dist > 120) {
     const off = camera.position.clone().sub(controls.target).normalize().lerp(UP, Math.min(.12, (dist - prevDist) / dist * 1.5)).normalize();
     camera.position.copy(controls.target).addScaledVector(off, dist);
    }
@@ -673,7 +706,7 @@ export function landscape(view) {
    water.material.uniforms.time.value = waveClock;
    wet = T.MathUtils.clamp(wet + realDt * (storm > .35 ? .07 * storm : -.009), 0, 1);
    land.update(performance.now() * .001, storm, wet, waveClock * 3);
-   if (!filming) controls.update();
+   if (!filming && !pose) controls.update();
    adapt(performance.now());
    renderer.shadowMap.needsUpdate = (shadowTick++ & 1) === 0 || !!cine;
    renderer.render(scene, camera);

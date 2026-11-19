@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 160">
+ <title>Airborne train filmed from the fishing bank</title>
+ <style>.train{transform-origin:260px 74px;animation:jump 3.4s linear both}@keyframes jump{0%,10%{transform:translate(-100px,0)}40%{transform:translate(-23px,-3px) rotate(-3deg)}62%{transform:translate(29px,-25px) rotate(-9deg)}80%{transform:translate(65px,-22px) rotate(5deg)}100%{transform:translate(112px,23px) rotate(22deg)}}@media(prefers-reduced-motion:reduce){.train{animation:none;transform:translate(35px,-22px) rotate(-5deg)}}</style>
+ <rect width="480" height="160" fill="#dcae91"/><circle cx="376" cy="41" r="20" fill="#f3d9a6"/><path d="M0 88q98-33 164-10t144-6q89-22 172-1v46H0" fill="#627b80"/><path d="M0 97q88-8 153 1t327-2v64H0" fill="#436a75"/>
+ <path d="M0 77h253v6H0zm367 1h113v6H367zM83 82h10v26H83zm144 0h9v27h-9zm150 0h8v24h-8z" fill="#394958"/>
+ <g class="train"><path d="M158 62h37v11h-37zm41 0h36v11h-36zm41-2h24l11 8v5h-35z" fill="#a34338" stroke="#343f49" stroke-width="1.5"/>
+ <path d="M161 65h29m13 0h28m12 0h15" stroke="#d9d8bd" stroke-width="3" stroke-dasharray="5 2"/>
+ <path d="M162 74h29m12 0h28m13 0h24" stroke="#26323a" stroke-width="3"/></g>
+ <path d="m0 151 46-13 34 4 68 18H0" fill="#283e40"/><path d="M36 155Q73 98 99 63" stroke="#293638" stroke-width="3" fill="none"/><path d="M99 63q35 23 52 54" stroke="#caced1" fill="none"/>
+</svg>

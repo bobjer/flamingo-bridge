@@ -39,9 +39,7 @@ Open the address Vite prints. Run `npm run build` to check the production build.
 | The mobile menu or compact desktop layout | [game-menu.js](game-menu.js), [style.css](style.css) |
 | The leaderboard | [records.js](records.js), [records-worker.js](records-worker.js), [drizzle/](drizzle/) |
 
-## Built in one evening
-
-I vibe-coded this game in one evening. That was enough time to teach the flamingos to fly. Balancing the waves will take a few more playthroughs.
+## Feedback and contributions
 
 If a wave felt too easy or hopeless, tell me the wave number, difficulty, and whether autoplay was on. For bugs, include your device, browser, what you did, and what happened. For camera or mobile menu glitches, a few seconds of video beats a three-page field report.
 

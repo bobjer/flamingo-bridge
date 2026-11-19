@@ -12,6 +12,7 @@ await writeFile('dist/server/index.js',(await readFile('records-worker.js','utf8
  `export default {async fetch(request,env){
  const path=new URL(request.url).pathname;
  if(path==='/api/records')return records(request,env.DB);
+ if(path==='/api/coalition-records')return coalitionRecords(request,env.DB);
  const asset=assets[path==='/'?'/index.html':/^\\/en\\/?$/.test(path)?'/en.html':path];
  if(!Array.isArray(asset))return new Response('Not found',{status:404});
  return new Response(request.method==='HEAD'?null:Uint8Array.from(atob(asset[1]),c=>c.charCodeAt(0)),{headers:{'content-type':asset[0],'cache-control':(path==='/release.txt'||asset[0]==='text/html')?'no-store':'public, max-age=3600'}});

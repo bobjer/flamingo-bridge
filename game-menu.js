@@ -93,7 +93,7 @@ export function setupGameMenu(){
  const scores=button(document.querySelector('.panel-toggles'),()=>{
   if(drawer.open)drawer.close();
   board.showModal();
-  showRecords(content,{difficulty:$('difficulty').value});
+  showRecords(content,{difficulty:document.body.dataset.board||$('difficulty').value});
  },{className:'scores'});
 
  const toggle=button($('view'),()=>{
@@ -166,10 +166,16 @@ function enhanceRestart(){
  const label=select.closest('label'),cards=document.createElement('div');
  cards.className='difficulty-cards';cards.setAttribute('role','radiogroup');
  label.after(cards);label.classList.add('difficulty-native');
+ // Daily raid: the same seeded waves for everyone today, with its own leaderboard.
+ const daily=document.createElement('label'),box=document.createElement('input'),copy=document.createElement('span');
+ daily.className='daily-toggle';box.type='checkbox';box.id='new-daily';copy.append(document.createElement('strong'),document.createElement('small'));
+ daily.append(box,copy);cards.after(daily);
  const blurbs={easy:()=>tr('Повна казна, повільні фламінго','Fat treasury, lazy flamingos'),normal:()=>tr('Чесна гра: бюджет тане','Fair fight: the budget melts'),hard:()=>tr('Пуста казна, злі птахи','Empty treasury, angry birds')};
  const pips={easy:1,normal:2,hard:3};
  function render(){
   cards.setAttribute('aria-label',tr('Складність','Difficulty'));
+  copy.firstChild.textContent=tr('Наліт дня','Daily raid');
+  copy.lastChild.textContent=tr('Однакові хвилі для всіх сьогодні · окрема таблиця','Same waves for everyone today · its own leaderboard');
   cards.replaceChildren(...[...select.options].map(option=>{
    const b=document.createElement('button');b.type='button';b.className='difficulty-card';b.setAttribute('role','radio');b.dataset.level=option.value;
    const on=select.value===option.value;b.setAttribute('aria-checked',String(on));b.tabIndex=on?0:-1;

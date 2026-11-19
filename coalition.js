@@ -1,0 +1,466 @@
+import {tr} from './language.js';
+import {changeSide, languageButton, read, write, levelField, preferredLevel, rememberLevel} from './factions.js';
+import {CFG, costs, openingBudget, newSeason, pickSponsor, purchase, launch, finishWave, nextWave, acceptDeal, declineDeal, evaluate, total, aaChance, cameraSubjects} from './coalition-rules.js';
+import {units, unitHints, subjectName, fmtViews, sponsor, cameo, donorLines, ending, wavesWord, icon} from './coalition-copy.js';
+import {createStage} from './coalition-world.js';
+import {createFeed} from './coalition-video.js';
+import {showCoalitionBoard} from './coalition-leaderboard.js';
+import {shareRun} from './coalition-share.js';
+import {createMusic} from './chiptune.js';
+import {planMoves, applyMove, chooseCamera} from './coalition-bot.js';
+
+const saveKey = 'pop-coalition-v2';
+const camNames = () => [tr('ДРОН 1','UAV 1'), tr('ДРОН 2','UAV 2'), tr('ДРОН 3','UAV 3'), tr('ДАЛЬНЯ КАМЕРА','FAR CAM'), tr('ПРЕС','PRESS')];
+const camShort = () => [tr('Д1','U1'), tr('Д2','U2'), tr('Д3','U3'), tr('ДАЛ','FAR'), tr('ПРЕС','PRS')];
+const baseLink = [88, 92, 81, 64, 100];
+const mmss = sec => String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
+const stat = (label, value, cls = '') => '<div class="stat"><label>' + label + '</label><b' + (cls ? ' class="' + cls + '"' : '') + '>' + value + '</b></div>';
+const button = (id, text, disabled = false, cls = '') => '<button type="button"' + (cls ? ' class="' + cls + '"' : '') + ' data-action="' + id + '"' + (disabled ? ' disabled' : '') + '>' + text + '</button>';
+const setText = (el, text) => { if (el && el.textContent !== text) el.textContent = text };
+const setAttr = (el, name, value) => { if (el && el.getAttribute(name) !== value) el.setAttribute(name, value) };
+const num = x => tr(String(x).replace('.', ','), String(x));
+const tile = (label, value) => '<div><dt>' + label + '</dt><dd>' + value + '</dd></div>';
+const sign = n => (n > 0 ? '+' : '') + n;
+
+export function startCoalition() {
+ let s = read(saveKey);
+ if (s?.version !== 2 || !s.offer || (s.phase === 'watch' && !s.report)) s = newSeason(Math.random, preferredLevel());
+ s.difficulty ??= 'normal';
+ const canPickLevel = () => s.phase === 'plan' && s.wave === 1 && !total(s);
+ // Older arcade saves have three unit slots. Keep their wave, purchases and recorded outcomes.
+ for(const field of ['stock','bought'])s[field]=costs.map((_,i)=>s[field]?.[i] ?? 0);
+ if (s.phase === 'watch') s.live ??= { resolved: [], pressMs: 0, stamps: 0 };
+ let elapsed = s.phase === 'watch' ? s.elapsed || 0 : 0, previous = 0, paused = s.phase === 'watch', frame = 0, jit = 0, sharing = '';
+ const root = document.createElement('section');
+ root.className = 'coalition'; document.body.classList.add('playing-coalition'); document.body.append(root);
+ const music = createMusic(); music.arm();
+ const save = () => { s.elapsed = elapsed; write(saveKey, s) };
+ window.addEventListener('pagehide', save);
+ const zones = () => cameraSubjects(s).map(subjectName);
+ const orbitalName = () => tr('СУПУТНИК','SATELLITE');
+ const camTab = () => [...zones().map((z, i) => (i + 1) + ' · ' + z.toUpperCase()), s.offer.orbital ? orbitalName() : tr('ДАЛЬНЯ','FAR'), tr('ПРЕС','PRESS')];
+ const camRec = () => [...zones().map((z, i) => camNames()[i] + ' · ' + z.toUpperCase()), s.offer.orbital ? orbitalName() : tr('ДАЛЬНЯ','FAR CAM'), tr('ПРЕС-КОНФЕРЕНЦІЯ','PRESS BRIEFING')];
+ const wave = () => tr('Хвиля ', 'Wave ') + s.wave;
+ const watching = () => s.phase === 'watch' && s.report;
+ const pressActive = () => { const p = watching() && s.report.press; return !!p && elapsed >= p.at && elapsed < p.at + p.dur };
+ const frozen = () => { const c = watching() && s.report.committee; return !!c && elapsed >= c.at && s.live.stamps < 3 };
+
+ /* ---------- persistent 3D view: created once, re-attached into every new feed after render() ---------- */
+ const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+ let autoOn = false;
+ const auto = { stage: '', t: 0, queue: null, launch: false, stampAt: 0, holdUntil: 0 };
+ const feedLayer = createFeed();
+ let stage = null, waveKey = '', prevView = 0, firstFrame = false;
+ const realStart = performance.now();
+
+ /* ---------- link state of each camera ---------- */
+ function linkState(cam) {
+  if (!watching()) return 'live';
+  const r = s.report;
+  if (cam === 4) return 'press';
+  if (cam === 3) return 'live';
+  if (r.ew && r.ew.marker === cam && elapsed >= r.ew.at && elapsed < r.ew.at + r.ew.dur) return 'jam';
+  if (r.musk && elapsed >= r.musk.from && elapsed < r.musk.from + r.musk.dur) return 'dark';
+  return 'live';
+ }
+ // 0-100: baseline per camera, collapsing 1.5 s before an EW window, zero when jammed or blacked out
+ function linkQuality(cam) {
+  const st = linkState(cam);
+  if (st === 'jam' || st === 'dark') return 0;
+  if (cam >= 3) return baseLink[cam] === 100 ? 100 : baseLink[cam] + jit * .4;
+  let q = baseLink[cam] + jit;
+  const r = watching() && s.report, ew = r && r.ew;
+  if (ew && ew.marker === cam && elapsed >= ew.at - 1500 && elapsed < ew.at) q *= Math.pow(1 - (elapsed - (ew.at - 1500)) / 1500, 1.3);
+  return Math.max(0, Math.min(100, q));
+ }
+ const lostText = state => state === 'jam' ? tr('РЕБ · ЦЕЙ МАРКЕР ВИДНО ТІЛЬКИ З ДАЛЬНЬОЇ КАМЕРИ', 'EW · THIS MARKER IS ONLY VISIBLE ON THE FAR CAM')
+  : state === 'dark' ? tr('ПРОШИВКУ ОНОВЛЕНО · «Ви ж просили свободу слова»', 'FIRMWARE UPDATED · “You did ask for free speech”')
+  : state === 'press' ? tr('ПРЕС-КОНФЕРЕНЦІЯ · ПЕРЕГЛЯДИ РОСТУТЬ, ВЛУЧАННЯ НЕ ЗНІМАЮТЬСЯ', 'PRESS BRIEFING · VIEWS GROW, HITS ARE NOT FILMED') : '';
+
+ /* ---------- live score and popups ---------- */
+ const queued = []; let popSlot = 0;
+ function ticker(text, cls) {
+  const box = root.querySelector('[data-ticker]'); if (!box) return;
+  const el = document.createElement('div'); el.className = cls; el.textContent = text; box.append(el);
+  while (box.children.length > 3) box.firstChild.remove();
+  setTimeout(() => el.remove(), 2600);
+ }
+ function pop(text, cls, sub = '') {
+  const box = root.querySelector('[data-pop]'); if (!box) return;
+  const el = document.createElement('div'); el.className = 'pop ' + cls; el.style.top = 'calc(24% + ' + (popSlot++ % 3) * 86 + 'px)';
+  el.innerHTML = '<b>' + text + '</b>' + (sub ? '<span>' + sub + '</span>' : '');
+  box.append(el);
+  while (box.children.length > 4) box.firstChild.remove();
+  setTimeout(() => el.remove(), 1700);
+ }
+ const liveScore = () => watching() ? evaluate(s, s.captures, elapsed, { pressMs: s.live.pressMs }) : null;
+ function resolveImpacts() {
+  const r = s.report, L = s.live;
+  for (let i = 0; i < r.flights.length; i++) {
+   const f = r.flights[i];
+   if (L.resolved[i] || f.impact > elapsed) continue;
+   L.resolved[i] = true;
+   const where = zones()[f.marker], big = s.cam === 3 || s.cam === f.marker;
+   const say = (text, cls, sub) => big ? pop(text, cls, sub) : ticker(where + ' · ' + text, cls);
+   if (!f.success && !f.intercepted) { say(tr('МИМО','MISSED'), 'shot', where); continue }
+   let kind = 'none';
+   if (f.success && !f.decree) { if (s.cam === 3) kind = 'far'; else if (s.cam === f.marker && linkState(s.cam) === 'live') kind = 'drone' }
+   s.captures[i] = kind;
+   const score = evaluate(s, s.captures, f.impact);
+   const pay = score.payNow[i];
+   const payout = (r.sponsor === 'conference' ? tr('Аванс','Advance') : tr('Виплата','Payout')) + ' +' + pay;
+   if (f.intercepted) { say(tr('ЗБИТО','SHOT DOWN') + (pay ? ' · ' + payout : ''), 'shot', where); continue }
+   const hit = score.hits.find(h => h.i === i);
+   if (f.decree) say(tr('СКАСОВАНО УКАЗОМ','CANCELLED BY DECREE'), 'decree', where);
+   else if (kind === 'drone') say(tr('ЗНЯТО','FILMED') + ' · ' + payout, 'ok', hit.combo >= 1 ? tr('КОМБО ×','COMBO ×') + (hit.combo + 1) : where);
+   else if (kind === 'far') say(tr('ЗАРЕВО','GLOW') + ' · ' + payout, 'far', where);
+   else say(tr('НЕ ЗНЯТО','NOT FILMED'), 'none', where);
+  }
+ }
+
+ // Everything dynamic about the feed lives here, so switching camera never needs render().
+ function refreshFeed() {
+  const feed = root.querySelector('.c-feed'); if (!feed) return;
+  if (s.cam === 4 && !pressActive()) s.cam = 3;
+  const cam = s.cam, state = linkState(cam), now = watching();
+  setAttr(feed, 'data-cam', String(cam)); setAttr(feed, 'data-state', state); setAttr(feed, 'data-frozen', String(now && frozen()));
+  feed.classList.toggle('cam-far', cam >= 3);
+  const air = [0, 0, 0], warn = [false, false, false];
+  if (now) s.report.flights.forEach((f, i) => { if (!s.live.resolved[i] && f.start <= elapsed && f.impact > elapsed) { air[f.marker]++; if (f.impact - elapsed <= 1500) warn[f.marker] = true } });
+  for (const b of feed.querySelectorAll('button[data-cam]')) {
+   const c = Number(b.dataset.cam);
+   setAttr(b, 'aria-pressed', String(c === cam)); setAttr(b, 'data-link', linkState(c));
+   const n = c < 3 ? air[c] : c === 3 ? air[0] + air[1] + air[2] : 0, w = c < 3 ? warn[c] : c === 3 ? warn.some(Boolean) : false;
+   setAttr(b, 'data-warn', String(w && c !== cam));
+   setText(b.querySelector('[data-air]'), c === 4 || !now ? '' : '▲' + n);
+   if (c === 4) b.hidden = !pressActive();
+   setAttr(b, 'aria-label', (c === 3 && s.offer.orbital ? orbitalName() : camNames()[c]) + (c < 3 ? ' · ' + zones()[c] : '') + (c === 4 ? '' : ', ' + tr('у повітрі ', 'in the air ') + n));
+  }
+  setText(feed.querySelector('[data-lost]'), lostText(state));
+  const e = liveScore();
+  setText(feed.querySelector('[data-views]'), fmtViews(e ? e.views : s.views));
+  setText(feed.querySelector('[data-combo]'), '×' + (e ? e.combo : s.bestCombo));
+  const viral = feed.querySelector('[data-viral]'); if (viral) viral.hidden = !(e && e.viral);
+  music.setGlitch(now && !paused && (state === 'jam' || state === 'dark'));
+ }
+ function setCam(n) {
+  if (n === s.cam || (n === 4 ? !pressActive() : ![0, 1, 2, 3].includes(n))) return;
+  if (s.phase === 'watch' && paused) return;
+  s.cam = n; save(); refreshFeed();
+ }
+
+ /* ---------- copy ---------- */
+ const phaseWord = () => ({ plan: tr('ПЛАНУВАННЯ','PLANNING'), watch: paused ? tr('ПАУЗА','PAUSED') : tr('ЕФІР','ON AIR'), report: tr('ЗВІТ','REPORT'), over: tr('КІНЕЦЬ','GAME OVER') })[s.phase];
+ const aaPct = () => Math.round(100 * aaChance(s.wave));
+ const rebateText = r => tr('Оптимізація закупівлі','Procurement optimisation')+' · '+(r.items ?? [r]).map(item=>units()[item.type]+' ×'+item.n).join(' + ');
+
+ /* ---------- markup ---------- */
+ const autoText = () => autoOn ? [tr('✋ Грати самому','✋ Take over'), '✋'] : [tr('Автогра','Autoplay'), tr('▶ АВТО','▶ AUTO')];
+ function autoButton() {
+  const [full, short] = autoText();
+  return '<button type="button" class="c-sides c-auto' + (autoOn ? ' on' : '') + '" data-action="auto" aria-pressed="' + autoOn + '" title="' + tr('Звітність передано підряднику. Відкат — за домовленістю.','Reporting outsourced to a contractor. Kickback negotiable.') + '"' + (s.phase === 'over' ? ' disabled' : '') + '><span class="full">' + full + '</span><span class="short" aria-hidden="true">' + short + '</span></button>';
+ }
+ function header() {
+  const muted = music.muted;
+  return '<header class="top"><div class="top-left"><img src="/flamingo.svg" width="30" height="30" alt=""><span class="label">' + tr('ШТАБ КОАЛІЦІЇ · ВІДДІЛ ЗВІТНОСТІ','COALITION HQ · REPORTING DEPARTMENT') + '</span></div>' +
+   '<div class="top-title"><strong>' + tr('СЕЗОН ХЛОПКІВ','POP SEASON') + '</strong><span>' + tr('КОАЛІЦІЯ ОХОЧИХ','COALITION OF THE WILLING') + '</span></div>' +
+   '<div class="top-status">' + languageButton() + '<button type="button" class="c-sides c-quiet" data-action="quiet" aria-pressed="' + muted + '" aria-label="' + tr('Тихий режим','Quiet mode') + '"><span class="full">' + tr('Тихий режим','Quiet mode') + '</span><span class="short" aria-hidden="true">' + '♪' + '</span></button>' +
+   autoButton() + '<span class="label">' + tr('РЕЖИМ','MODE') + '</span><span class="chip"><i class="dot" aria-hidden="true"></i><span>' + phaseWord() + '</span></span>' + button('sides', tr('Сторони','Factions'), false, 'c-sides') + '</div></header>';
+ }
+ function left() {
+  const tired = Math.round((1 - s.fatigue) * 100);
+  return '<aside class="col c-left" aria-label="' + tr('Штаб','HQ') + '">' +
+   '<section class="panel br"><div class="label">' + tr('ПОТОЧНА ФАЗА','CURRENT PHASE') + '</div><div class="phase-row"><b class="big" aria-hidden="true">' + String(s.wave).padStart(2, '0') + '</b><div><h1>' + tr('Нема відео — <i>не було</i>','No video — <i>no happened</i>') + '</h1><div class="c-phase">● ' + phaseWord() + '</div></div></div></section>' +
+   '<section class="panel br"><div class="label">' + tr('ЗВЕДЕННЯ','SUMMARY') + '</div>' +
+    stat(tr('Бюджет','Budget'), s.funds, 'c-accent') + '<div class="c-views"><label>' + tr('Перегляди','Views') + '</label><b class="big">' + fmtViews(s.views) + '</b></div>' +
+    stat(tr('Найкраще комбо','Best combo'), '×' + s.bestCombo) + stat(tr('Імовірність збиття на ППО','Anti-air kill chance'), aaPct() + '%') +
+    (s.ious.length ? stat(tr('Конференція винна','Conference owes'), s.ious.reduce((a, x) => a + x.amount, 0)) : '') + '</section>' +
+   '<section class="panel br"><div class="label">' + tr('ВТОМА ДОНОРІВ','DONOR FATIGUE') + '</div>' +
+    '<progress max="100" value="' + Math.round(s.fatigue * 100) + '" aria-label="' + tr('Поточний множник виплат','Current payout multiplier') + '"></progress>' +
+    '<small class="c-tired">' + tr('Донори втомились на ' + tired + '%','Donors are ' + tired + '% tired') + ' · ' + tr('виплати ×','payouts ×') + num(s.fatigue.toFixed(2)) + '</small></section>' +
+   '<section class="panel br brief"><div class="label">' + tr('ІНСТРУКТАЖ','BRIEFING') + '</div>' +
+    '<details><summary>' + tr('Як це працює','How it works') + '</summary><p>' + tr('Спонсори платять не за влучання, а за відео влучання. Влучання зняте, якщо в момент удару відкритий дрон його маркера і в нього є сигнал: він платить 100%. Дальня камера дає 50% за паляницю й 30% за решту, з урахуванням умов спонсора. Незнято — 0.','Sponsors pay for the video of a hit, not for the hit. A hit counts as filmed if, at impact, the drone of that marker is open and has signal: it pays 100%. The far camera gives 50% for Palianytsia and 30% for other units, subject to sponsor terms. Not filmed pays 0.') + '</p><p>' + tr('Кожне наступне влучання, зняте дроном, дає +25% переглядів. Промах камери скидає комбо.','Each next hit filmed by a drone adds +25% views. A missed camera resets the combo.') + '</p><p>' + tr('«Автогра» віддає ефір підряднику: він купує зграю й перемикає дрони. Забіг позначається в лідерборді.','“Autoplay” outsources the broadcast to a contractor who buys the flock and switches drones. The run is marked on the leaderboard.') + '</p></details>' +
+    '<details><summary>' + tr('Камери','Cameras') + '</summary><p>' + tr('Три камери висвітлюють три сюжети хвилі. Назву сюжету видно на вкладці. Іноді на четвертій камері доступний супутниковий проліт за тарифом дальньої камери. На вкладці «▲N» — скільки юнітів летить до маркера; за 1,5 с до удару вона блимає. Клавіші 1–4 (5 — пресконференція).','Three cameras cover three stories each wave. Each tab names its story. Occasionally the fourth tab receives a satellite pass at the far-camera rate. “▲N” on a tab is how many units are heading to that marker; it blinks 1.5 s before impact. Keys 1–4 (5 is the press tab).') + '</p></details>' +
+    '<details><summary>' + tr('Гарнізон і втома','Garrison and fatigue') + '</summary><p>' + tr('Над маркерами видно значки ППО. Шанс збиття 8% + 4,5% за хвилю, максимум 70%; Малюків збивають вдвічі рідше. З кожною хвилею донори втомлюються швидше на вищій складності.','Anti-air icons sit above covered markers. Kill chance is 8% + 4.5% per wave, capped at 70%; Maliuk is hit half as often. Donor funding declines faster on higher difficulties.') + '</p></details>' +
+    '<details><summary>' + tr('Юніти','Units') + '</summary><p>' + units().map((n, i) => n + ' ' + costs[i] + ' — ' + unitHints()[i]).join('; ') + '.</p></details></section></aside>';
+ }
+ const unitList = list => list.map(([n, i]) => n + ' ×' + i).join(' → ');
+ function leakReel() {
+  const clips = s.report?.leaks ?? [];
+  if (!clips.length) return '';
+  const titles = {span: tr('Проліт упав · камера з човна','Span down · boat camera'), hole: tr('Діра в асфальті · відеореєстратор','Road crater · dashcam'), train: tr('Поїзд полетів · камера рибалки','Airborne train · angler’s camera')};
+  return clips.map(l => '<figure class="c-leak"><img src="/leak-' + l.clip + '.svg" alt="' + titles[l.clip] + '"><figcaption><small>' + tr('ВИТІК З ТОГО БОКУ · ХВИЛЯ ', 'LEAKED FOOTAGE · WAVE ') + l.source + '</small><strong>' + titles[l.clip] + '</strong><span>+' + fmtViews(l.views) + ' ' + tr('переглядів','views') + '</span></figcaption></figure>').join('');
+ }
+ function reportCard() {
+  const r = s.report, x = r.result;
+  if (r.skipped) return '<section class="c-card" data-tone="report" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('КАМЕО · ТРАМП · ХВИЛЯ ','CAMEO · TRUMP · WAVE ') + r.wave + '</div><h2 id="c-title">' + tr('Угоду підписано','Deal signed') + '</h2>' +
+   '<dl class="c-stats">' + tile(tr('Гроші','Money'), sign(x.money)) + tile(tr('Перегляди','Views'), fmtViews(x.views)) + tile(tr('Втома','Fatigue'), '×' + num((s.fatigue).toFixed(2))) + '</dl>' +
+   '<p>' + tr('Угоду підписано. Війну завершено. У понеділок продовжимо.','Deal signed. War ended. We resume on Monday.') + '</p>' +
+   leakReel() + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
+  const lines = donorLines(r, s).map(l => '<p class="c-line">' + l + '</p>');
+  if (r.sponsor === 'defence') lines.push('<p>' + tr('Оборонний концерн: освоєно ' + r.units + ' юнітів.','Defence Concern: ' + r.units + ' units absorbed.') + '</p>');
+  if (x.viral) lines.push('<p class="c-good">' + tr('Вірусно, бо нічого не видно: перегляди ×2.','Viral because nothing was visible: views ×2.') + '</p>');
+  if (r.decree) lines.push('<p>' + tr('Трамп образився: одне влучання скасовано указом.','Trump took offence: one hit was cancelled by decree.') + '</p>');
+  if (r.rebate) lines.push('<p>' + rebateText(r.rebate) + '</p>');
+  if (x.pressMs) lines.push('<p>' + tr('Пресконференція: перегляди є, відео немає.','Press briefing: the views are there, the footage is not.') + '</p>');
+  if (x.iou.paid) lines.push('<p class="c-good">' + tr('Конференція партнерів виплатила ' + x.iou.paid + '.','The Partners’ Conference paid ' + x.iou.paid + '.') + '</p>');
+  if (x.iou.postponed) lines.push('<p>' + tr('Конференція партнерів: «перенесено на наступний рік» (' + x.iou.postponed + ').','Partners’ Conference: “postponed to next year” (' + x.iou.postponed + ').') + '</p>');
+  if (r.sponsor === 'conference') lines.push('<p>' + tr('Конференція виплатить через дві хвилі. Може бути.','The conference pays in two waves. Maybe.') + '</p>');
+  return '<section class="c-card" data-tone="report" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ХВИЛЯ ','DONOR REPORT · WAVE ') + r.wave + '</div><h2 id="c-title">' + tr('Звіт донору','Donor report') + '</h2><small>' + sponsor(r.sponsor).name + '</small>' + leakReel() +
+   '<dl class="c-stats">' + tile(tr('Знято','Filmed'), x.filmed + '/' + x.hits) + tile(tr('Не знято','Not filmed'), x.none + x.far) + tile(tr('Збито','Shot down'), x.shot) + '</dl>' +
+   '<dl class="c-stats c-stats-2">' + tile(tr('Гроші','Money'), sign(x.money)) + tile(tr('Перегляди','Views'), fmtViews(x.views)) + tile(tr('Комбо','Combo'), '×' + x.combo) + '</dl>' +
+   lines.join('') + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
+ }
+ function overCard() {
+  return '<section class="c-card" data-tone="lost" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ПІДСУМОК','DONOR REPORT · FINAL') + '</div><h2 id="c-title">' + tr('Спонсори згорнули програму','The sponsors pulled out') + '</h2>' + leakReel() +
+   '<dl class="c-stats c-stats-over">' + tile(tr('Перегляди','Views'), fmtViews(s.views)) + tile(tr('Хвиль','Waves'), s.wave) + tile(tr('Комбо','Combo'), '×' + s.bestCombo) + '</dl>' +
+   '<p class="c-line">' + wavesWord(s.wave) + tr('. ', '. ') + tr(fmtViews(s.views) + ' переглядів. 0 змін. ', fmtViews(s.views) + ' views. 0 changes. ') + ending(s) + '</p>' +
+   (s.assisted ? '<p class="c-note">' + tr('Забіг з автогрою','Run with autoplay') + '</p>' : '') +
+   levelField(preferredLevel(), true) + '<div class="c-actions"><button type="button" class="c-ghost" data-action="share">' + tr('Поділитися','Share') + '</button><button type="button" data-action="fresh">' + tr('Ще раз','Play again') + '</button></div>' +
+   '<small class="c-share-status" role="status">' + sharing + '</small></section>';
+ }
+ function trumpCard() {
+  const c = cameo.trump(), gain = Math.round(CFG.trumpPay * s.fatigue);
+  return '<section class="c-card c-trump" data-tone="lost" role="dialog" aria-modal="true" aria-labelledby="c-title"><div class="c-kicker">' + tr('КАМЕО · ТРАМП','CAMEO · TRUMP') + '</div><h2 id="c-title">«' + c.title + '»</h2>' +
+   '<p>' + tr('Пропусти хвилю й отримай +' + gain + '. Втома донорів зросте вдвічі. «Угоду підписано. Війну завершено. У понеділок продовжимо.»','Skip the wave and take +' + gain + '. Donor fatigue doubles. “Deal signed. War ended. We resume on Monday.”') + '</p>' +
+   '<p class="c-note">' + tr('Відмовишся — він образиться: одне влучання буде «скасовано указом».','Decline and he takes offence: one hit will be “cancelled by decree”.') + '</p>' +
+   '<div class="c-actions"><button type="button" data-action="deal">' + tr('Підписати +' + gain,'Sign +' + gain) + '</button><button type="button" class="c-ghost" data-action="nodeal">' + tr('Відмовитись','Decline') + '</button></div></section>';
+ }
+ function feed() {
+  const names = camNames();
+  const card = s.phase === 'over' ? overCard() : s.phase === 'report' ? reportCard() : s.phase === 'plan' && s.deal === 'pending' ? trumpCard() : '';
+  const watch = s.phase === 'watch';
+  return '<section class="c-feed br br-accent" data-cam="' + s.cam + '" data-state="live" data-frozen="false" data-mode="' + s.phase + '" aria-label="' + tr('Відеоканал дрона','Drone video feed') + '">' +
+   '<div class="feed-slot"></div>' +
+   '<div class="hud hud-score c-score"><span><small>' + (watch ? tr('ПЕРЕГЛЯДИ ХВИЛІ','WAVE VIEWS') : tr('ПЕРЕГЛЯДИ','VIEWS')) + '</small><b data-views>0</b></span><span class="c-combo"><small>' + (watch ? tr('КОМБО','COMBO') : tr('НАЙКР. КОМБО','BEST COMBO')) + '</small><b data-combo>×0</b></span><span class="c-viral" data-viral hidden>' + tr('ВІРУСНО ×2','VIRAL ×2') + '</span></div>' +
+   '<div class="feed-lost" role="status"><div class="feed-plate"><b data-plate>' + tr('NO SIGNAL','NO SIGNAL') + '</b><span data-lost></span></div></div>' +
+   '<div class="c-committee" role="group" aria-label="' + tr('Погодження з комітетом','Committee approval') + '"><p>' + tr('ПОГОДЖЕННЯ З КОМІТЕТОМ · атака замерзла. Поставте 3 печатки.','COMMITTEE APPROVAL · the attack is frozen. Apply 3 stamps.') + '</p><div>' +
+    [0, 1, 2].map(i => { const d = s.live && i < s.live.stamps; return '<button type="button" data-stamp="' + i + '"' + (d ? ' class="done" disabled' : '') + '>' + (d ? tr('ПОГОДЖЕНО','APPROVED') : tr('ПЕЧАТКА','STAMP')) + '</button>' }).join('') + '</div></div>' +
+   '<div class="feed-ticker" data-ticker aria-hidden="true"></div><div class="feed-pop" data-pop role="status" aria-live="polite"></div>' +
+   '<nav class="feed-cams" aria-label="' + tr('Камери','Cameras') + '">' + names.map((n, i) => '<button type="button" data-cam="' + i + '" data-link="live" data-warn="false" aria-pressed="' + (s.cam === i) + '" aria-keyshortcuts="' + (i + 1) + '"' + (i === 4 ? ' hidden' : '') + '><span class="full">' + camTab()[i] + '</span><span class="short">' + (i === 3 && s.offer.orbital ? tr('СУП','SAT') : camShort()[i]) + '</span><b class="air" data-air></b></button>').join('') + '</nav>' +
+   card + '</section>';
+ }
+ function arcade() {
+  const status = wave() + ' · ' + tr('Бюджет','Budget') + ' ' + s.funds + ' · ' + tr('Перегляди','Views') + ' ' + fmtViews(s.views);
+  const sp = sponsor(s.offer.cards[s.offer.pick].id), contract = zones()[s.offer.cards[s.offer.pick].marker];
+  const copy = { plan: tr('Оберіть спонсора, купіть зграю і тисніть ПУСК. В ефірі перемикайте дрони: нема відео — не було.','Pick a sponsor, buy a flock and hit LAUNCH. On air, switch drones: no video, no happened.'),
+   watch: tr('Контракт: ' + contract + ' · ' + sp.name + '. Тримайте відкритим дрон того маркера, куди летить зграя.','Contract: ' + contract + ' · ' + sp.name + '. Keep the drone of the target marker open.'),
+   report: tr('Звіт донору готовий. Далі.','The donor report is ready. Next.'),
+   over: tr('Спонсори згорнули програму.','The sponsors pulled out.') }[s.phase];
+  const acts = s.phase === 'watch' ? button('pause', paused ? tr('Продовжити','Resume') : tr('Пауза','Pause'), false, 'c-act c-ghost') : '';
+  return '<section class="arcade"><div class="arcade-status"><span>' + status + '</span></div><div class="arcade-order"><p role="status">' + copy + '</p>' + (acts ? '<div class="c-acts">' + acts + '</div>' : '') + '</div></section>';
+ }
+ function sponsorCards(interactive) {
+  return s.offer.cards.map((c, i) => {
+   const sp = sponsor(c.id), chosen = i === s.offer.pick;
+   if (!interactive && !chosen) return '';
+   const body = '<b>' + sp.name + '</b><span class="c-contract">' + tr('Контракт: ','Contract: ') + zones()[c.marker] + (s.aa[c.marker] ? ' · ' + tr('ППО','AA') : '') + '</span><small>' + sp.rule + '</small><em>«' + sp.quote + '»</em>';
+   return interactive ? '<button type="button" class="c-sponsor" data-offer="' + i + '" aria-pressed="' + chosen + '">' + body + '</button>' : '<div class="c-sponsor" aria-current="true">' + body + '</div>';
+  }).join('');
+ }
+ function right() {
+  const names = units(), planning = s.phase === 'plan', locked = !planning || s.deal === 'pending';
+  const buy = names.map((name, i) => '<div class="c-buy"><i class="c-badge">' + icon(i) + '</i><div class="c-name"><b>' + name + '</b><small>' + tr('У зграї ','In flock ') + '<span class="c-owned">' + s.stock[i] + '</span></small></div>' +
+   '<button type="button" class="c-minus" data-action="undo-' + i + '" aria-label="' + tr('Скасувати покупку: ','Undo purchase: ') + name + '"' + (locked || !s.bought[i] ? ' disabled' : '') + '>−</button>' +
+   '<button type="button" class="c-plus" data-action="buy-' + i + '" aria-label="' + tr('Купити ','Buy ') + name + ' ' + costs[i] + '"' + (locked || s.funds < costs[i] || s.stock[i] >= CFG.cap ? ' disabled' : '') + '>+1 · ' + costs[i] + '</button><small class="c-hint">' + unitHints()[i] + '</small></div>').join('');
+  const cta = { plan: button('attack', tr('ПУСК','LAUNCH') + ' · ' + total(s) + ' →', locked || !total(s), 'c-start'), watch: button('x', tr('В ЕФІРІ…','ON AIR…'), true, 'c-start'),
+   report: button('next', tr('Наступна хвиля →','Next wave →'), false, 'c-start'), over: button('fresh', tr('Ще раз →','Play again →'), false, 'c-start') }[s.phase];
+  return '<aside class="col c-right" aria-label="' + tr('Арсенал','Arsenal') + '">' + (canPickLevel() ? levelField(s.difficulty) : '') +
+   '<section class="panel br"><div class="label">' + (planning ? tr('СПОНСОР · ОБЕРІТЬ ОДНОГО','SPONSOR · PICK ONE') : tr('СПОНСОР','SPONSOR')) + '</div><div class="c-cards">' + sponsorCards(planning && !locked) + '</div></section>' +
+   '<section class="panel br"><div class="label">' + tr('ЗГРАЯ','FLOCK') + '</div><div class="c-list">' + buy + '</div></section>' + cta + '</aside>';
+ }
+ // Footer timeline: the flock as it will fly, one node per wave of the same unit.
+ function groups() {
+  const names = units(), out = [];
+  const flights = s.phase !== 'plan' && s.report?.flights;
+  if (flights) { for (const f of flights) { const g = out.at(-1); if (g && g.type === f.type) g.count++; else out.push({ type: f.type, count: 1, at: f.start / 1000 }) } }
+  else s.stock.forEach((n, type) => { if (n) out.push({ type, count: n, at: 0 }) });
+  return out.map(g => '<div class="node' + (s.phase === 'watch' ? '' : ' done') + '" data-at="' + g.at + '">' + names[g.type] + ' ×' + g.count + '</div>').join('');
+ }
+ function footer() {
+  const planning = s.phase === 'plan', watch = s.phase === 'watch';
+  const hints = planning ? '<span>◎ ' + tr('Спонсор → зграя → ПУСК','Sponsor → flock → LAUNCH') + '</span><span>' + tr('1–4 — камери','1–4 — cameras') + '</span>' : watch ? '<span>' + tr('1–4 — камера · ▲N — що летить','1–4 — camera · ▲N — what is flying') + '</span>' : '';
+  return '<footer class="strip"><button type="button" class="c-pause" data-action="pause" aria-label="' + (paused ? tr('Продовжити','Resume') : tr('Пауза','Pause')) + '"' + (watch ? '' : ' disabled') + '>' + (paused ? '▶' : 'Ⅱ') + '</button>' +
+   '<div class="timeline" aria-label="' + tr('Зграя','Flock') + '">' + groups() + '</div><div class="hints">' + hints + '</div><b class="big c-clock" role="timer">' + mmss(Math.floor(elapsed / 1000)) + '</b></footer>';
+ }
+ function focusKey() {
+  const a = document.activeElement;
+  if (!a || !root.contains(a)) return null;
+  for (const k of ['data-action', 'data-offer', 'data-language']) if (a.hasAttribute(k)) return '[' + k + '="' + a.getAttribute(k) + '"]';
+  return null;
+ }
+ function render() {
+  const scrolls = [...root.querySelectorAll('.col')].map(c => c.scrollTop), key = focusKey(), hadCard = !!root.querySelector('.c-card');
+  root.dataset.phase = s.phase;
+  s.cam = [0, 1, 2, 3, 4].includes(s.cam) ? s.cam : 0;
+  if (s.cam === 4 && !pressActive()) s.cam = 3;
+  root.innerHTML = header() + '<div class="c-main">' + left() + '<div class="c-play">' + feed() + arcade() + '</div>' + right() + '</div>' + footer();
+  feedLayer.attach(root.querySelector('.feed-slot'));
+  root.querySelectorAll('.col').forEach((c, i) => { c.scrollTop = scrolls[i] || 0 });
+  if (key) root.querySelector(key + ':not(:disabled)')?.focus({ preventScroll: true });
+  else if (!hadCard) root.querySelector('.c-card button')?.focus({ preventScroll: true });
+  music.setMood(watching() && !paused ? 'watch' : 'plan');
+  if (watching()) paint(); else { jit = 0; refreshFeed(); music.setGlitch(false) }
+  if (reduced.matches) feedLayer.drawNoiseOnce();
+  if (s.phase === 'over') showCoalitionBoard(root.querySelector('.c-card'), { id: s.views > 0 ? s.runId : '', submitted: s.submitted, waves: s.wave, views: s.views, combo: s.bestCombo, assisted: !!s.assisted }, () => { s.submitted = true; save() });
+  while (queued.length) pop(...queued.shift());
+ }
+ function paint() {
+  const second = Math.floor(elapsed / 1000), clockEl = root.querySelector('.c-clock');
+  if (clockEl && clockEl.dataset.second !== String(second)) {
+   clockEl.dataset.second = String(second); clockEl.textContent = mmss(second);
+   jit = Math.round((Math.random() - .5) * 10);
+   const nodes = [...root.querySelectorAll('.node')], next = nodes.findIndex(n => Number(n.dataset.at) * 1000 > elapsed);
+   nodes.forEach((node, i) => { node.classList.toggle('done', next === -1 || i < next - 0); node.classList.toggle('now', i === (next === -1 ? -1 : next)) });
+  }
+  refreshFeed();
+ }
+ function settle() {
+  cancelAnimationFrame(frame);
+  finishWave(s, s.captures, { pressMs: s.live.pressMs });
+  elapsed = previous = 0; save(); render();
+ }
+ function tick(now) {
+  if (s.phase !== 'watch' || paused) return;
+  const dt = previous ? Math.min(100, now - previous) : 0; previous = now;
+  const r = s.report, c = r.committee;
+  if (!frozen()) {
+   elapsed += dt;
+   if (c && s.live.stamps < 3 && elapsed >= c.at) elapsed = c.at;
+   if (s.cam === 4 && pressActive()) s.live.pressMs += dt;
+  }
+  resolveImpacts();
+  if (elapsed >= r.duration && !frozen()) { settle(); return }
+  paint(); frame = requestAnimationFrame(tick);
+ }
+ function attack() {
+  if (!launch(s)) return false;
+  paused = false; previous = elapsed = 0; jit = 0;
+  if (s.report.rebate) queued.push([rebateText(s.report.rebate), 'decree', tr('Відкат','Kickback')]);
+  if (s.report.musk) queued.push([cameo.musk().title, 'none', cameo.musk().line]);
+  frame = requestAnimationFrame(tick);
+  return true;
+ }
+ /* ---------- autoplay: shared plan bot plus a human-paced camera director ---------- */
+ function refreshAuto() {
+  const b = root.querySelector('.c-auto'); if (!b) return;
+  const [full, short] = autoText();
+  b.classList.toggle('on', autoOn); setAttr(b, 'aria-pressed', String(autoOn)); b.disabled = s.phase === 'over';
+  setText(b.querySelector('.full'), full); setText(b.querySelector('.short'), short);
+ }
+ function toggleAuto() {
+  if (s.phase === 'over') return;
+  autoOn = !autoOn; auto.stage = '';
+  if (autoOn) s.assisted = true;
+  save(); refreshAuto();
+ }
+ function autoStep(now) {
+  if (!autoOn || document.hidden) return;
+  if (s.phase === 'over') { autoOn = false; refreshAuto(); return }
+  if (s.phase === 'watch' && paused) return;
+  if (auto.stage !== s.phase) { Object.assign(auto, { stage: s.phase, t: now + ({ plan: 800, report: s.report?.leaks?.length ? 6200 : 2500 }[s.phase] ?? 0), queue: null, launch: false, stampAt: 0, holdUntil: 0 }) }
+  if (s.phase === 'plan') {
+   if (now < auto.t) return;
+   if (auto.launch) { if (attack()) { save(); render() } auto.t = now + 500; return }
+   auto.queue ??= planMoves(s, Math.random);
+   const m = auto.queue.shift();
+   if (!m) { auto.launch = true; auto.t = now + 1000; return }
+   applyMove(s, m); save(); render();
+   if (m.do === 'deal' || m.do === 'nodeal') { auto.queue = null; auto.t = now + 800 } else { auto.t = now + (m.do === 'buy' ? 150 : 350); if (!auto.queue.length) { auto.launch = true; auto.t = now + 1000 } }
+  } else if (s.phase === 'report') {
+   if (now >= auto.t) { nextWave(s); save(); render() }
+  } else if (s.phase === 'watch' && s.report) {
+   if (frozen()) { if (now >= auto.stampAt) { const b = root.querySelector('[data-stamp]:not(.done)'); if (b) { b.click(); auto.stampAt = now + 350 } } return }
+   if (now < auto.t) return;
+   auto.t = now + 350;
+   const tabs = Array.from(root.querySelectorAll('.feed-cams button:not([hidden])'), button => ({
+    id: Number(button.dataset.cam), link: button.dataset.link,
+    warn: button.dataset.warn === 'true', air: Number(button.querySelector('[data-air]').textContent.slice(1))
+   }));
+   const next = chooseCamera(tabs, s.cam, now < auto.holdUntil);
+   if (next !== s.cam) {
+    setCam(next);
+    auto.holdUntil = now + 1500;
+   }
+  }
+ }
+ function pause() { if (s.phase === 'watch' && !paused) { paused = true; cancelAnimationFrame(frame); previous = 0; save(); render() } }
+ document.addEventListener('visibilitychange', () => { if (document.hidden) pause() });
+ window.addEventListener('blur', pause);
+ document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || !/^[1-5]$/.test(e.key) || !root.isConnected) return;
+  if (e.target.closest?.('select,input,textarea,[contenteditable]')) return;
+  setCam(Number(e.key) - 1);
+ });
+ async function share() {
+  sharing = tr('Малюємо картку…', 'Drawing the card…'); setText(root.querySelector('.c-share-status'), sharing);
+  try {
+   const far = s.cam >= 3, result = await shareRun(s, { image: stage ? stage.snapshot() : null, label: camRec()[s.cam], thermal: far, assisted: !!s.assisted });
+   sharing = result === 'downloaded' ? tr('Картку збережено як PNG','Card saved as PNG') : result === 'shared' ? tr('Готово','Done') : '';
+  } catch { sharing = tr('Не вдалося намалювати картку','Could not draw the card') }
+  setText(root.querySelector('.c-share-status'), sharing);
+ }
+ root.onchange = e => {
+  if (!e.target.matches('[data-level-pick]')) return;
+  const level = e.target.value;
+  rememberLevel(level);
+  if (canPickLevel()) { s.difficulty = level; s.funds = openingBudget[level]; save(); render() }
+ };
+ root.onclick = e => {
+  const cam = e.target.closest('button[data-cam]');
+  if (cam) { setCam(Number(cam.dataset.cam)); return }
+  const stamp = e.target.closest('[data-stamp]');
+  if (stamp) {
+   if (s.phase !== 'watch' || !frozen()) return;
+   s.live.stamps++; stamp.classList.add('done'); stamp.disabled = true; stamp.textContent = tr('ПОГОДЖЕНО','APPROVED');
+   if (s.live.stamps >= 3) { pop(tr('ПОГОДЖЕНО','APPROVED'), 'ok', tr('комітет дозволив продовжити','the committee allows it to continue')); refreshFeed() }
+   save(); return;
+  }
+  if (e.target.closest('[data-language]')) { document.querySelector('.lang').click(); return }
+  const offer = e.target.closest('[data-offer]');
+  if (offer) { pickSponsor(s, Number(offer.dataset.offer)); save(); render(); return }
+  const el = e.target.closest('[data-action]'); if (!el) return;
+  const [action, key] = el.dataset.action.split('-'), id = Number(key);
+  if (action === 'sides') { save(); changeSide(); return }
+  if (action === 'quiet') { const muted = music.toggle(); el.setAttribute('aria-pressed', String(muted)); return }
+  if (action === 'share') { share(); return }
+  if (action === 'auto') { toggleAuto(); return }
+  if (action === 'attack') attack();
+  if (action === 'pause') { if (!paused) { pause(); return } paused = false; previous = 0; frame = requestAnimationFrame(tick) }
+  if (action === 'next') nextWave(s);
+  if (action === 'deal') acceptDeal(s);
+  if (action === 'nodeal') declineDeal(s);
+  if (action === 'fresh' && s.phase === 'over') { const c = s.cam; s = newSeason(Math.random, preferredLevel()); s.cam = c; elapsed = 0; sharing = ''; waveKey = ''; feedLayer.reset() }
+  if (action === 'buy') purchase(s, id, 1);
+  if (action === 'undo') purchase(s, id, -1);
+  save(); render();
+ };
+ /* ---------- the 3D loop: one rAF for the whole coalition, paused while the tab is hidden ---------- */
+ function view(now) {
+  requestAnimationFrame(view);
+  if (document.hidden) { prevView = 0; return }
+  const dt = prevView ? Math.min(.1, (now - prevView) / 1000) : 0; prevView = now;
+  autoStep(now);
+  if (!stage) return;
+  const key = s.wave + ':' + cameraSubjects(s).join() + ':' + (s.aa || []).map(Number).join('');
+  if (key !== waveKey) { waveKey = key; stage.resetWave(); stage.setBroadcast(cameraSubjects(s), s.aa) }
+  const cam = s.cam === 4 ? 3 : s.cam, state = linkState(s.cam), quality = linkQuality(s.cam);
+  const live = watching(), report = s.phase === 'watch' || s.phase === 'report' ? s.report : null;
+  const orbital = !!s.offer.orbital && s.cam === 3;
+  stage.step({ orbital, dt: live && paused ? 0 : dt, real: (now - realStart) / 1000, elapsed: s.phase === 'watch' ? elapsed : (report?.duration ?? 0), report, cam });
+  feedLayer.pre({ orbital, now, cam, state, quality });
+  if (!feedLayer.frozen && state !== 'jam' && state !== 'dark') stage.render();
+  feedLayer.post({ orbital, now, dt, cam, state, quality, watching: !!live, paused, stage, gl: stage.glCanvas, show: true,
+   contract: s.offer ? s.offer.cards[s.offer.pick].marker : -1, names: camRec(), zones: zones() });
+  if (!firstFrame) { firstFrame = true; window.dispatchEvent(new Event('game-ready')) }
+ }
+ document.addEventListener('siege-language', render); save(); render();
+ try {
+  stage = createStage(feedLayer.host);
+  stage.setMaxPixelRatio(matchMedia('(pointer:coarse)').matches || innerWidth <= 900 ? 1.25 : 1.6);
+ } catch (error) {
+  console.error('Coalition 3D view failed', error); stage = null;
+  window.dispatchEvent(new Event('game-ready'));
+ }
+ requestAnimationFrame(view);
+}
