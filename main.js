@@ -99,27 +99,25 @@ const deckInterval=()=>3+Math.floor(Math.random()*2);
 let flockPressure=1;
 const intensity=()=>wave%9===0?1.9+die*.09:.65+die*.115;
 function waveHud(){
- $('watch-game').textContent=autoplay?tr('✋ Грати самому','✋ Take over'):tr('Автогра ▸','Watch autoplay ▸');$('watch-game').classList.toggle('on',autoplay);
- $('new-game').disabled=!!autoplay;
+ $('watch-game').textContent=autoplay?tr('✋ Грати самому','✋ Take over'):tr('Увімкнути автогру','Enable autoplay');$('watch-game').classList.toggle('on',autoplay);
+ $('watch-game').disabled=phase==='over';
+ $('watch-game').setAttribute('aria-pressed',String(autoplay));
  $('wave-roll').textContent=wave?('⚄ '+die+'/6 · '+(wave%9===0?tr('ШТОРМ','STORM'):tr('Натиск','Pressure'))+' ×'+intensity().toFixed(2)):'';
  $('wave-roll').hidden=!wave;
 }
-// Hand the running autoplay match to the player as-is. The bot's head start makes it an assisted run: no leaderboard.
-function takeOver(){
- autoplay=false;assisted=true;botDelay=0;
- if(phase==='over')return location.reload();
- writeMessage(()=>tr('Керування ваше. Гра продовжується з поточної хвилі, без рекордів.','You have control. The match continues from this wave, off the leaderboard.'));
- ui();saveMatch();
-}
 function watchGame(){
- if(autoplay){takeOver();return}
- const update=$('release-notice');if(update)update.hidden=true;
- saveMatch();autoplay=true;lastSmokeWave=0;nextDeckWave=deckInterval();reset();
- cash=5000;
- for(const k of Object.keys(techs))tech[k]=3;
- for(const k of ['sam','cruiser','pantsir','dolphin'])purchase(k);
- purchase('turret',pads[Math.floor(Math.random()*pads.length)]);
- $('inspection').value='25';$('start').click();ui();
+ if(phase==='over')return;
+ autoplay=!autoplay;
+ if(autoplay){
+  assisted=true;
+  if(phase==='buy'){
+   if(!units.length){
+    for(const k of ['sam','cruiser'])if(cash>=price(specs[k][1]))purchase(k);
+   }
+   $('start').click();
+  }
+ }
+ ui();saveMatch();
 }
 $('watch-game').onclick=watchGame;
 function botTurn(dt){
@@ -135,7 +133,8 @@ function botTurn(dt){
  if(affordable.length){researchTech(affordable[Math.floor(Math.random()*affordable.length)]);return}
  if(cash>price(320)+price(12)*20&&units.length<9){
   const pad=pads.find(p=>!units.some(u=>u.pad===p));
-  const k=Math.random()<.55?'sam':'turret';purchase(k,k==='turret'?pad:null);
+  const k=Math.random()<.55?'sam':'turret';
+  if(cash>=price(specs[k][1])&&(k!=='turret'||pad))purchase(k,k==='turret'?pad:null);
  }
 }
 function showBreak(){
@@ -292,7 +291,7 @@ function roadStep(dt){
  showTraffic();
 }
 function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);m.traverse(o=>{if(o.isMesh)o.castShadow=true});world.scene.add(m);return m}
-function reset(){runId=crypto.randomUUID();assisted=false;flockPressure=2**((Math.random()-.5)*3);spent=0;partialLedger=0;guestWave=guestUntil=guestPickWave=0;seenTrump=seenMusk=false;incoming=null;guest.hidden=true;road.reset();world.setDeckHoles([]);clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.clear();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;trafficTime=0;tankers.restore();tankers.move(0);orders.smoke.end=orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
+function reset(){runId=crypto.randomUUID();assisted=false;autoplay=false;botDelay=0;lastSmokeWave=0;nextDeckWave=deckInterval();flockPressure=2**((Math.random()-.5)*3);spent=0;partialLedger=0;guestWave=guestUntil=guestPickWave=0;seenTrump=seenMusk=false;incoming=null;guest.hidden=true;road.reset();world.setDeckHoles([]);clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.clear();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;trafficTime=0;tankers.restore();tankers.move(0);orders.smoke.end=orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
@@ -410,14 +409,14 @@ function arcadeHud(){
   card.querySelector('h2').textContent=tr('ПОТРАЧЕНО','WASTED');
   card.querySelector('p').textContent=verdict;
   const button=card.querySelector('button');
-  button.textContent=autoplay?tr('До моєї гри','Return to my game'):tr('Нова гра','New game');
-  button.onclick=autoplay?watchGame:confirmNewGame;
+  button.textContent=tr('Нова гра','New game');
+  button.onclick=confirmNewGame;
   if(!autoplay&&!assisted)showRecords(card,{id:runId,difficulty:$('difficulty').value,wave,score});
   const records=card.querySelector('.records');if(records)records.hidden=autoplay||assisted;
   return order(tr('Арка впала · хвиля ','Arch collapsed · wave ')+wave);
  }
- if(autoplay)return order(tr('Автогра','Autoplay'));
  if(paused)return order(tr('Партія на паузі.','Game paused.'),tr('Продовжити ▸','Resume ▸'),toggle);
+ if(autoplay)return order(tr('Автогра','Autoplay'));
  if(phase==='buy'){
   const kit=price(specs.sam[1])+price(specs.cruiser[1]);
   if(!units.length&&!barges.length&&cash>=kit)return order(tr('Зберіть стартову оборону: С-400 і крейсер.','Deploy a starter defence: S-400 and cruiser.'),tr('Розгорнути · ','Deploy · ')+money(kit),()=>{purchase('sam');purchase('cruiser')});
@@ -462,7 +461,7 @@ function nextWave(){
  signalPenalty=seaCosts=jamLoss=waveVictims=0;arrivals=checks=caught=0;showTraffic();
  waveDamage=0;
  wave++;die=1+Math.floor(Math.random()*6);waveElapsed=0;untilSpawn=0;
- if(autoplay&&wave===nextDeckWave){
+ if(wave===nextDeckWave){
   const n=1+Math.floor(Math.random()*2);
   for(let i=0;i<n;i++)spawn(Math.random()<.35?'loaf':'flamingo',(i?-1:1)*(14+Math.random()*6));
   nextDeckWave+=deckInterval();
@@ -751,7 +750,7 @@ function step(dt){
     const point=new T.Vector3(e.deckX,3.23,0);
     const filmed=e.filmed&&world.cinematicBoom(point,{subject:e.m});
     damageDeck(12,point,filmed);
-   }else if(e.k==='flamingo'&&autoplay&&Math.random()>.055*flockPressure){
+   }else if(e.k==='flamingo'&&Math.random()>.055*flockPressure){
     fx.feathers(p,0xff86ac);
    }else if(e.k==='flamingo'){hits=Math.min(3,hits+1);world.cinematic(p.clone(),hits>=3?2:1.5);world.setHits(hits);damageDeck(12,p);hype+=25;casualties(new T.Vector3())}
    else{const loss=damageDeck(e.k==='neptune'?23:6,p);if(loss)casualties(e.m.position)}
@@ -769,7 +768,7 @@ function step(dt){
 function flap(m,t){for(const wing of m.userData.wings||[])wing.rotation.x=wing.scale.z*Math.sin(t*6)*.32}
 const scoreBoard=setupGameMenu();
 let clockText='';
-function frame(now){const dt=Math.min((now-last)/1000,.08)*world.timeScale();last=now;if(scoreBoard.open){requestAnimationFrame(frame);return}if(phase==='live'&&!paused&&!$('restart').open){step(dt);if(autoplay&&!paused&&phase==='live')step(dt)};if(selectedShip)ring.position.copy(selectedShip.m.position);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
+function frame(now){const dt=Math.min((now-last)/1000,.08)*world.timeScale();last=now;if(scoreBoard.open){requestAnimationFrame(frame);return}if(phase==='live'&&!paused&&!$('restart').open){step(dt)};if(selectedShip)ring.position.copy(selectedShip.m.position);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
  {const c=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');if(clockText!==c){clockText=c;$('clock').textContent=c}}updateRoadCrew();road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;moveTrain(trafficTime);tankers.draw(time);beams.update(now,nightLevel(),[...enemies,flyby].filter(Boolean));world.draw(time,trafficTime,phase==="live"&&orders.smoke.end>time);if(flyby?.flight?.atContact)flyby.flight.contactShown=true;updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
 document.addEventListener('siege-language',()=>{
  specs=getSpecs();techs=getTechs();ui();showTraffic();showSignals();
@@ -789,10 +788,9 @@ function unpackEntity(item){
   destination:destination&&new T.Vector3(...destination),oldPoint:oldPoint&&new T.Vector3(...oldPoint),exitPoint:exitPoint&&new T.Vector3(...exitPoint)};
 }
 function saveMatch(){
- if(autoplay)return;
  try{
   const state={flockPressure,spent,partialLedger,guestWave,die,waveElapsed,breakLeft,cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught};
-  localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,runId,assisted,state,tech,patches:road.patchedMeshes().map(m=>m.position.toArray()),damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss})),difficulty:$('difficulty').value,inspection:$('inspection').value,
+  localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,runId,assisted,autoplay,botDelay,nextDeckWave,lastSmokeWave,state,tech,patches:road.patchedMeshes().map(m=>m.position.toArray()),damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss})),difficulty:$('difficulty').value,inspection:$('inspection').value,
    trafficTime,oilSlicks:tankers.snapshot(),lostTankers:tankers.losses(),orders:[orders.gps.end,orders.net.end,orders.smoke.end],units:units.map(packEntity),enemies:enemies.map(packEntity),vehicles:vehicles.map(packEntity),
    barges:barges.map(packEntity),flights:fx.snapshot(enemies),camera:world.cameraPosition(),selectedShip:units.indexOf(selectedShip),placing}));
   return true;
@@ -809,6 +807,11 @@ function restoreMatch(){
  if(state.reserve0!==reserves[data.difficulty])state.reserve0=reserves[data.difficulty];
  for(const key of "cash hp time wave untilSpawn score rp unpaid reserve0 hype victims waveVictims jamLoss reserve waveDamage seaCosts hits signalPenalty roadTimer inspectionCredit arrivals checks caught".split(" "))if(!Number.isFinite(state[key]))return;
  for(const value of Object.values({...state,phase:0}))if(!Number.isFinite(value))return;
+ autoplay=data.autoplay===true;
+ assisted=assisted||autoplay;
+ nextDeckWave=Number.isInteger(data.nextDeckWave)&&data.nextDeckWave>state.wave?data.nextDeckWave:state.wave+deckInterval();
+ lastSmokeWave=Number.isInteger(data.lastSmokeWave)?data.lastSmokeWave:0;
+ botDelay=Number.isFinite(data.botDelay)?data.botDelay:0;
  flockPressure=state.flockPressure??1;spent=state.spent??0;partialLedger=state.partialLedger??Number(state.spent===undefined);
  ({cash,hp,time,wave,phase,untilSpawn,score,rp,unpaid,reserve0,hype,victims,waveVictims,jamLoss,reserve,waveDamage,seaCosts,hits,signalPenalty,roadTimer,inspectionCredit,arrivals,checks,caught}=state);
  for(const s of data.damageSpots??[])damageSpots.push({point:new T.Vector3(...s.point),loss:s.loss});
@@ -842,11 +845,10 @@ $('restart').addEventListener('close',()=>{
 reset();
 try{restoreMatch()}catch(err){console.warn('Could not restore match',err);reset()}
 watchRelease(()=>{
- if(autoplay)return false;
  if(phase==='live'){paused=true;ui()}
  if(!saveMatch())return false;
  location.reload();return true;
-},()=>!autoplay);
+},()=>true);
 setInterval(()=>{if(!document.hidden)saveMatch()},2000);
 window.addEventListener('pagehide',saveMatch);
 function pauseAway(){
