@@ -487,7 +487,7 @@ function aircraftStep(dt){
  if(j.hp>0){
   p.x+=dt*(rotors?3.6:6);
   if(j.anchor&&j.flight)j.anchor.position.lerpVectors(j.flight.rocket.position,p,.6);
-  if(p.x>30){j.m.removeFromParent();flyby=null;return}
+  if(p.x>30&&!j.flight){j.m.removeFromParent();flyby=null;return}
   if(!breakLeft&&time>=(j.nextAssist??0)){
    const drone=enemies.find(e=>e.k==='drone'&&e.hp>fx.pendingDamage(e)&&p.distanceToSquared(e.m.position)<225);
    if(drone){
@@ -565,7 +565,7 @@ function step(dt){
   for(const order of Object.values(orders))if(order!==orders.smoke&&order.end>time)order.end+=elapsed;
   time+=elapsed;breakLeft=Math.max(0,breakLeft-elapsed);
   advanceTraffic(time-elapsed,time);moveShips(elapsed);showBreak();showSignals();
-  fx.tick(elapsed,[]);fx.smolder(elapsed,damageSpots); // let smoke and debris settle during the break
+  fx.tick(elapsed,flyby?[flyby]:[]);fx.smolder(elapsed,damageSpots); // let smoke and debris settle during the break
   if(breakLeft===0){nextWave();if(wave%4===0)spawn('neptune');if(!flyby&&wave>=4){
    const roll=Math.random();
    const type=roll<.3?'jet':roll<.5?'helicopter':null;
@@ -598,8 +598,8 @@ function step(dt){
   }
   untilSpawn=Math.max(.32,1.9/((1+.12*wave)*intensity()))}
  for(const u of units){if(unpaid<=0)continue;u.cd-=dt;if(u.cd>0||u.ammo===0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.hp>fx.pendingDamage(e)&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range))){closest=d;target=e}}
- if(flyby?.confused&&u.k==='sam'&&!fx.pendingDamage(flyby)&&world.onScreen(flyby.m.position))target=flyby;
- if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);const damage=specs[u.k][2]*(1+.3*tech.dmg);u.cd=specs[u.k][3]*Math.pow(.85,tech.rate)/unpaid;if(magazine[u.k]){u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(target===flyby){flyby.flight=flight;flyby.anchor=flyby.anchor??new T.Object3D();flyby.anchor.position.lerpVectors(flight.rocket.position,flyby.m.position,.6);world.cinematic(flyby.anchor.position.clone(),2,{bomb:true,follow:flyby.anchor,radius:13,height:2.2})}continue}target.hp-=damage;fx.tracer(p.clone().setY(p.y+.9),to.clone(),nightLevel())}}
+ if(flyby?.confused&&flyby.hp>0&&!flyby.flight&&u.k==='sam'&&!fx.pendingDamage(flyby)&&world.onScreen(flyby.m.position))target=flyby;
+ if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);const damage=specs[u.k][2]*(1+.3*tech.dmg);u.cd=specs[u.k][3]*Math.pow(.85,tech.rate)/unpaid;if(magazine[u.k]){u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(target===flyby){flyby.flight=flight;flight.filmContact=true;flyby.anchor=flyby.anchor??new T.Object3D();flyby.anchor.position.lerpVectors(flight.rocket.position,flyby.m.position,.6);world.cinematic(flyby.anchor.position.clone(),2,{bomb:true,follow:flyby.anchor,radius:13,height:2.2})}continue}target.hp-=damage;fx.tracer(p.clone().setY(p.y+.9),to.clone(),nightLevel())}}
  const offline=orders.net.end>time,retreat=orders.gps.end>time;
  const crashed=new Set();
  if(offline){
@@ -695,13 +695,13 @@ function step(dt){
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.m.position.lerp(e.to,Math.min(1,dt/e.life));e.life-=dt;if(e.life<=0){world.scene.remove(e.m);effects.splice(i,1)}}
  if(hits<3&&waveElapsed>=17&&(!enemies.length||waveElapsed>=37)){
   for(const e of enemies)e.m.removeFromParent();
-  enemies.length=0;fx.reset();breakLeft=BREAK_SECONDS;ui();
+  enemies.length=0;fx.reset(flyby?.flight);breakLeft=BREAK_SECONDS;ui();
  }
  if(hits===3){breakLeft=0;world.carryDown(road.patchedMeshes());world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));phase='over';selectedShip=null;setPlacement(false);writeMessage(()=>tr("Третій фламінго обвалив арку. Хвиль протрималися: ","A third flamingo brought down the arch. Waves reached: ")+wave+tr(". Відбито цілей: ",". Targets repelled: ")+score+'.');ui()}}
 function flap(m,t){for(const wing of m.userData.wings||[])wing.rotation.x=wing.scale.z*Math.sin(t*6)*.32}
 let clockText='';
 function frame(now){const dt=Math.min((now-last)/1000,.08)*world.timeScale();last=now;if(phase==='live'&&!paused&&!$('restart').open){step(dt);if(autoplay&&!paused&&phase==='live')step(dt)};if(selectedShip)ring.position.copy(selectedShip.m.position);if(phase==='buy'){moveShips(dt);foam+=dt;scouts.forEach(({m,y},i)=>{m.position.y=y+Math.sin(foam+i)*.25;flap(m,foam+i)})}
- {const c=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');if(clockText!==c){clockText=c;$('clock').textContent=c}}road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;moveTrain(trafficTime);tankers.draw(time);beams.update(now,nightLevel(),[...enemies,flyby].filter(Boolean));world.draw(time,trafficTime,phase==="live"&&orders.smoke.end>time);updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
+ {const c=[Math.floor(time/60),Math.floor(time%60)].map(n=>String(n).padStart(2,'0')).join(':');if(clockText!==c){clockText=c;$('clock').textContent=c}}road.tick(phase==='over'?[]:damageSpots,time);tribute.hidden=time>=tributeUntil;moveTrain(trafficTime);tankers.draw(time);beams.update(now,nightLevel(),[...enemies,flyby].filter(Boolean));world.draw(time,trafficTime,phase==="live"&&orders.smoke.end>time);if(flyby?.flight?.atContact)flyby.flight.contactShown=true;updateMarkers();drawRadar(enemies,time,world.heading());requestAnimationFrame(frame)}
 document.addEventListener('siege-language',()=>{
  specs=getSpecs();techs=getTechs();ui();showTraffic();showSignals();
 });

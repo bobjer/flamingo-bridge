@@ -330,7 +330,8 @@ export function fireworks(scene){
     glow.emit({pos:tail.clone(),v:v3(0,0,0),life:.09,s0:.75,s1:.3,c0:C(0xffc070,4),alpha:1,fadeIn:.01,fadePow:1});
    }
    if(t===1){
-    if(enemies.includes(f.target)&&f.target.hp>0){f.target.hp-=f.damage;explosion(pos,.75)}
+    if(f.filmContact&&!f.contactShown){f.atContact=true;continue}
+    if(enemies.includes(f.target)&&f.target.hp>0){f.target.hp-=f.damage;if(!f.filmContact)explosion(pos,.75)}
     f.rocket.removeFromParent();flights.splice(i,1);
    }
   }
@@ -373,8 +374,9 @@ export function fireworks(scene){
   }
   smoke.update(dt);spray.update(dt);fire.update(dt);glow.update(dt);
  }
- function reset(){
-  for(const f of flights)f.rocket.removeFromParent();for(const b of bursts){b.cloud.removeFromParent();b.cloud.dispose()}flights.length=bursts.length=0;
+ function reset(keepFlight){
+  for(let i=flights.length-1;i>=0;i--){const f=flights[i];if(f===keepFlight)continue;f.rocket.removeFromParent();flights.splice(i,1)}
+  for(const b of bursts){b.cloud.removeFromParent();b.cloud.dispose()}bursts.length=0;
  }
  // Full wipe for a new game: also clears lingering smoke, slicks and lights.
  function clear(){
