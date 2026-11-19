@@ -19,7 +19,7 @@ export function showRecords(card,run){
    if(!response.ok)throw Error();
    const rows=await response.json();
    if(!submit&&posting)return;
-   list.replaceChildren(...rows.map(row=>{const li=document.createElement('li');li.textContent=row.name+' · '+tr('хв. ','wave ')+row.wave+' · '+tr('відбито ','repelled ')+row.score;return li}));
+   list.replaceChildren(...rows.map(row=>{const li=document.createElement('li');li.textContent=row.name+' · '+tr('хв. ','wave ')+row.wave+' · '+tr('відбито ','repelled ')+row.score;if(row.assisted)li.append(" · "+tr("Автогра","Autoplay"));return li}));
    status.textContent=submit?tr('Результат збережено','Score saved'):rows.length?'':tr('Поки немає рекордів','No scores yet');
    if(submit)form.hidden=true;
   }catch{status.textContent=tr('Таблиця недоступна. Спробуйте ще раз.','Leaderboard unavailable. Try again.');if(submit){button.disabled=false;posting=false}}

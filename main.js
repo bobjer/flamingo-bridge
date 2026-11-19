@@ -411,8 +411,7 @@ function arcadeHud(){
   const button=card.querySelector('button');
   button.textContent=tr('Нова гра','New game');
   button.onclick=confirmNewGame;
-  if(!autoplay&&!assisted)showRecords(card,{id:runId,difficulty:$('difficulty').value,wave,score});
-  const records=card.querySelector('.records');if(records)records.hidden=autoplay||assisted;
+  showRecords(card,{id:runId,difficulty:$('difficulty').value,wave,score,assisted});
   return order(tr('Арка впала · хвиля ','Arch collapsed · wave ')+wave);
  }
  if(paused)return order(tr('Партія на паузі.','Game paused.'),tr('Продовжити ▸','Resume ▸'),toggle);
