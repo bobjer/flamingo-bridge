@@ -350,3 +350,6 @@ body.phone-game{display:block;position:fixed;inset:0;width:100%;height:100dvh;mi
 #game-drawer .col,#game-drawer .helm,#game-drawer .strip{position:static;width:auto;max-height:none;overflow:visible}
 #game-drawer .col[hidden]{display:none}
 #game-drawer .arcade-order{flex-wrap:wrap}
+#game-drawer{width:min(370px,84vw)}
+#game-drawer :is(.zoom,#arena-radar,.hud){position:static;inset:auto;align-self:flex-start}
+#game-drawer .zoom button{min-width:44px;min-height:44px}

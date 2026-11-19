@@ -146,6 +146,7 @@ for(const z of [-2.05,2.05,-7.45,-4.55])for(const x of [-9,-5,0,5,9]){
 }
 function setPlacement(on){
  placing=on;
+ if(on&&$('game-drawer')?.open)$('game-drawer').close();
  for(const pad of pads)pad.visible=on&&!units.some(u=>u.pad===pad);
 }
 function clearCourse(a,b){
@@ -176,6 +177,7 @@ function helm(){
 $('course').onclick=()=>{
  const ships=units.filter(u=>u.k==='cruiser');selectedShip=selectedShip?null:ships[$('ship-list').selectedIndex];
  setPlacement(false);helm();
+ if(selectedShip&&$('game-drawer')?.open)$('game-drawer').close();
 };
 $('ship-list').onchange=()=>{selectedShip=units.filter(u=>u.k==='cruiser')[$('ship-list').selectedIndex];setPlacement(false);helm()};
 function moveShips(dt){
@@ -313,7 +315,7 @@ function damageDeck(amount,position,awaitingCamera=false){
  if(!spot){spot={point,loss:0};damageSpots.push(spot)}
  fx.explosion(new T.Vector3(position.x,Math.max(3.5,Math.min(position.y,5)),point.z),Math.min(2,.55+loss/8));fx.dust(point,Math.min(1.8,.6+loss/10));
  for(const v of vehicles){
-  if(v.m.visible&&v.m.position.distanceToSquared(point)<36){fx.throwCar(v.m.clone(),point);v.wrecked=true}
+  if(v.m.visible&&Math.abs(v.m.position.x-point.x)<8){fx.throwCar(v.m.clone(),point);v.wrecked=true}
   v.m.visible=false;
  }
  spot.awaitingCamera=awaitingCamera;spot.repairAfter=time+1.2;
@@ -453,7 +455,7 @@ function nextWave(){
  wave++;die=1+Math.floor(Math.random()*6);waveElapsed=0;untilSpawn=0;
  if(autoplay&&wave===nextDeckWave){
   const n=1+Math.floor(Math.random()*2);
-  for(let i=0;i<n;i++)spawn('flamingo',(i?-1:1)*(14+Math.random()*6));
+  for(let i=0;i<n;i++)spawn(Math.random()<.35?'loaf':'flamingo',(i?-1:1)*(14+Math.random()*6));
   nextDeckWave+=deckInterval();
  }
  ui();
@@ -706,8 +708,8 @@ function step(dt){
    $('caption').textContent=crashed.has(e)?tr("ЗІТКНЕННЯ","COLLISION"):retreat?tr("ЦІЛЬ ЗАЛИШИЛА ЗОНУ","TARGET LEFT THE AREA"):tr("ПРОМАХ","MISS");
    continue;
   }
-  if(e.deckX!=null&&!retreat&&!offline&&!e.filmed&&d<7&&e.hp>0){
-   e.filmed=world.cinematic(p.clone(),2,{bomb:true,deckShot:true,follow:e.m,radius:8,height:3});
+  if((e.deckX!=null||e.k==='loaf')&&!retreat&&!offline&&!e.filmed&&d<7&&e.hp>0){
+   e.filmed=world.cinematic(p.clone(),2,{bomb:true,deckShot:true,follow:e.m,radius:13,height:5});
   }
   if(e.k==='baby'&&e.hp>0&&!e.filmed&&e.hp>fx.pendingDamage(e)){
    const ramTanker=tankers.near(p,1.6),ramShip=e.target?.k==='cruiser'&&units.includes(e.target)&&p.distanceTo(e.target.m.position)<3.4;
@@ -731,7 +733,9 @@ function step(dt){
     if(units.includes(u)&&--u.hull<=0)removeUnit(u);
     writeMessage(()=>getSpecs()[u.k][0]+(u.hull?tr(" · міцність "," · hull ")+u.hull:tr(" вибув із ладу"," out of action")));
    }else if(e.k==='loaf'){
-    fx.crumbs(p);damageDeck(8,p);
+    const point=new T.Vector3(e.deckX??p.x,3.23,e.deckX!=null?0:p.z);
+    const filmed=e.filmed&&world.cinematicBoom(point,{subject:e.m});
+    fx.crumbs(point);damageDeck(8,point,filmed);
     for(const v of vehicles)v.hold=Math.max(v.hold,4);
     writeMessage(()=>tr("Паляниця розсипалася! Вантажівки стоять 4 секунди.","The loaf burst into crumbs! Trucks stop for 4 seconds."));
    }else if(e.k==='flamingo'&&e.deckX!=null){

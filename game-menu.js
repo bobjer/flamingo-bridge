@@ -9,6 +9,11 @@ export function setupGameMenu(){
   const el=document.createElement('button');el.type='button';el.onclick=handler;parent.append(el);return el;
  };
  const opener=button(document.body,()=>drawer.showModal());opener.id='open-drawer';opener.setAttribute('aria-controls',drawer.id);
+ drawer.addEventListener('click',event=>{
+  if(event.target!==drawer)return;
+  const r=drawer.getBoundingClientRect();
+  if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)drawer.close();
+ });
  const hide=button(drawer,()=>drawer.close());
  const title=document.createElement('h2');title.id='score-title';board.setAttribute('aria-labelledby',title.id);board.append(title);
  const content=document.createElement('div');board.append(content);
@@ -25,7 +30,7 @@ export function setupGameMenu(){
  }
  translate();document.addEventListener('siege-language',translate);
  document.body.append(drawer,board);
- const movable=['.top','#arcade','.strip','#hq-panel','#arsenal-panel','.helm','.legal'].map(selector=>{
+ const movable=['.top','#arcade','.strip','#hq-panel','#arsenal-panel','.helm','.zoom','#arena-radar','#wave-roll','#caption','.legal'].map(selector=>{
   const node=document.querySelector(selector),slot=document.createComment(selector);node.before(slot);return {node,slot};
  });
  function layout(){

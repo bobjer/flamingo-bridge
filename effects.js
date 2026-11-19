@@ -264,7 +264,7 @@ export function fireworks(scene){
   scene.add(mesh);
   const outward=mesh.position.clone().sub(point);outward.y=0;
   if(outward.lengthSq()<.1)outward.set(1,0,1);
-  chunks.push({m:mesh,v:outward.normalize().multiplyScalar(3+rnd()*2).setY(6+rnd()*2),spin:around(4),age:0,life:7,smoke:0,burn:true,landed:false});
+  chunks.push({m:mesh,v:outward.normalize().multiplyScalar(2+rnd()*1.5).setY(8+rnd()*1.5),spin:around(4),age:0,life:7,smoke:0,burn:true,landed:false});
  }
  function wreck(p,dir=1){
   const door=new T.Group(),d=new T.Mesh(doorGeo,doorMat),w=new T.Mesh(new T.BoxGeometry(.052,.18,.38),glassMat);w.position.y=.1;door.add(d,w);
