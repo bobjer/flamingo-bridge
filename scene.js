@@ -334,7 +334,11 @@ export function landscape(view) {
  const land = buildLand(scene);
 
  // --- water ---
- const water = new Water(new T.PlaneGeometry(60000, 60000), {
+ // dense grid around the strait so storm swells can displace it; flat skirts out to the horizon
+ const SEA = 320, seaParts = [new T.PlaneGeometry(SEA, SEA, 192, 192)], FAR = 60000, half = (FAR - SEA) / 4 + SEA / 2;
+ for (const [x, y, w, h] of [[0, half, FAR, (FAR - SEA) / 2], [0, -half, FAR, (FAR - SEA) / 2], [half, 0, (FAR - SEA) / 2, SEA], [-half, 0, (FAR - SEA) / 2, SEA]])
+  seaParts.push(new T.PlaneGeometry(w, h).translate(x, y, 0));
+ const water = new Water(mergeGeometries(seaParts), {
   textureWidth: 512, textureHeight: 512,
   waterNormals: waterNormals(renderer),
   sunDirection: skySun, sunColor: 0xb9a98a,
@@ -342,6 +346,38 @@ export function landscape(view) {
  });
  water.rotation.x = -Math.PI / 2;
  water.material.uniforms.size.value = 14;
+ // Storm: swell displacement on the near grid, whitecaps on crests and in wind streaks.
+ water.material.uniforms.storm = {value: 0};
+ const SWELL = `
+  uniform float storm; varying float vCrest;
+  float swell(vec2 p, float t) {
+   return sin(dot(p, vec2(.21, .13)) + t * 1.3) * .5 + sin(dot(p, vec2(-.11, .27)) + t * 1.7) * .32 + sin(dot(p, vec2(.37, -.19)) + t * 2.3) * .18;
+  }`;
+ water.material.vertexShader = water.material.vertexShader
+  .replace('void main() {', SWELL + '\nvoid main() {\n vec3 pos = position;\n float fade = 1. - smoothstep(110., 155., length(pos.xy));\n float h = swell(vec2(pos.x, -pos.y), time * 3.) * fade;\n pos.z += storm * .55 * h; vCrest = h;')
+  .replace('mirrorCoord = modelMatrix * vec4( position, 1.0 );', 'mirrorCoord = modelMatrix * vec4( pos, 1.0 );')
+  .replace('vec4 mvPosition =  modelViewMatrix * vec4( position, 1.0 );', 'vec4 mvPosition = modelViewMatrix * vec4( pos, 1.0 );');
+ water.material.fragmentShader = water.material.fragmentShader
+  .replace('void main() {', `uniform float storm; varying float vCrest;
+   float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+   float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+    return mix(mix(hash21(i), hash21(i + vec2(1., 0.)), f.x), mix(hash21(i + vec2(0., 1.)), hash21(i + 1.), f.x), f.y);
+   }
+   void main() {`)
+  .replace('vec3 outgoingLight = albedo;', `vec3 outgoingLight = mix(albedo, waterColor * .5 * (1. + .5 * theta), storm * .45) * (1. + storm * .3 * vCrest);
+   if (storm > .01) {
+    // groups of whitecaps ride the swell crests; each cap is a small, sharp-edged break in fine ripples
+    vec2 q = worldPosition.xz;
+    float broad = vnoise(q * .07 + vec2(time * .6, time * .25));
+    float fine = vnoise(q * vec2(.8, 1.9) + vec2(time * 2.2, time * .9)) * .65 + vnoise(q * vec2(2.2, 4.4) - vec2(time * 1.4, 0.)) * .35;
+    float group = smoothstep(.3, .65, broad * .75 + vCrest * .25 + .12);
+    float cap = smoothstep(.7, .77, fine + .06 * vCrest);
+    float foam = storm * group * cap * (1. - smoothstep(160., 700., distance));
+    vec3 foamColor = vec3(.84, .88, .9) * clamp(length(sunColor) * .95, .14, 1.);
+    outgoingLight = mix(outgoingLight, foamColor, foam * .8);
+   }`);
+ if (!water.material.vertexShader.includes('vCrest = h') || !water.material.fragmentShader.includes('foamColor')) console.warn('storm water patch did not apply');
  scene.add(water);
 
  // --- life on the water: red buoys and a small yellow sailboat ---
@@ -404,6 +440,10 @@ export function landscape(view) {
  }
  const daySun=new T.Color(0xfff0dc),sunset=new T.Color(0xffa56d),nightHaze=new T.Color(0x162a49),nightWater=new T.Color(0x163d51),dayWater=new T.Color(0x2aa3ad);
  let daylight = 1;
+ // weather: 0 = calm, 1 = full storm; eases toward the target so the sea builds up and settles
+ let storm = 0, stormTarget = 0, waveClock = 0, lastDraw = 0;
+ const stormWater = new T.Color(0x3c5658), stormHaze = new T.Color(0x6e7a84);
+ const swellAt = (x, z, t) => Math.sin(x * .21 + z * .13 + t * 1.3) * .5 + Math.sin(x * -.11 + z * .27 + t * 1.7) * .32 + Math.sin(x * .37 + z * -.19 + t * 2.3) * .18;
  let collapse = false, prevDist = camera.position.distanceTo(controls.target);
  // Bullet-time: fly in to an impact, sweep around it in slow motion, fly back.
  let cine = null, cineLast = 0, cineCooldown = 0;
@@ -530,6 +570,14 @@ export function landscape(view) {
    return t < .08 ? 1 - t / .08 * .85 : t > .82 ? .15 + .85 * (t - .82) / .18 : .15;
   },
   cinematicActive: () => !!cine,
+  setStorm(on) { stormTarget = on ? 1 : 0; },
+  stormLevel: () => storm,
+  // surface height and tilt at a point, for floating things
+  wave(x, z) {
+   const fade = 1 - T.MathUtils.smoothstep(Math.hypot(x, z), 110, 155), t = waveClock * 3, k = storm * .55 * fade;
+   const h = swellAt(x, z, t), e = .6;
+   return {y: k * h, roll: k * (swellAt(x, z + e, t) - h) / e, pitch: k * (swellAt(x + e, z, t) - h) / e};
+  },
   daylight: () => daylight,
   setHits(hits) {
    collapse = hits >= 3;
@@ -540,12 +588,18 @@ export function landscape(view) {
    const angle=2*Math.PI*gameTime/DAY_SECONDS,altitude=Math.cos(angle);
    const day=T.MathUtils.smoothstep(altitude,-.32,.6),dusk=1-Math.min(1,Math.abs(altitude)*3);daylight=day;
    sun.position.set(35*Math.cos(angle),13+40*Math.abs(altitude),46+20*Math.sin(angle));
-   sun.intensity=.32+2.68*day;
+   const nowMs = performance.now(), realDt = lastDraw ? Math.min(.1, (nowMs - lastDraw) / 1000) : 0; lastDraw = nowMs;
+   storm += (stormTarget - storm) * (1 - Math.exp(-realDt * .35));
+   waveClock += realDt * .35 * (1 + 1.6 * storm);
+   sun.intensity=(.32+2.68*day)*(1-.45*storm);
    sun.color.setHex(0x9bbfff).lerp(daySun,day).lerp(sunset,dusk*.68);
    ambient.intensity=.34+.21*day;
    dome.material.color.setRGB(.07+.93*day,.12+.88*day,.27+.73*day).lerp(sunset,dusk*.28);
    scene.fog.color.copy(nightHaze).lerp(hazeColor,day).lerp(sunset,dusk*.3);
-   water.material.uniforms.waterColor.value.copy(nightWater).lerp(dayWater,day);
+   scene.fog.color.lerp(stormHaze, storm * .35 * (.4 + .6 * day));
+   water.material.uniforms.waterColor.value.copy(nightWater).lerp(dayWater,day).lerp(stormWater, storm * .7);
+   water.material.uniforms.storm.value = storm;
+   water.material.uniforms.distortionScale.value = 2.4 + 4 * storm;
    water.material.uniforms.sunDirection.value.copy(sun.position).normalize();
    water.material.uniforms.sunColor.value.copy(sun.color).multiplyScalar(.38+.5*day);
 
@@ -562,7 +616,7 @@ export function landscape(view) {
    }
    if (!filming) prevDist = dist;
    // sea haze swallows the far ends of the viaduct; it thins out from high orbit so the whole sea is visible
-   scene.fog.density = .0019 * Math.min(1, 140 / dist) ** 1.6;
+   scene.fog.density = .0019 * Math.min(1, 140 / dist) ** 1.6 * (1 + .6 * storm);
    drawArchSmoke(gameTime,smoke,day,camera);
    const passage=trafficTime*.052;
    boat.position.x=2.4;
@@ -570,7 +624,7 @@ export function landscape(view) {
    boat.rotation.y=Math.sin(passage)>=0?Math.PI/2:-Math.PI/2;
    boat.position.y = .08 + Math.sin(performance.now() * .0012) * .04;
    boat.rotation.z = Math.sin(performance.now() * .0009) * .05;
-   water.material.uniforms.time.value = performance.now() * .00035;
+   water.material.uniforms.time.value = waveClock;
    land.update(performance.now() * .001);
    if (!filming) controls.update();
    adapt(performance.now());
