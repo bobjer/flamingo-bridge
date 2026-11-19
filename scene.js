@@ -541,6 +541,10 @@ export function landscape(view) {
  }
  return {
   scene, zoom, pick, deckTop, setDeckHoles,
+  bridgeClearance(x,z) {
+   if (Math.min(Math.abs(z), Math.abs(z + 6)) > 2.8) return 0;
+   return Math.max(deckTop(x) + 2, arch(x) + .8);
+  },
   cameraPosition:()=>camera.position.toArray(),
   heading:()=>controls.getAzimuthalAngle(),
   restoreCamera(p){camera.position.fromArray(p);controls.update();prevDist=camera.position.distanceTo(controls.target)},

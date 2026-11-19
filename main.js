@@ -315,14 +315,9 @@ const nightLevel=()=>1-world.daylight();
 let flakTimer=0;
 {const v=$('view'),b=document.createElement('div'),tag=document.createElement('div'),hint=document.createElement('div');b.className='cine-bottom';tag.className='cine-tag';hint.className='cine-hint';v.append(b,tag,hint);
  const label=()=>{tag.textContent=tr('ПОВТОР · ×0.15','REPLAY · ×0.15');hint.textContent=tr('клік — пропустити','click to skip')};label();document.addEventListener('siege-language',label)}
-// Billowing smoke and fire behind the WASTED card (pure CSS: transforms and opacity only).
+// Static results backdrop, shown after the collapse shot.
 const defeatFx=document.createElement('div');defeatFx.className='defeat-fx';defeatFx.hidden=true;defeatFx.setAttribute('aria-hidden','true');
-{const r=(a,b)=>(a+Math.random()*(b-a)).toFixed(2);
- const puff=(cls,n,style)=>{for(let i=0;i<n;i++){const s=document.createElement('i');s.className=cls;s.style.cssText=style(i,n);defeatFx.append(s)}};
- puff('smoke',20,(i,n)=>`left:${r(-10,95)}%;--s:${r(.8,1.6)};--d:${r(7,12)}s;animation-delay:-${r(0,12)}s;--x:${r(-14,14)}vw;--g:${r(.55,.9)}`);
- puff('flame',14,(i,n)=>`left:${(i/(n-1)*100-12+Math.random()*8).toFixed(1)}%;--s:${r(.7,1.5)};--b:${r(6,22)}vh;--d:${r(1.1,2)}s;animation-delay:-${r(0,2)}s`);
- puff('ember',22,()=>`left:${r(0,100)}%;--d:${r(3,6)}s;animation-delay:-${r(0,6)}s;--x:${r(-8,8)}vw`);
- $('defeat-card').before(defeatFx)}
+$('defeat-card').before(defeatFx);
 // Arch collapse: the deck slaps the strait, spray everywhere, and the wreck keeps burning.
 const collapseFires=[];
 function ignite(withSplash=true){
@@ -527,8 +522,9 @@ waveElapsed=0;untilSpawn=0;
 function toggle(){if(phase==='live'){paused=!paused;ui()}}
 $('resume-game').onclick=toggle;
 $('pause').onclick=toggle;$('start').onclick=()=>{if(phase==='over')confirmNewGame();else if(phase==='buy'){for(const s of scouts)world.scene.remove(s.m);scouts.length=0;phase='live';nextWave()}else toggle()};$('plus').onclick=()=>world.zoom(.83);$('minus').onclick=()=>world.zoom(1.2);
+const FLIERS=new Set(['drone','bird','flamingo','loaf']);
 function spawn(k,deckX=null){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x=Math.cos(a)*r,z=Math.sin(a)*r,y=.35;if(k==='neptune'){z=Math.max(11,Math.abs(z));x*=.48}
- if(k==='drone'||k==='bird'||k==='flamingo'||k==='loaf')y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
+ if(FLIERS.has(k))y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
  if(deckX!==null){x=deckX;z=5+Math.random()*2;y=5}
  const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.6);const stats={drone:[3,2.7],loaf:[3,2.2],baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=gameTargets(k);
  const target=Math.random()<(k==='baby'?.82:k==='loaf'?.75:.65)?candidates[Math.floor(Math.random()*candidates.length)]:null;
@@ -891,7 +887,7 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
   }
   e.m.rotation.y=Math.atan2(-dz,dx);const travel=Math.min(d,dt*e.speed);p.x+=dx/d*travel;p.z+=dz/d*travel;
   p.y=(e.k==='loaf'||e.deckX!=null)&&!retreat?T.MathUtils.lerp(e.target?e.target.m.position.y+.6:3.27,e.y,T.MathUtils.clamp((d-1.3)/7,0,1)):(dest&&e.k==='bird'?T.MathUtils.lerp(dest.y+.65,e.y,Math.min(1,d/7)):e.y)+Math.sin(time*3+e.angle)*.18;
-  if(e.deckX==null&&FLIERS.has(e.k)&&(e.target||retreat))p.y=Math.max(p.y,bridgeClearance(p.x,p.z)); // never fly through the decks, lamps or arch
+  if(e.deckX==null&&FLIERS.has(e.k)&&(e.target||retreat))p.y=Math.max(p.y,world.bridgeClearance(p.x,p.z)); // never fly through the decks, lamps or arch
   flap(e.m,time+e.angle)}
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.m.position.lerp(e.to,Math.min(1,dt/e.life));e.life-=dt;if(e.life<=0){world.scene.remove(e.m);effects.splice(i,1)}}
  if(hits<3&&waveElapsed>=17&&(!enemies.length||waveElapsed>=37)){
