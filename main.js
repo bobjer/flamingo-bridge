@@ -90,7 +90,8 @@ const reserves = {easy: 7000, normal: 4500, hard: 2600};
 let reserve, waveDamage;
 const BREAK_SECONDS=8;
 let waveElapsed=0,breakLeft=0,die=1;
-let autoplay=false,botDelay=0;
+let autoplay=false,botDelay=0,nextDeckWave=0;
+const deckInterval=()=>3+Math.floor(Math.random()*2);
 const intensity=()=>wave%9===0?1.9+die*.09:.65+die*.115;
 function waveHud(){
  $('watch-game').textContent=autoplay?tr('До моєї гри','Return to my game'):tr('Автогра ▸','Watch autoplay ▸');
@@ -100,7 +101,7 @@ function waveHud(){
 }
 function watchGame(){
  if(autoplay){location.reload();return}
- saveMatch();autoplay=true;reset();
+ saveMatch();autoplay=true;nextDeckWave=deckInterval();reset();
  cash=5000;
  for(const k of Object.keys(techs))tech[k]=3;
  for(const k of ['sam','cruiser','pantsir','dolphin'])purchase(k);
@@ -361,10 +362,16 @@ function arcadeHud(){
   if(msg.textContent!==text)msg.textContent=text;
   act.hidden=!action;act.textContent=label??'';act.onclick=action??null;
  }
+ const card=$('defeat-card');card.hidden=phase!=='over';
  if(phase==='over'){
   const cost=(partialLedger?tr('щонайменше ','at least '):'')+money(spent);
   const verdict=tr('Вітаю! Ви вгатили '+cost+' з бюджету. Відбито цілей — '+score+'. А міст усе одно булькнув.','Congratulations! You blew '+cost+' of the budget. Targets repelled: '+score+'. The bridge went splash anyway.');
-  return order(verdict,autoplay?undefined:tr('Нова гра','New game'),autoplay?undefined:confirmNewGame);
+  card.querySelector('h2').textContent=tr('ПОТРАЧЕНО','WASTED');
+  card.querySelector('p').textContent=verdict;
+  const button=card.querySelector('button');
+  button.textContent=autoplay?tr('До моєї гри','Return to my game'):tr('Нова гра','New game');
+  button.onclick=autoplay?watchGame:confirmNewGame;
+  return order(tr('Арка впала · хвиля ','Arch collapsed · wave ')+wave);
  }
  if(autoplay)return order(tr('Автогра','Autoplay'));
  if(paused)return order(tr('Партія на паузі.','Game paused.'),tr('Продовжити ▸','Resume ▸'),toggle);
@@ -412,17 +419,23 @@ function nextWave(){
  signalPenalty=seaCosts=jamLoss=waveVictims=0;arrivals=checks=caught=0;showTraffic();
  waveDamage=0;
  wave++;die=1+Math.floor(Math.random()*6);waveElapsed=0;untilSpawn=0;
+ if(autoplay&&wave===nextDeckWave){
+  const n=1+Math.floor(Math.random()*2);
+  for(let i=0;i<n;i++)spawn('flamingo',(i?-1:1)*(14+Math.random()*6));
+  nextDeckWave+=deckInterval();
+ }
  ui();
 }
 function toggle(){if(phase==='live'){paused=!paused;ui()}}
 $('resume-game').onclick=toggle;
 $('pause').onclick=toggle;$('start').onclick=()=>{if(phase==='over')confirmNewGame();else if(phase==='buy'){for(const s of scouts)world.scene.remove(s.m);scouts.length=0;phase='live';nextWave()}else toggle()};$('plus').onclick=()=>world.zoom(.83);$('minus').onclick=()=>world.zoom(1.2);
-function spawn(k){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x=Math.cos(a)*r,z=Math.sin(a)*r,y=.35;if(k==='neptune'){z=Math.max(11,Math.abs(z));x*=.48}
+function spawn(k,deckX=null){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x=Math.cos(a)*r,z=Math.sin(a)*r,y=.35;if(k==='neptune'){z=Math.max(11,Math.abs(z));x*=.48}
  if(k==='drone'||k==='bird'||k==='flamingo'||k==='loaf')y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
+ if(deckX!==null){x=deckX;z=5+Math.random()*2;y=5}
  const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.6);const stats={drone:[3,2.7],loaf:[3,2.2],baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=gameTargets(k);
  const target=Math.random()<(k==='baby'?.82:.65)?candidates[Math.floor(Math.random()*candidates.length)]:null;
  const ships=units.filter(u=>u.k==='cruiser'),prey=k==='neptune'&&ships.length&&Math.random()<.6?ships[Math.floor(Math.random()*ships.length)]:null;
- enemies.push({m,k,y,target,prey,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:Math.max(1,Math.round((stats[0]+Math.floor((wave-1)/4))*(.75+.25*intensity()))),speed:stats[1]*(1+wave*.018),angle:a});}
+ enemies.push({m,k,y,deckX,target,prey,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:Math.max(1,Math.round((stats[0]+Math.floor((wave-1)/4))*(.75+.25*intensity()))),speed:stats[1]*(1+wave*.018),angle:a});}
 function gameTargets(kind){
  return units.filter(u=>(u.k==='cruiser'&&(kind==='baby'||kind==='bird'))||((u.k==='sam'||u.k==='pantsir')&&kind==='bird'));
 }
@@ -597,7 +610,7 @@ function step(dt){
    for(let i=0;i<flock;i++)spawn('flamingo');
   }
   untilSpawn=Math.max(.32,1.9/((1+.12*wave)*intensity()))}
- for(const u of units){if(unpaid<=0)continue;u.cd-=dt;if(u.cd>0||u.ammo===0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.hp>fx.pendingDamage(e)&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range))){closest=d;target=e}}
+ for(const u of units){if(unpaid<=0)continue;u.cd-=dt;if(u.cd>0||u.ammo===0)continue;let target=null,closest=Infinity;for(const e of enemies){if(u.k==='dolphin'&&e.k!=='baby')continue;const d=Math.hypot(e.m.position.x,e.m.position.z);if(e.deckX==null&&e.hp>fx.pendingDamage(e)&&d<closest&&(u.k==='sam'?world.onScreen(e.m.position):u.m.position.distanceTo(e.m.position)<(u.k==='dolphin'?10:u.k==='pantsir'?14:17)*(1+.12*tech.range))){closest=d;target=e}}
  if(flyby?.confused&&flyby.hp>0&&!flyby.flight&&u.k==='sam'&&!fx.pendingDamage(flyby)&&world.onScreen(flyby.m.position))target=flyby;
  if(target){const p=u.m.position,to=target.m.position;u.m.rotation.y=Math.atan2(p.z-to.z,to.x-p.x);const damage=specs[u.k][2]*(1+.3*tech.dmg);u.cd=specs[u.k][3]*Math.pow(.85,tech.rate)/unpaid;if(magazine[u.k]){u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(target===flyby){flyby.flight=flight;flight.filmContact=true;flyby.anchor=flyby.anchor??new T.Object3D();flyby.anchor.position.lerpVectors(flight.rocket.position,flyby.m.position,.6);world.cinematic(flyby.anchor.position.clone(),2,{bomb:true,follow:flyby.anchor,radius:13,height:2.2})}continue}target.hp-=damage;fx.tracer(p.clone().setY(p.y+.9),to.clone(),nightLevel())}}
  const offline=orders.net.end>time,retreat=orders.gps.end>time;
@@ -651,7 +664,7 @@ function step(dt){
    continue;
   }
   if(e.k==='neptune'){e.swing=0;e.m.userData.trident.rotation.z=0}
-  const aim=destination(e,offline),dest=retreat?e.exitPoint:aim;
+  const aim=e.deckX!=null?{x:e.deckX,y:3.23,z:0}:destination(e,offline),dest=retreat?e.exitPoint:aim;
   const dx=(dest?.x??0)-p.x,dz=(dest?.z??0)-p.z,d=Math.hypot(dx,dz);
   const actual=e.target?.m.position;
   const missed=offline&&((e.target&&!units.includes(e.target))||Math.hypot(p.x-(actual?.x??0),p.z-(actual?.z??0))>1.3);
@@ -685,12 +698,17 @@ function step(dt){
     fx.crumbs(p);damageDeck(8,p);
     for(const v of vehicles)v.hold=Math.max(v.hold,4);
     writeMessage(()=>tr("Паляниця розсипалася! Вантажівки стоять 4 секунди.","The loaf burst into crumbs! Trucks stop for 4 seconds."));
+   }else if(e.k==='flamingo'&&e.deckX!=null){
+    const point=new T.Vector3(e.deckX,3.23,0);
+    fx.explosion(point,1);damageDeck(12,point);
+   }else if(e.k==='flamingo'&&autoplay&&Math.random()>.055){
+    fx.feathers(p,0xff86ac);
    }else if(e.k==='flamingo'){hits=Math.min(3,hits+1);world.cinematic(p.clone(),hits>=3?2:1.5);world.setHits(hits);damageDeck(12,p);hype+=25;casualties(new T.Vector3())}
    else{const loss=damageDeck(e.k==='neptune'?23:6,p);if(loss)casualties(e.m.position)}
    world.scene.remove(e.m);enemies.splice(i,1);ui();continue;
   }
   e.m.rotation.y=Math.atan2(-dz,dx);const travel=dt*e.speed;p.x+=dx/d*travel;p.z+=dz/d*travel;
-  p.y=e.k==='loaf'&&!retreat?T.MathUtils.lerp(3.27,e.y,T.MathUtils.clamp((d-1.3)/7,0,1)):(dest&&e.k==='bird'?T.MathUtils.lerp(dest.y+.65,e.y,Math.min(1,d/7)):e.y)+Math.sin(time*3+e.angle)*.18;
+  p.y=(e.k==='loaf'||e.deckX!=null)&&!retreat?T.MathUtils.lerp(3.27,e.y,T.MathUtils.clamp((d-1.3)/7,0,1)):(dest&&e.k==='bird'?T.MathUtils.lerp(dest.y+.65,e.y,Math.min(1,d/7)):e.y)+Math.sin(time*3+e.angle)*.18;
   flap(e.m,time+e.angle)}
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.m.position.lerp(e.to,Math.min(1,dt/e.life));e.life-=dt;if(e.life<=0){world.scene.remove(e.m);effects.splice(i,1)}}
  if(hits<3&&waveElapsed>=17&&(!enemies.length||waveElapsed>=37)){

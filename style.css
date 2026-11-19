@@ -328,3 +328,8 @@ canvas{display:block;position:absolute;inset:0;width:100%;height:100%;touch-acti
  .arcade-order{flex-wrap:wrap}
 }
 html{touch-action:pan-x pan-y}
+
+#defeat-card{position:absolute;inset:50% auto auto 50%;transform:translate(-50%,-50%);z-index:15;width:min(430px,92%);padding:14px 20px;text-align:center;color:#fff;background:#101318ed;border-block:2px solid #d45850;box-shadow:0 8px 36px #0009;animation:defeat-in .8s ease-out both}
+#defeat-card h2{margin:0;color:#ef665d;font:900 clamp(26px,5vw,54px)/1.15 var(--display);letter-spacing:.03em;text-shadow:2px 3px #000}
+#defeat-card p{margin:8px 0}#defeat-card button{background:var(--accent);color:#15171b;padding:7px 14px;border:0;font-weight:700}
+@keyframes defeat-in{from{opacity:0}to{opacity:1}}
