@@ -10,8 +10,8 @@ export async function records(request, db) {
   const name=typeof row?.name==='string'?row.name.trim():'';
   if(!name||name.length>24||/[\u0000-\u001f\u007f]/u.test(name)||!uuid.test(row.id)||
      ![row.wave,row.score].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=1e7)||row.wave<1)return reply({},400);
-  await db.prepare('INSERT INTO records VALUES (?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(row.id,name,difficulty,row.wave,row.score).run();
+  await db.prepare('INSERT INTO records (id,name,difficulty,wave,score,assisted) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(row.id,name,difficulty,row.wave,row.score,Number(row.assisted===true)).run();
  }else if(request.method!=='GET')return reply({},405);
- const {results}=await db.prepare('SELECT name,wave,score FROM records WHERE difficulty=? ORDER BY wave DESC,score DESC,rowid LIMIT 10').bind(difficulty).all();
+ const {results}=await db.prepare('SELECT name,wave,score,assisted FROM records WHERE difficulty=? ORDER BY wave DESC,score DESC,rowid LIMIT 10').bind(difficulty).all();
  return reply(results);
 }
