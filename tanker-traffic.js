@@ -49,6 +49,7 @@ export function tankerTraffic(scene) {
     ship.position.z=((progress%52)-26)*(i%2?-1:1);
    });
   },
+  near(p,margin=3){return tanks.find(s=>s.visible&&Math.abs(s.position.x-p.x)<1.35+margin&&Math.abs(s.position.z-p.z)<3.4+margin)??null},
   collide(p,time){
    const ship=tanks.find(s=>s.visible&&Math.abs(s.position.x-p.x)<1.35&&Math.abs(s.position.z-p.z)<3.4);
    if(!ship)return false;

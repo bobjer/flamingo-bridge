@@ -548,6 +548,7 @@ function step(dt){
   for(const order of Object.values(orders))if(order!==orders.smoke&&order.end>time)order.end+=elapsed;
   time+=elapsed;breakLeft=Math.max(0,breakLeft-elapsed);
   advanceTraffic(time-elapsed,time);moveShips(elapsed);showBreak();showSignals();
+  fx.tick(elapsed,[]);fx.smolder(elapsed,damageSpots); // let smoke and debris settle during the break
   if(breakLeft===0){nextWave();if(wave%4===0)spawn('neptune');if(!flyby&&wave>=4){
    const roll=Math.random();
    const type=roll<.3?'jet':roll<.5?'helicopter':null;
@@ -635,8 +636,11 @@ function step(dt){
    $('caption').textContent=crashed.has(e)?tr("ЗІТКНЕННЯ","COLLISION"):retreat?tr("ЦІЛЬ ЗАЛИШИЛА ЗОНУ","TARGET LEFT THE AREA"):tr("ПРОМАХ","MISS");
    continue;
   }
+  if(e.k==='baby'&&e.hp>0&&!e.filmed&&tankers.near(p,3.2)){e.filmed=true;world.cinematic(p.clone(),2,{bomb:true,follow:e.m,lift:.6,radius:7.5,height:2.4})}
   if(e.k==='baby'&&e.hp>0&&tankers.collide(p,time)){
-   fx.burst(p);crashArt.splash(p);fx.splash(p,1.4);world.cinematic(p.clone(),1.1);
+   const blast=p.clone().setY(.9);world.cinematicBoom(blast);
+   fx.explosion(blast,2.6);fx.explosion(blast.clone().add(new T.Vector3(0,.4,1.4)),1.6);fx.explosion(blast.clone().add(new T.Vector3(0,.3,-1.5)),1.5);
+   fx.wreck(blast,Math.random()<.5?1:-1);crashArt.splash(p);fx.splash(p,2.2);
    e.m.removeFromParent();enemies.splice(i,1);
    writeMessage(()=>tr('Пупс врізався в танкер. Нафтова пляма зникне за дві доби.','A baby hit an oil tanker. The slick will clear in two days.'));
    continue;
