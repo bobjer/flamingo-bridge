@@ -353,11 +353,15 @@ export function landscape(view) {
   uniform float storm; uniform vec4 ring; varying float vCrest; varying float vRing; varying float vRoll;
   // the 'ninth wave': long peaked rollers marching across the strait
   float roller(vec2 p, float t) { float s = .5 + .5 * sin(dot(p, vec2(.078, .208)) - t * .8); return s * s * s * s; }
+  float spitD(vec2 p) {
+   float ax = abs(p.x); vec2 d = vec2((ax - 46.) / 33., (p.y - 7.) / 17.); float r = max(length(d), 1e-4);
+   return min((1. - r) * r / length(d / vec2(33., 17.)), ax - 15.5);
+  }
   float swell(vec2 p, float t) {
    return sin(dot(p, vec2(.21, .13)) + t * 1.3) * .5 + sin(dot(p, vec2(-.11, .27)) + t * 1.7) * .32 + sin(dot(p, vec2(.37, -.19)) + t * 2.3) * .18;
   }`;
  water.material.vertexShader = water.material.vertexShader
-  .replace('void main() {', SWELL + '\nvoid main() {\n vec3 pos = position;\n float fade = 1. - smoothstep(110., 155., length(pos.xy));\n float h = swell(vec2(pos.x, -pos.y), time * 3.) * fade;\n float r = roller(vec2(pos.x, -pos.y), time * 3.) * fade; vRoll = r;\n pos.z += storm * (.55 * h + 1.55 * r - .3 * fade); vCrest = h;\n vRing = 0.;\n if (ring.z >= 0.) { float rr = ring.z * 9., dd = length(vec2(pos.x, -pos.y) - ring.xy); vRing = exp(-pow((dd - rr) / (2.2 + ring.z * .5), 2.)) * exp(-ring.z * .22) * fade; pos.z += ring.w * vRing; }')
+  .replace('void main() {', SWELL + '\nvoid main() {\n vec3 pos = position;\n float fade = 1. - smoothstep(110., 155., length(pos.xy));\n float h = swell(vec2(pos.x, -pos.y), time * 3.) * fade;\n float sd = spitD(vec2(pos.x, -pos.y));\n float shore = (1. + .45 * smoothstep(-10., -1.5, sd)) * (1. - smoothstep(-1.8, .6, sd));\n float r = roller(vec2(pos.x, -pos.y), time * 3.) * fade * shore; vRoll = r;\n pos.z += storm * (.55 * h * shore + 1.55 * r - .3 * fade); vCrest = h;\n vRing = 0.;\n if (ring.z >= 0.) { float rr = ring.z * 9., dd = length(vec2(pos.x, -pos.y) - ring.xy); vRing = exp(-pow((dd - rr) / (2.2 + ring.z * .5), 2.)) * exp(-ring.z * .22) * fade; pos.z += ring.w * vRing; }')
   .replace('mirrorCoord = modelMatrix * vec4( position, 1.0 );', 'mirrorCoord = modelMatrix * vec4( pos, 1.0 );')
   .replace('vec4 mvPosition =  modelViewMatrix * vec4( position, 1.0 );', 'vec4 mvPosition = modelViewMatrix * vec4( pos, 1.0 );');
  water.material.fragmentShader = water.material.fragmentShader
@@ -392,7 +396,10 @@ export function landscape(view) {
     float light = clamp(length(sunColor) * 1.3, .25, 1.);
     outgoingLight = mix(outgoingLight, vec3(.2, .52, .42) * light * (.8 + .4 * vnoise(worldPosition.xz * .3 + time)), storm * face * .55);
     float crest = smoothstep(.84, .97, vRoll) * smoothstep(.35, .65, vnoise(worldPosition.xz * vec2(.9, 2.2) + vec2(time * 2., 0.)));
-    float surge = smoothstep(-2., 1.5, spit(worldPosition.xz)) * smoothstep(.3, .8, vRoll) * (.55 + .45 * vnoise(worldPosition.xz * 1.8 + time * 1.5));
+    // breakers: a churned white band where the rollers trip on the shallows in front of the beach
+    float sd = spit(worldPosition.xz);
+    float raw = .5 + .5 * sin(dot(worldPosition.xz, vec2(.078, .208)) - time * 3. * .8); raw = raw * raw * raw * raw;
+    float surge = smoothstep(-5., -1.2, sd) * (1. - smoothstep(-.6, .4, sd)) * smoothstep(.45, .85, raw) * (.5 + .5 * vnoise(worldPosition.xz * 1.8 + time * 1.5));
     outgoingLight = mix(outgoingLight, vec3(.9, .93, .9) * light, storm * max(crest * .9, surge * .85));
    }
    if (vRing > .02) {
@@ -463,7 +470,7 @@ export function landscape(view) {
  const daySun=new T.Color(0xfff0dc),sunset=new T.Color(0xffa56d),nightHaze=new T.Color(0x162a49),nightWater=new T.Color(0x163d51),dayWater=new T.Color(0x2aa3ad);
  let daylight = 1;
  // weather: 0 = calm, 1 = full storm; eases toward the target so the sea builds up and settles
- let storm = 0, stormTarget = 0, waveClock = 0, lastDraw = 0;
+ let wet = 0, storm = 0, stormTarget = 0, waveClock = 0, lastDraw = 0;
  const stormWater = new T.Color(0x2b564c), stormHaze = new T.Color(0x8b9182);
  const rollerAt = (x, z, t) => { const s = .5 + .5 * Math.sin(x * .078 + z * .208 - t * .8); return s * s * s * s; };
  const swellAt = (x, z, t) => Math.sin(x * .21 + z * .13 + t * 1.3) * .5 + Math.sin(x * -.11 + z * .27 + t * 1.7) * .32 + Math.sin(x * .37 + z * -.19 + t * 2.3) * .18;
@@ -664,7 +671,8 @@ export function landscape(view) {
    boat.position.y = .08 + Math.sin(performance.now() * .0012) * .04;
    boat.rotation.z = Math.sin(performance.now() * .0009) * .05;
    water.material.uniforms.time.value = waveClock;
-   land.update(performance.now() * .001);
+   wet = T.MathUtils.clamp(wet + realDt * (storm > .35 ? .07 * storm : -.009), 0, 1);
+   land.update(performance.now() * .001, storm, wet, waveClock * 3);
    if (!filming) controls.update();
    adapt(performance.now());
    renderer.shadowMap.needsUpdate = (shadowTick++ & 1) === 0 || !!cine;

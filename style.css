@@ -566,3 +566,6 @@ body[data-phase=buy] .m-dock-btn[data-tab=arsenal]{color:var(--fg)}
 
 .defeat-quote{--i:2;margin:8px 4px 12px;color:var(--fg);font:italic 15px/1.4 var(--body)}
 .defeat-quote small{display:block;margin-top:2px;color:var(--muted);font:12px/1.4 var(--mono)}
+
+.coffee-note{margin:12px 0 0;font:14px/1.5 var(--body);color:var(--fg)}
+.coffee-note a{color:var(--accent);text-underline-offset:3px}

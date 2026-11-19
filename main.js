@@ -450,6 +450,8 @@ function arcadeHud(){
   const button=card.querySelector('button');
   button.textContent=tr('Нова гра','New game');
   button.onclick=confirmNewGame;
+  card.querySelector('.coffee-note span').textContent=tr('Посміялися чи просто залипли ще на одну хвилю?', 'Had a laugh or stayed for one more wave?');
+  card.querySelector('.coffee-note a').textContent=tr('Пригостіть мене кавою ☕', 'Buy me a coffee ☕');
   showRecords(card,{id:runId,difficulty:$('difficulty').value,wave,score,assisted});
   return order(tr('Арка впала · хвиля ','Arch collapsed · wave ')+wave);
  }
@@ -577,13 +579,13 @@ let sinkingBannerEnd=0;
 // Ride the storm swell: ships, dolphins and barges heave and roll with the sea.
 // Points along the sandy spits where storm breakers burst into spray.
 const surfLine=[];
-for(const side of [-1,1])for(let i=0;i<22;i++){const a=i/22*Math.PI*2,x=46+33*Math.cos(a),z=7+17*Math.sin(a);if(x>17)surfLine.push({p:new T.Vector3(side*x,0,z),next:0})}
+for(const side of [-1,1])for(let i=0;i<26;i++){const a=i/26*Math.PI*2,x=46+34*Math.cos(a),z=7+18*Math.sin(a);if(x>17)surfLine.push({p:new T.Vector3(side*x,0,z),dir:new T.Vector3(-side*Math.cos(a)/34,0,-Math.sin(a)/18).normalize(),next:0})}
 function surf(){
  if(phase!=='live'||world.stormLevel()<.3)return;
  const now=performance.now();
  for(const s of surfLine){
   if(now<s.next)continue;
-  if(world.wave(s.p.x,s.p.z).crest>.82){s.next=now+1600+Math.random()*900;fx.splash(s.p.clone().setY(.6),1.1+Math.random()*.9)}
+  if(world.wave(s.p.x,s.p.z).crest>.8){s.next=now+1500+Math.random()*900;fx.breaker(s.p,s.dir,1.1+Math.random()*.8)}
  }
 }
 function floatOnSea(){

@@ -204,6 +204,17 @@ export function fireworks(scene){
    spray.emit({pos:p.clone().add(around(.8*k)).setY(.4+rnd()*k),v:around(.8).add(v3(0,.6,0)),drag:1,life:1.8+rnd()*1.4,s0:1*k,s1:3.4*k,c0:C(0xffffff,1.4),alpha:.35,fadeIn:.15});
   ring(p,k,0);ring(p,k*.7,.25);ring(p,k*.5,.55);
  }
+ // A breaker slamming into the beach: a curtain of spray thrown up and landward along the shoreline.
+ function breaker(p,dir,k=1){
+  const side=v3(-dir.z,0,dir.x);
+  for(let i=0;i<Math.round(38*k);i++){
+   const along=(rnd()-.5)*3.2*k,up=5+rnd()*6*Math.sqrt(k),fwd=1.5+rnd()*3;
+   spray.emit({pos:v3(p.x,.35,p.z).addScaledVector(side,along),v:v3(dir.x*fwd,up,dir.z*fwd).add(around(.6)),gravity:11,drag:.5,
+    life:1+rnd()*.6,s0:.3*k,s1:(.8+rnd()*.8)*k,grow:1.4,c0:C(0xf3fbff,1.5),c1:C(0xd2e6e8,1.2),alpha:.72,fadeIn:.03,fadePow:1.7});
+  }
+  for(let i=0;i<Math.round(9*k);i++)
+   spray.emit({pos:v3(p.x,.8+rnd()*k,p.z).addScaledVector(side,(rnd()-.5)*3*k),v:v3(dir.x,.7,dir.z).add(around(.5)),drag:1,life:2+rnd()*1.5,s0:1*k,s1:3.2*k,c0:C(0xffffff,1.35),alpha:.3,fadeIn:.15});
+ }
  const ringGeo=new T.PlaneGeometry(1,1);
  function ring(p,k,delay){
   const m=new T.Mesh(ringGeo,new T.MeshBasicMaterial({map:foamTex,transparent:true,depthWrite:false,opacity:0,color:new T.Color(1.3,1.35,1.35)}));
@@ -396,7 +407,7 @@ export function fireworks(scene){
   reset();for(const d of decals){d.m.removeFromParent();d.m.material.dispose()}decals.length=0;for(const c of chunks)c.m.removeFromParent();chunks.length=0;
   for(const f of flashes)f.l.intensity=0;flashes.length=0;smoke.reset();spray.reset();fire.reset();glow.reset();
  }
- return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,flak,kill,feathers,wreck,throwCar,breakup,burnTrail,blaze,sparks,
+ return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,flak,kill,feathers,wreck,throwCar,breakup,burnTrail,blaze,sparks,breaker,
   burst:p=>explosion(p,1.5),
   pendingDamage(target){return flights.reduce((sum,f)=>sum+(f.target===target?f.damage:0),0)},
   snapshot(enemies){return flights.filter(f=>enemies.includes(f.target)).map(f=>({origin:f.origin.toArray(),target:enemies.indexOf(f.target),damage:f.damage,age:f.age,duration:f.duration,position:f.rocket.position.toArray()}))},

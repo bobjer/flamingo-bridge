@@ -125,15 +125,42 @@ vec3 landColor(vec2 p, float d, float h, float px) {
 }
 `;
 
+// weather shared with the land shader: storm level, accumulated wetness, roller clock (same phase as the sea)
+const weather = {uStorm: {value: 0}, uWet: {value: 0}, uRoll: {value: 0}};
+const WEATHER_FRAG = /* glsl */`
+uniform float uStorm, uWet, uRoll;
+float wetBeach(vec2 p, float dd, float px, inout vec3 c) {
+ // run-up: each breaker pushes a foamy sheet of water up the sand, then it drains back
+ float fade = 1. - smoothstep(110., 155., length(p));
+ float s = .5 + .5 * sin(dot(p, vec2(.078, .208)) - uRoll * .8), r = s * s * s * s;
+ float back = .5 + .5 * sin(dot(p, vec2(.078, .208)) - uRoll * .8 + .9); // the sheet lags the crest a little
+ float reach = uStorm * fade * (1.2 + 5.5 * r + 2.2 * back * back * back);
+ float edge = reach + (vn(p * .7 + uRoll * .3) - .5) * 1.4;
+ float sheet = (1. - smoothstep(edge - 1.4, edge, dd)) * step(0., dd) * step(.2, reach);
+ float lace = (1. - smoothstep(0., .9, abs(dd - edge + .35))) * smoothstep(.4, .7, vn(p * 2.4 + uRoll));
+ // wet sand, mud and puddles left behind; they dry long after the storm
+ float zone = 1. - smoothstep(3., 10. + 4. * fbm3(p * .07), dd);
+ float wet = clamp(uWet * zone + sheet * .8, 0., 1.);
+ c = mix(c, c * vec3(.58, .56, .52), wet * .85);
+ float mud = uWet * zone * smoothstep(.45, .7, fbm3(p * .09 + 31.));
+ c = mix(c, S(vec3(.33, .27, .19)), mud * .55);
+ float pud = uWet * zone * smoothstep(.63, .7, fbm3(p * .21 + 5.)) * lod(px, .3);
+ c = mix(c, S(vec3(.30, .38, .40)), pud * .85);
+ c = mix(c, mix(S(vec3(.42, .58, .55)), S(vec3(.93, .96, .95)), lace), sheet * (.55 + .4 * lace));
+ return max(pud, sheet * .6);
+}
+`;
 function landMaterial() {
  const mat = new T.MeshStandardMaterial({roughness: 1, metalness: 0});
  mat.onBeforeCompile = sh => {
+  Object.assign(sh.uniforms, weather);
   sh.vertexShader = sh.vertexShader
    .replace('#include <common>', '#include <common>\nattribute float coastD;\nvarying float vD;\nvarying vec3 vW;')
    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvD = coastD;\nvW = (modelMatrix * vec4(position, 1.)).xyz;');
   sh.fragmentShader = sh.fragmentShader
-   .replace('#include <common>', '#include <common>\nvarying float vD;\nvarying vec3 vW;\n' + NOISE + LAND_FRAG)
-   .replace('#include <color_fragment>', 'float px = length(fwidth(vW.xz));\ndiffuseColor.rgb = landColor(vW.xz, vD, vW.y, px);');
+   .replace('#include <common>', '#include <common>\nvarying float vD;\nvarying vec3 vW;\n' + NOISE + LAND_FRAG + WEATHER_FRAG)
+   .replace('#include <color_fragment>', 'float px = length(fwidth(vW.xz));\ndiffuseColor.rgb = landColor(vW.xz, vD, vW.y, px);\nfloat gloss = 0.;\nif (vD < 14. && (uWet > .01 || uStorm > .01)) { float dd = vD + coastJitter(vW.xz, px); gloss = wetBeach(vW.xz, dd, px, diffuseColor.rgb); }')
+   .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, .12, gloss);');
  };
  return mat;
 }
@@ -255,5 +282,5 @@ export function buildLand(scene) {
  // layer 1: drawn by the main camera, skipped by the water's reflection pass (saves a full land render)
  g.traverse(o => o.layers.set(1));
  scene.add(g);
- return {group: g, update(t) { time.value = t; }};
+ return {group: g, update(t, storm = 0, wet = 0, roll = 0) { time.value = t; weather.uStorm.value = storm; weather.uWet.value = wet; weather.uRoll.value = roll; }};
 }
