@@ -481,6 +481,16 @@ function nextWave(){
   for(let i=0;i<n;i++){const k=Math.random()<.35?'loaf':'flamingo';spawn(k,(i?-1:1)*(14+Math.random()*6));if(k==='flamingo'&&Math.random()<.5)Object.assign(enemies.at(-1),{rail:true,railWait:0})}
   nextDeckWave+=deckInterval();
  }
+ if(wave%5===0){
+  const stations=units.filter(u=>u.k==='sam'||u.k==='pantsir');
+  if(stations.length){
+   const station=stations[Math.floor(Math.random()*stations.length)];
+   const actor=spawn(Math.random()<.5?'loaf':'neptune');
+   const bread=actor.k==='loaf',point=station.m.position;
+   actor.m.position.set(point.x,bread?4.2:.35,point.z+(point.z<0?-1:1)*(bread?5:6));
+   if(bread)actor.target=station;else actor.prey=station;
+  }
+ }
  ui();
 }
 function toggle(){if(phase==='live'){paused=!paused;ui()}}
@@ -492,7 +502,8 @@ function spawn(k,deckX=null){let a=Math.random()*Math.PI*2;const r=23+Math.rando
  const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.6);const stats={drone:[3,2.7],loaf:[3,2.2],baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=gameTargets(k);
  const target=Math.random()<(k==='baby'?.82:.65)?candidates[Math.floor(Math.random()*candidates.length)]:null;
  const ships=units.filter(u=>u.k==='cruiser'),prey=k==='neptune'&&ships.length&&Math.random()<.6?ships[Math.floor(Math.random()*ships.length)]:null;
- enemies.push({m,k,y,deckX,target,prey,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:Math.max(1,Math.round((stats[0]+Math.floor((wave-1)/4))*(.75+.25*intensity()))),speed:stats[1]*(1+wave*.018),angle:a});}
+ const enemy={m,k,y,deckX,target,prey,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:Math.max(1,Math.round((stats[0]+Math.floor((wave-1)/4))*(.75+.25*intensity()))),speed:stats[1]*(1+wave*.018),angle:a};
+ enemies.push(enemy);return enemy;}
 function gameTargets(kind){
  return units.filter(u=>(u.k==='cruiser'&&(kind==='baby'||kind==='bird'))||((u.k==='sam'||u.k==='pantsir')&&kind==='bird'));
 }
@@ -519,7 +530,7 @@ const crashArt=ditching(world.scene);
 let flyby=null,tributeUntil=0,tributeDelay=0;
 // Every time the bridge takes a hit, a cartoon dictator throws a tantrum in the corner.
 const tantrum=document.createElement('div');tantrum.className='tribute rage-banner';tantrum.hidden=true;
-tantrum.innerHTML='<svg class="tantrum" viewBox="0 0 100 130" aria-hidden="true"><g class="steam"><circle cx="30" cy="10" r="5"/><circle cx="70" cy="8" r="6"/><circle cx="50" cy="3" r="4"/></g><g class="leg l"><rect x="38" y="98" width="9" height="20" rx="3" fill="#20242c"/><ellipse cx="40" cy="120" rx="9" ry="4.5" fill="#111"/></g><g class="leg r"><rect x="53" y="98" width="9" height="20" rx="3" fill="#20242c"/><ellipse cx="60" cy="120" rx="9" ry="4.5" fill="#111"/></g><path d="M33 66h34l5 34H28z" fill="#272c35"/><path d="M44 66h12l-6 14z" fill="#f2f2f2"/><path d="M48.5 69h3l1.5 16-3 4-3-4z" fill="#b3202a"/><g class="arm l"><path d="M35 69 18 80" stroke="#272c35" stroke-width="8" stroke-linecap="round"/><circle cx="16" cy="82" r="5" fill="#f1c1a0" stroke="#7a3f2c" stroke-width="1.2"/></g><g class="arm r"><path d="M65 69 82 80" stroke="#272c35" stroke-width="8" stroke-linecap="round"/><circle cx="84" cy="82" r="5" fill="#f1c1a0" stroke="#7a3f2c" stroke-width="1.2"/></g><g class="head"><path d="M50 14c17 0 25 13 25 28 0 16-10 27-25 27S25 58 25 42c0-15 8-28 25-28z" fill="#f0a487" stroke="#7a3f2c" stroke-width="1.6"/><path d="M26 40c-1-6 1-11 4-13M74 40c1-6-1-11-4-13" stroke="#c9b9a6" stroke-width="3" fill="none" stroke-linecap="round"/><ellipse cx="36" cy="52" rx="6" ry="3.5" fill="#e0534a" opacity=".55"/><ellipse cx="64" cy="52" rx="6" ry="3.5" fill="#e0534a" opacity=".55"/><path d="M32 33l13 5M68 33l-13 5" stroke="#5a3324" stroke-width="3.2" stroke-linecap="round"/><g class="eye"><ellipse cx="40" cy="43" rx="6.5" ry="5.5" fill="#fff2ee"/><path d="M34 42l4 1M35 46l3-1.5M46 41l-3 1.5M46 45l-3-.5" stroke="#d3262a" stroke-width=".9"/><circle cx="41" cy="43.5" r="2.6" fill="#d01020"/><circle cx="41" cy="43.5" r="1" fill="#2a0000"/></g><g class="eye"><ellipse cx="60" cy="43" rx="6.5" ry="5.5" fill="#fff2ee"/><path d="M66 42l-4 1M65 46l-3-1.5M54 41l3 1.5M54 45l3-.5" stroke="#d3262a" stroke-width=".9"/><circle cx="59" cy="43.5" r="2.6" fill="#d01020"/><circle cx="59" cy="43.5" r="1" fill="#2a0000"/></g><path d="M47 49q3 4 6 0" stroke="#7a3f2c" stroke-width="1.6" fill="none"/><path class="mouth" d="M41 59q9-6 18 0q-9 3-18 0z" fill="#5a1414" stroke="#7a3f2c" stroke-width="1.2"/></g></svg><span></span>';$('view').append(tantrum);
+tantrum.innerHTML='<svg class="tantrum" viewBox="0 0 100 130" aria-hidden="true"><g class="steam"><circle cx="30" cy="10" r="5"/><circle cx="70" cy="8" r="6"/><circle cx="50" cy="3" r="4"/></g><g class="leg l"><rect x="38" y="98" width="9" height="20" rx="3" fill="#20242c"/><ellipse cx="40" cy="120" rx="9" ry="4.5" fill="#111"/></g><g class="leg r"><rect x="53" y="98" width="9" height="20" rx="3" fill="#20242c"/><ellipse cx="60" cy="120" rx="9" ry="4.5" fill="#111"/></g><path d="M33 66h34l5 34H28z" fill="#272c35"/><path d="M44 66h12l-6 14z" fill="#f2f2f2"/><path d="M48.5 69h3l1.5 16-3 4-3-4z" fill="#b3202a"/><g class="arm l"><path d="M35 69 18 80" stroke="#272c35" stroke-width="8" stroke-linecap="round"/><circle cx="16" cy="82" r="5" fill="#f1c1a0" stroke="#7a3f2c" stroke-width="1.2"/></g><g class="arm r"><path d="M65 69 82 80" stroke="#272c35" stroke-width="8" stroke-linecap="round"/><circle cx="84" cy="82" r="5" fill="#f1c1a0" stroke="#7a3f2c" stroke-width="1.2"/></g><image class="head" x="17" y="6" width="66" height="68" href="/putin-face.svg"/></svg><span></span>';$('view').append(tantrum);
 let rageUntil=0,rageReady=0;
 function rage(){
  if(time<rageReady||phase==='over')return;
@@ -713,9 +724,13 @@ function step(dt){
    else if(sw<WIND+SWING){const k=(sw-WIND)/SWING;tr3.rotation.z=.85-2.05*k*k;e.m.rotation.z=.12-.3*k}
    else{const k=Math.min(1,(sw-WIND-SWING)/1);tr3.rotation.z=-1.2*(1-k*k*(3-2*k));e.m.rotation.z=-.18*(1-k)}
    if(before<WIND+SWING&&sw>=WIND+SWING){
-    const u=e.prey,hit=q.clone().setY(1.1);u.hull=Math.max(0,u.hull-2);
-    world.cinematicBoom(hit);fx.explosion(hit,1.9);fx.splash(q,2.4);fx.splash(p.clone().lerp(q,.6),1.2);
-    if(u.hull<=0){removeUnit(u);writeMessage(()=>tr("Нептун розколов крейсер тризубом.","Neptune split the cruiser with his trident."))}
+    const u=e.prey,shore=u.k!=='cruiser',hit=q.clone().setY(shore?q.y+.6:1.1);u.hull=Math.max(0,u.hull-2);
+    world.cinematicBoom(hit);fx.explosion(hit,1.9);if(shore)fx.dust(hit,1.5);else{fx.splash(q,2.4);fx.splash(p.clone().lerp(q,.6),1.2);}
+    if(shore){
+     if(u.hull===0){fx.breakup(u.m,new T.Vector3(0,1,0));removeUnit(u)}
+     writeMessage(()=>getSpecs()[u.k][0]+tr(' · удар тризубом',' · trident strike'));
+     e.prey=null;
+    }else if(u.hull<=0){removeUnit(u);writeMessage(()=>tr("Нептун розколов крейсер тризубом.","Neptune split the cruiser with his trident."))}
     else writeMessage(()=>tr("Нептун ударив по крейсеру · міцність ","Neptune struck the cruiser · hull ")+u.hull);
     ui();
    }
@@ -768,6 +783,10 @@ function step(dt){
    if(e.hp<=0||intercepted){if(e.filmed)world.cinematicCancel(e.m);score++;reward(e.k);if(intercepted)fx.splash(p,.8);else fx.kill(p.clone(),e.k)}
    else if(e.target){
     const u=e.target;
+    if(e.k==='loaf'&&units.includes(u)){
+     const hit=u.m.position.clone();hit.y+=.6;world.cinematicBoom(hit,{subject:e.m});fx.crumbs(hit);fx.explosion(hit,1.7);u.hull=Math.max(1,u.hull-1);
+     if(u.hull===1)fx.breakup(u.m,new T.Vector3(0,1,0));
+    }
     if(e.k==='baby'&&units.includes(u)){const blast=p.clone().setY(.9);world.cinematicBoom(blast);fx.explosion(blast,1.8);fx.splash(p,1.8)}
     if(units.includes(u)&&--u.hull<=0)removeUnit(u);
     writeMessage(()=>getSpecs()[u.k][0]+(u.hull?tr(" · міцність "," · hull ")+u.hull:tr(" вибув із ладу"," out of action")));
@@ -792,7 +811,7 @@ function step(dt){
    world.scene.remove(e.m);enemies.splice(i,1);ui();continue;
   }
   e.m.rotation.y=Math.atan2(-dz,dx);const travel=hover?0:dt*e.speed;p.x+=dx/d*travel;p.z+=dz/d*travel;
-  p.y=(e.k==='loaf'||e.deckX!=null)&&!retreat?T.MathUtils.lerp(3.27,e.y,T.MathUtils.clamp((d-1.3)/7,0,1)):(dest&&e.k==='bird'?T.MathUtils.lerp(dest.y+.65,e.y,Math.min(1,d/7)):e.y)+Math.sin(time*3+e.angle)*.18;
+  p.y=(e.k==='loaf'||e.deckX!=null)&&!retreat?T.MathUtils.lerp(e.target?e.target.m.position.y+.6:3.27,e.y,T.MathUtils.clamp((d-1.3)/7,0,1)):(dest&&e.k==='bird'?T.MathUtils.lerp(dest.y+.65,e.y,Math.min(1,d/7)):e.y)+Math.sin(time*3+e.angle)*.18;
   flap(e.m,time+e.angle)}
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.m.position.lerp(e.to,Math.min(1,dt/e.life));e.life-=dt;if(e.life<=0){world.scene.remove(e.m);effects.splice(i,1)}}
  if(hits<3&&waveElapsed>=17&&(!enemies.length||waveElapsed>=37)){
