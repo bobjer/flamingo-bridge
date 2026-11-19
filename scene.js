@@ -350,20 +350,27 @@ export function landscape(view) {
  water.material.uniforms.storm = {value: 0};
  water.material.uniforms.ring = {value: new T.Vector4(0, 0, -1, 0)}; // x, z, age (s, <0 = off), amplitude
  const SWELL = `
-  uniform float storm; uniform vec4 ring; varying float vCrest; varying float vRing;
+  uniform float storm; uniform vec4 ring; varying float vCrest; varying float vRing; varying float vRoll;
+  // the 'ninth wave': long peaked rollers marching across the strait
+  float roller(vec2 p, float t) { float s = .5 + .5 * sin(dot(p, vec2(.078, .208)) - t * .8); return s * s * s * s; }
   float swell(vec2 p, float t) {
    return sin(dot(p, vec2(.21, .13)) + t * 1.3) * .5 + sin(dot(p, vec2(-.11, .27)) + t * 1.7) * .32 + sin(dot(p, vec2(.37, -.19)) + t * 2.3) * .18;
   }`;
  water.material.vertexShader = water.material.vertexShader
-  .replace('void main() {', SWELL + '\nvoid main() {\n vec3 pos = position;\n float fade = 1. - smoothstep(110., 155., length(pos.xy));\n float h = swell(vec2(pos.x, -pos.y), time * 3.) * fade;\n pos.z += storm * .55 * h; vCrest = h;\n vRing = 0.;\n if (ring.z >= 0.) { float rr = ring.z * 9., dd = length(vec2(pos.x, -pos.y) - ring.xy); vRing = exp(-pow((dd - rr) / (2.2 + ring.z * .5), 2.)) * exp(-ring.z * .22) * fade; pos.z += ring.w * vRing; }')
+  .replace('void main() {', SWELL + '\nvoid main() {\n vec3 pos = position;\n float fade = 1. - smoothstep(110., 155., length(pos.xy));\n float h = swell(vec2(pos.x, -pos.y), time * 3.) * fade;\n float r = roller(vec2(pos.x, -pos.y), time * 3.) * fade; vRoll = r;\n pos.z += storm * (.55 * h + 1.55 * r - .3 * fade); vCrest = h;\n vRing = 0.;\n if (ring.z >= 0.) { float rr = ring.z * 9., dd = length(vec2(pos.x, -pos.y) - ring.xy); vRing = exp(-pow((dd - rr) / (2.2 + ring.z * .5), 2.)) * exp(-ring.z * .22) * fade; pos.z += ring.w * vRing; }')
   .replace('mirrorCoord = modelMatrix * vec4( position, 1.0 );', 'mirrorCoord = modelMatrix * vec4( pos, 1.0 );')
   .replace('vec4 mvPosition =  modelViewMatrix * vec4( position, 1.0 );', 'vec4 mvPosition = modelViewMatrix * vec4( pos, 1.0 );');
  water.material.fragmentShader = water.material.fragmentShader
-  .replace('void main() {', `uniform float storm; varying float vCrest; varying float vRing;
+  .replace('void main() {', `uniform float storm; varying float vCrest; varying float vRing; varying float vRoll;
    float hash21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
    float vnoise(vec2 p) {
     vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
     return mix(mix(hash21(i), hash21(i + vec2(1., 0.)), f.x), mix(hash21(i + vec2(0., 1.)), hash21(i + 1.), f.x), f.y);
+   }
+   // sandy spits beside the arch (same ellipse as terrain.js, without the noise)
+   float spit(vec2 p) {
+    float ax = abs(p.x); vec2 d = vec2((ax - 46.) / 33., (p.y - 7.) / 17.); float r = max(length(d), 1e-4);
+    return min((1. - r) * r / length(d / vec2(33., 17.)), ax - 15.5);
    }
    void main() {`)
   .replace('vec3 outgoingLight = albedo;', `vec3 outgoingLight = mix(albedo, waterColor * .5 * (1. + .5 * theta), storm * .45) * (1. + storm * .3 * vCrest);
@@ -377,6 +384,16 @@ export function landscape(view) {
     float foam = storm * group * cap * (1. - smoothstep(160., 700., distance));
     vec3 foamColor = vec3(.84, .88, .9) * clamp(length(sunColor) * .95, .14, 1.);
     outgoingLight = mix(outgoingLight, foamColor, foam * .8);
+   }
+   if (storm > .01) {
+    // Aivazovsky: light shining through the glassy green face of each roller, foam torn off its crest,
+    // and surf breaking right over the low spits
+    float face = smoothstep(.25, .7, vRoll) * (1. - smoothstep(.82, .97, vRoll));
+    float light = clamp(length(sunColor) * 1.3, .25, 1.);
+    outgoingLight = mix(outgoingLight, vec3(.2, .52, .42) * light * (.8 + .4 * vnoise(worldPosition.xz * .3 + time)), storm * face * .55);
+    float crest = smoothstep(.84, .97, vRoll) * smoothstep(.35, .65, vnoise(worldPosition.xz * vec2(.9, 2.2) + vec2(time * 2., 0.)));
+    float surge = smoothstep(-2., 1.5, spit(worldPosition.xz)) * smoothstep(.3, .8, vRoll) * (.55 + .45 * vnoise(worldPosition.xz * 1.8 + time * 1.5));
+    outgoingLight = mix(outgoingLight, vec3(.9, .93, .9) * light, storm * max(crest * .9, surge * .85));
    }
    if (vRing > .02) {
     float spray = smoothstep(.25, .9, vRing) * smoothstep(.3, .7, vnoise(worldPosition.xz * 1.4 + time));
@@ -447,7 +464,8 @@ export function landscape(view) {
  let daylight = 1;
  // weather: 0 = calm, 1 = full storm; eases toward the target so the sea builds up and settles
  let storm = 0, stormTarget = 0, waveClock = 0, lastDraw = 0;
- const stormWater = new T.Color(0x3c5658), stormHaze = new T.Color(0x6e7a84);
+ const stormWater = new T.Color(0x2b564c), stormHaze = new T.Color(0x8b9182);
+ const rollerAt = (x, z, t) => { const s = .5 + .5 * Math.sin(x * .078 + z * .208 - t * .8); return s * s * s * s; };
  const swellAt = (x, z, t) => Math.sin(x * .21 + z * .13 + t * 1.3) * .5 + Math.sin(x * -.11 + z * .27 + t * 1.7) * .32 + Math.sin(x * .37 + z * -.19 + t * 2.3) * .18;
  let collapseAge = 0, splashed = false, ringStart = null, onCollapseSplash = null;
  let collapse = false, prevDist = camera.position.distanceTo(controls.target);
@@ -486,11 +504,11 @@ export function landscape(view) {
   const prog = c.bomb ? c.age / 6 : ease(T.MathUtils.clamp(c.age / c.duration, 0, 1));
   // Tall phone screens have a narrow horizontal view: widen the lens and back off a little.
   const portrait = T.MathUtils.clamp((1.25 - camera.aspect) / .8, 0, 1);
-  const ang0 = c.angle + c.sweep * prog, r0 = c.radius * (1 + .3 * portrait) * (1 - .2 * Math.sin(Math.PI * Math.min(1, prog)));
+  const ang0 = c.angle + c.sweep * prog, r0 = c.panorama ? c.radius / Math.min(1,camera.aspect) : c.radius * (1 + .3 * portrait) * (1 - .2 * Math.sin(Math.PI * Math.min(1, prog)));
   const h0 = c.height + 1.1 * Math.sin(Math.PI * Math.min(1, prog));
   // Keep the arch, pylons and decks out of the frame: probe the line of sight a few times a second
   // and glide the orbit around (or over) whatever blocks it.
-  if (c.age >= c.probeAt) {
+  if (!c.panorama && c.age >= c.probeAt) {
    c.probeAt = c.age + .12;
    if (blocked(c.point, ang0 + c.dodge.a, r0 * c.dodge.r, h0 + c.dodge.h)) {
     const tries = [[.4, 0, 1], [-.4, 0, 1], [.8, 0, 1], [-.8, 0, 1], [0, 3, 1], [.4, 3, 1], [-.4, 3, 1], [1.2, 0, 1], [-1.2, 0, 1], [0, 2, .7], [0, 6, 1], [1.6, 4, 1], [-1.6, 4, 1]];
@@ -540,7 +558,7 @@ export function landscape(view) {
    const duration = opts.duration ?? 2.4 + .8 * strength;
    cine = {point: point.clone(), age: 0, duration, end: opts.bomb ? null : duration, strength, fromPos, fromTarget,
     subject: opts.subject ?? opts.follow, deckShot: !!opts.deckShot, follow: opts.follow ?? null, lift: new T.Vector3(0, opts.lift ?? 0, 0), bomb: !!opts.bomb, boomAt: null,
-    angle: Math.atan2(rel.z, rel.x) + (Math.random() - .5) * .6, sweep: (Math.random() < .5 ? -1 : 1) * (opts.sweep ?? (opts.bomb ? 1.5 : 1.6 + .6 * strength)),
+    panorama: !!opts.panorama, angle: opts.panorama ? (rel.z < 0 ? -1 : 1) * 1.24 : Math.atan2(rel.z, rel.x) + (Math.random() - .5) * .6, sweep: (Math.random() < .5 ? -1 : 1) * (opts.sweep ?? (opts.bomb ? 1.5 : 1.6 + .6 * strength)),
     radius: opts.radius ?? 7 + 2.5 * strength, height: opts.height ?? 2.4 + 1.2 * strength,
     baseFov: camera.fov, probeAt: 0, dodge: {a: 0, h: 0, r: 1}, goal: {a: 0, h: 0, r: 1}};
    cineCooldown = 9; controls.enabled = false; view.classList.add('cinematic');
@@ -582,8 +600,9 @@ export function landscape(view) {
   // surface height and tilt at a point, for floating things
   wave(x, z) {
    const fade = 1 - T.MathUtils.smoothstep(Math.hypot(x, z), 110, 155), t = waveClock * 3, k = storm * .55 * fade;
-   const h = swellAt(x, z, t), e = .6;
-   return {y: k * h, roll: k * (swellAt(x, z + e, t) - h) / e, pitch: k * (swellAt(x + e, z, t) - h) / e};
+   const surface = (a, b) => .55 * swellAt(a, b, t) + 1.55 * rollerAt(a, b, t) - .3;
+   const h = surface(x, z), e = .6, s = storm * fade;
+   return {y: s * h, roll: s * (surface(x, z + e) - h) / e, pitch: s * (surface(x + e, z) - h) / e, crest: s * rollerAt(x, z, t)};
   },
   daylight: () => daylight,
   setHits(hits, instant = false) {

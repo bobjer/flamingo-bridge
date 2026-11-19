@@ -238,6 +238,7 @@ function neptune(p) {
  const pivot=new THREE.Group();pivot.position.set(.3,1.56,.86);p.add(pivot);
  const staff=new THREE.Group();staff.position.copy(pivot.position).multiplyScalar(-1);pivot.add(staff);
  p.userData.trident=pivot;
+ const tip=new THREE.Object3D();tip.position.set(.3,3.62,.86);staff.add(tip);p.userData.tip=tip; // centre prong point, for aiming strikes
  godLimb(staff,G.gold,[.3,-.25,.86],[.3,3.05,.86],.065);
  godPart(staff,smooth,G.gold,.3,3.05,.86,.08,.06,.08);
  godLimb(staff,G.gold,[.3,3.05,.6],[.3,3.05,1.12],.045);          // crossbar

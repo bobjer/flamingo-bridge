@@ -8,7 +8,7 @@ On wave one, you have a bridge, a budget, and a plan. By wave nine, you have a b
 
 Pop Season is a satirical 3D tower defense game. Buy your defenses before the first wave. After that, it’s mostly accounting. You can patch a hole in the road and buy more missiles. The third hit on the arch closes both the bridge and the fiscal year. In true roguelike fashion, no matter how hard you try, Crimea will still end up an island.
 
-> “It’s surrounded on four sides by ocean.” © PeaceDealer · [Donald Trump on Crimea, POLITICO interview, December 8, 2025](https://www.democrats.senate.gov/newsroom/trump-transcripts/transcript-president-trump-speaks-with-dasha-burns-of-politico-at-the-white-house-12825)
+> “It’s surrounded on four sides by ocean.” © The greatest PeaceDealer · [Donald Trump on Crimea, POLITICO interview, December 8, 2025](https://www.democrats.senate.gov/newsroom/trump-transcripts/transcript-president-trump-speaks-with-dasha-burns-of-politico-at-the-white-house-12825)
 
 ## Your first shift
 
