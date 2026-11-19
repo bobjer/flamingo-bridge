@@ -332,3 +332,21 @@ html{touch-action:pan-x pan-y}
 @keyframes defeat-in{from{opacity:0}to{opacity:1}}
 
 #defeat-card{max-height:95%;overflow:auto}.records{padding-top:8px}.records form{display:flex;justify-content:center;gap:4px;margin:6px}.records form[hidden]{display:none}.records input{min-width:0;width:45%}.records ol{text-align:start;max-height:8em;overflow:auto}
+
+#open-drawer{display:none}
+#score-board,#game-drawer{color:var(--fg);background:var(--panel);border:1px solid var(--line-2);padding:16px;overscroll-behavior:contain}
+#score-board::backdrop,#game-drawer::backdrop{background:#05090dbb}
+#score-board{width:min(380px,90vw);max-height:85dvh;overflow:auto}
+#score-board h2{margin:0 0 10px}#score-board ol{max-height:42dvh}#score-board>button,#game-drawer>button,#open-drawer{padding:8px 14px;color:var(--fg);background:var(--panel-2);border:1px solid var(--line-2);min-height:40px}
+body.phone-game{display:block;position:fixed;inset:0;width:100%;height:100dvh;min-height:0;margin:0;padding:0;overflow:hidden}
+.phone-game main,.phone-game .play-column,.phone-game .play-column #view{display:block;position:absolute;inset:0;width:100%;height:100%;min-height:0;margin:0;padding:0;border:0}
+.phone-game #open-drawer{display:block;position:fixed;z-index:16;top:max(6px,env(safe-area-inset-top));left:max(6px,env(safe-area-inset-left));border-radius:8px;background:#101820df}
+.phone-game #view :is(.zoom,.hud,#arena-radar){display:none}
+#game-drawer{margin:0 0 0 auto;width:min(370px,92vw);height:100dvh;max-height:100dvh;max-width:100%;padding:8px max(10px,env(safe-area-inset-right)) 12px 10px;overflow:auto}
+#game-drawer[open]{display:flex;flex-direction:column;gap:8px}
+#game-drawer>*{flex-shrink:0}
+#game-drawer>.top,#game-drawer .panel-toggles{display:flex;flex-wrap:wrap;position:static;gap:6px}
+#game-drawer .top-left,#game-drawer .panel-title,#game-drawer .hints{display:none}
+#game-drawer .col,#game-drawer .helm,#game-drawer .strip{position:static;width:auto;max-height:none;overflow:visible}
+#game-drawer .col[hidden]{display:none}
+#game-drawer .arcade-order{flex-wrap:wrap}

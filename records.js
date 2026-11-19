@@ -1,15 +1,15 @@
 import {tr} from './language.js';
-let current='';
+const rendered=new WeakMap();
 export function showRecords(card,run){
  const key=JSON.stringify([run.id,document.documentElement.lang]);
- if(current===key)return;
- current=key;
+ if(run.id&&rendered.get(card)===key)return;
+ rendered.set(card,key);
  card.querySelector('.records')?.remove();
  const box=document.createElement('section');box.className='records';card.append(box);
  const heading=document.createElement('strong'),form=document.createElement('form'),input=document.createElement('input'),button=document.createElement('button'),list=document.createElement('ol'),status=document.createElement('small');
  heading.textContent=tr('Топ-10 цієї складності','Top 10 on this difficulty');
  input.placeholder=tr('Ваш псевдонім','Your nickname');input.setAttribute('aria-label',input.placeholder);input.required=true;input.maxLength=24;
- button.textContent=tr('Записати рекорд','Submit score');form.append(input,button);box.append(heading,form,status,list);
+ button.textContent=tr('Записати рекорд','Submit score');form.append(input,button);box.append(heading);if(run.id)box.append(form);box.append(status,list);
  const url='/api/records?difficulty='+encodeURIComponent(run.difficulty);
  let posting=false;
  async function load(submit){
