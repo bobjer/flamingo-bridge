@@ -306,6 +306,23 @@ export function landscape(view) {
   capM.push(new T.Matrix4().makeTranslation(xp, yp, 0));
   footM.push(new T.Matrix4().makeTranslation(xp, 0, 0));
  }
+ const holeCanvas=document.createElement('canvas');holeCanvas.width=1024;holeCanvas.height=64;
+ const holeCtx=holeCanvas.getContext('2d'),holeMap=new T.CanvasTexture(holeCanvas);
+ function setDeckHoles(sites){
+  holeCtx.clearRect(0,0,1024,64);
+  holeCtx.fillStyle='white';
+  for(const site of sites){
+   holeCtx.beginPath();
+   for(let i=0;i<18;i++){
+    const a=i*Math.PI/9,r=1+.13*Math.sin(i*7.2);
+    const x=(site.point.x+56+1.45*r*Math.cos(a))*1024/112;
+    const y=(3-site.point.z-.82*r*Math.sin(a))*64/6;
+    if(i===0)holeCtx.moveTo(x,y);else holeCtx.lineTo(x,y);
+   }
+   holeCtx.closePath();holeCtx.fill();
+  }
+  holeMap.needsUpdate=true;
+ }
  const mats = {}, material = key => (mats[key] ??= new T.MeshStandardMaterial(palette[key]));
  for (const [partsMap, list] of [[spanParts, spanM], [columnParts, colM], [capParts, capM], [footParts, footM]]) {
   for (const [key, geos] of partsMap) {
@@ -348,6 +365,18 @@ export function landscape(view) {
  scene.add(water);
 
  // --- life on the water: red buoys and a small yellow sailboat ---
+ for(const key of ['asphalt','shade','line']){
+  material(key).onBeforeCompile=shader=>{
+   shader.uniforms.holeMap={value:holeMap};
+   shader.vertexShader='varying vec3 sitePos;\n'+shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+    vec4 siteVertex=vec4(transformed,1.);
+    #ifdef USE_INSTANCING
+     siteVertex=instanceMatrix*siteVertex;
+    #endif
+    sitePos=(modelMatrix*siteVertex).xyz;`);
+   shader.fragmentShader='varying vec3 sitePos; uniform sampler2D holeMap;\n'+shader.fragmentShader.replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\nif(abs(sitePos.x)<56. && abs(sitePos.z)<3. && sitePos.y<3.25 && texture2D(holeMap,(sitePos.xz+vec2(56.,3.))/vec2(112.,6.)).a>.5)discard;');
+  };
+ }
  const buoyGeo = new T.CylinderGeometry(.16, .22, .45, 8), buoyMat = new T.MeshStandardMaterial({color: 0xc8231c, roughness: .5});
  for (let i = 0; i < 14; i++) {
   const b = new T.Mesh(buoyGeo, buoyMat);
@@ -433,7 +462,7 @@ export function landscape(view) {
   return true;
  }
  return {
-  scene, zoom, pick, deckTop,
+  scene, zoom, pick, deckTop, setDeckHoles,
   cameraPosition:()=>camera.position.toArray(),
   heading:()=>controls.getAzimuthalAngle(),
   restoreCamera(p){camera.position.fromArray(p);controls.update();prevDist=camera.position.distanceTo(controls.target)},

@@ -260,6 +260,12 @@ export function fireworks(scene){
  const doorGeo=new T.BoxGeometry(.05,.46,.5),panelGeo=new T.BoxGeometry(.5,.05,.42),wheelGeo=new T.CylinderGeometry(.28,.28,.18,14);
  const doorMat=new T.MeshStandardMaterial({color:0xc99a2e,roughness:.45,metalness:.5}),glassMat=new T.MeshStandardMaterial({color:0x7aa6ad,roughness:.1,metalness:.6});
  const panelMat=new T.MeshStandardMaterial({color:0x4f6b8a,roughness:.6,metalness:.3}),tireMat=new T.MeshStandardMaterial({color:0x141414,roughness:.9});
+ function throwCar(mesh,point){
+  scene.add(mesh);
+  const outward=mesh.position.clone().sub(point);outward.y=0;
+  if(outward.lengthSq()<.1)outward.set(1,0,1);
+  chunks.push({m:mesh,v:outward.normalize().multiplyScalar(3+rnd()*2).setY(6+rnd()*2),spin:around(4),age:0,life:7,smoke:0,burn:true,landed:false});
+ }
  function wreck(p,dir=1){
   const door=new T.Group(),d=new T.Mesh(doorGeo,doorMat),w=new T.Mesh(new T.BoxGeometry(.052,.18,.38),glassMat);w.position.y=.1;door.add(d,w);
   const parts=[[door,v3(dir*2.2,8.5,3.4),v3(2.4,5.5,1.2)],
@@ -383,7 +389,7 @@ export function fireworks(scene){
   reset();for(const d of decals){d.m.removeFromParent();d.m.material.dispose()}decals.length=0;for(const c of chunks)c.m.removeFromParent();chunks.length=0;
   for(const f of flashes)f.l.intensity=0;flashes.length=0;smoke.reset();spray.reset();fire.reset();glow.reset();
  }
- return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,flak,kill,feathers,wreck,breakup,burnTrail,
+ return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,flak,kill,feathers,wreck,throwCar,breakup,burnTrail,
   burst:p=>explosion(p,1.5),
   pendingDamage(target){return flights.reduce((sum,f)=>sum+(f.target===target?f.damage:0),0)},
   snapshot(enemies){return flights.filter(f=>enemies.includes(f.target)).map(f=>({origin:f.origin.toArray(),target:enemies.indexOf(f.target),damage:f.damage,age:f.age,duration:f.duration,position:f.rocket.position.toArray()}))},

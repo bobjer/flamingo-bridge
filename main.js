@@ -208,7 +208,7 @@ canvas.addEventListener('pointerup',e=>{
  if(phase!=='live')return;
  const mesh=world.pick(e,vehicles.map(v=>v.m));
  const truck=vehicles.find(v=>v.m===mesh);
- if(!truck)return;
+ if(!truck||!truck.m.visible)return;
  if(truck.checked){$('caption').textContent=tr("МАШИНА ВЖЕ ПРОЇХАЛА КПП","TRUCK ALREADY CLEARED");return}
  truck.marked=true;
  $('caption').textContent=tr("КПП: МАШИНУ СКЕРОВАНО НА ОГЛЯД","CHECKPOINT: TRUCK FLAGGED");
@@ -236,6 +236,7 @@ function addTruck(direction,x){
  vehicles.push({m,direction,manure,wobbles:Math.random()<(manure?.85:.16),marked:false,checked,hold:0,stopped:false,queued:false});
 }
 function roadStep(dt){
+ if(hp<100)return;
  roadTimer-=dt;
  if(roadTimer<=0){
   const direction=Math.random()<.5?1:-1;
@@ -277,7 +278,7 @@ function roadStep(dt){
  showTraffic();
 }
 function put(type,x,y,z){const m=model(type);m.position.set(x,y,z);m.traverse(o=>{if(o.isMesh)o.castShadow=true});world.scene.add(m);return m}
-function reset(){flockPressure=2**((Math.random()-.5)*3);spent=0;partialLedger=0;guestWave=guestUntil=guestPickWave=0;seenTrump=seenMusk=false;incoming=null;guest.hidden=true;road.reset();clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.clear();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;trafficTime=0;tankers.restore();tankers.move(0);orders.smoke.end=orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
+function reset(){flockPressure=2**((Math.random()-.5)*3);spent=0;partialLedger=0;guestWave=guestUntil=guestPickWave=0;seenTrump=seenMusk=false;incoming=null;guest.hidden=true;road.reset();world.setDeckHoles([]);clearFlyby();damageSpots.length=0;breakLeft=waveElapsed=0;fx.clear();for(const x of [...units,...enemies,...effects,...scouts,...vehicles,...barges])x.m.removeFromParent();units.length=enemies.length=effects.length=scouts.length=0;vehicles.length=barges.length=0;seaCosts=hits=signalPenalty=0;trafficTime=0;tankers.restore();tankers.move(0);orders.smoke.end=orders.gps.end=orders.net.end=0;selectedShip=null;setPlacement(false);world.setHits(0);$('signals').textContent='';roadTimer=inspectionCredit=arrivals=checks=caught=0;$('inspection').value='0';showTraffic();cash=1200;hp=100;wave=time=score=rp=hype=victims=waveVictims=jamLoss=0;reserve=reserve0=reserves[$('difficulty').value];unpaid=1;for(const k in techs)tech[k]=0;paused=false;untilSpawn=0;phase='buy';foam=0;waveDamage=0;
  for(let i=0;i<6;i++){const m=put('flamingo',-9+i*2,6+i%3*1.25,8+i%2*2);m.scale.setScalar(.84);scouts.push({m,y:m.position.y})}
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.onclick=action;$('shop').append(b)}
@@ -308,7 +309,11 @@ function damageDeck(amount,position){
  let spot=damageSpots.find(s=>s.point.distanceTo(point)<2.2);
  if(!spot){spot={point,loss:0};damageSpots.push(spot)}
  fx.explosion(new T.Vector3(position.x,Math.max(3.5,Math.min(position.y,5)),point.z),Math.min(2,.55+loss/8));fx.dust(point,Math.min(1.8,.6+loss/10));
- road.impact(spot,time);spot.loss+=loss;hp-=loss;waveDamage+=loss;hype+=loss;return loss;
+ for(const v of vehicles){
+  if(v.m.visible&&v.m.position.distanceToSquared(point)<36){fx.throwCar(v.m.clone(),point);v.wrecked=true}
+  v.m.visible=false;
+ }
+ road.impact(spot,time);world.setDeckHoles(damageSpots);spot.loss+=loss;hp-=loss;waveDamage+=loss;hype+=loss;return loss;
 }
 function patchDeck(spot){
  if(phase!=='live'||paused||hp>=100||(spot&&!damageSpots.includes(spot)))return;
@@ -321,7 +326,15 @@ function patchDeck(spot){
   if(!site.loss)damageSpots.splice(damageSpots.indexOf(site),1);
   if(!left)break;
  }
- spend(cost);hp+=amount;ui();
+ spend(cost);hp+=amount;
+ world.setDeckHoles(damageSpots);
+ if(hp===100){
+  for(let i=vehicles.length-1;i>=0;i--){
+   const v=vehicles[i];
+   if(v.wrecked){v.m.removeFromParent();vehicles.splice(i,1)}else v.m.visible=true;
+  }
+ }
+ ui();
 }
 function repairDeck(){patchDeck(null)}
 function localAmmo(u){
@@ -778,6 +791,7 @@ function restoreMatch(){
  for(const [list,saved] of [[units,data.units],[enemies,data.enemies],[vehicles,data.vehicles],[barges,data.barges]]){
   for(const item of saved)list.push(unpackEntity(item));
  }
+ world.setDeckHoles(damageSpots);for(const v of vehicles)v.m.visible=hp===100&&!v.wrecked;
  fx.restore(data.flights,enemies);world.restoreCamera(data.camera);world.setHits(hits);
  if(phase==='over')world.carryDown([...vehicles,...units.filter(u=>u.k==='turret'&&Math.abs(u.m.position.z)<3)].map(v=>v.m));
  selectedShip=units[data.selectedShip]??null;setPlacement(data.placing);

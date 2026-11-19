@@ -38,8 +38,8 @@ export function archSmoke(scene) {
    sprite.position.set(x+Math.sin(drift)*1.4,y+1.3*Math.sin(drift*.7)+1.1*strength,z+.65*Math.cos(drift));
    const width=(11+3*Math.cos(phase))*(.74+.26*strength);
    sprite.scale.set(width,width*.82,1);
-   sprite.material.color.setHSL(.49+.31*pearl,.15+.12*pearl,.64+.15*day+.09*pearl);
-   sprite.material.opacity=.46*strength;
+   sprite.material.color.setHSL(.49+.31*pearl,.15+.12*pearl,.42+.18*day+.09*pearl);
+   sprite.material.opacity=.53*strength;
   }
  };
 }
