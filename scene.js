@@ -313,10 +313,12 @@ export function landscape(view) {
   }
  }
 
+ const sceneryMeshes = [];
  for (const [collection, parent] of [[scenery, scene], [steel, null], [pavement,null]]) {
   for (const [key, geos] of collection) {
    const m = new T.Mesh(mergeGeometries(geos), material(key));
    m.castShadow = m.receiveShadow = true;
+   if (collection === scenery) sceneryMeshes.push(m);
    (parent || (collection.group ??= new T.Group())).add(m);
    geos.forEach(g => g.dispose());
   }
@@ -405,11 +407,21 @@ export function landscape(view) {
  let collapse = false, prevDist = camera.position.distanceTo(controls.target);
  // Bullet-time: fly in to an impact, sweep around it in slow motion, fly back.
  let cine = null, cineLast = 0, cineCooldown = 0;
+ const sight = new T.Raycaster(), sightTo = new T.Vector3(), sightDir = new T.Vector3();
+ const occluders = [falling, railway, ...sceneryMeshes];
+ function blocked(point, ang, r, h) {
+  sightTo.set(point.x + Math.cos(ang) * r, Math.max(.8, point.y + h), point.z + Math.sin(ang) * r);
+  sightDir.subVectors(sightTo, point); const dist = sightDir.length(); sightDir.divideScalar(dist);
+  // skip the subject's own surroundings, and look a bit past the lens so the camera never sits inside a beam
+  sight.set(point, sightDir); sight.near = Math.min(1.4, dist * .25); sight.far = dist + .8;
+  return sight.intersectObjects(occluders, true).length > 0;
+ }
  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
  function endCine() {
   if (!cine) return;
   camera.position.copy(cine.fromPos); controls.target.copy(cine.fromTarget);
+  if (camera.fov !== cine.baseFov) { camera.fov = cine.baseFov; camera.updateProjectionMatrix(); }
   controls.enabled = true; controls.update(); prevDist = camera.position.distanceTo(controls.target);
   view.classList.remove('cinematic'); cine = null;
  }
@@ -426,11 +438,35 @@ export function landscape(view) {
   if (c.end != null && c.age >= c.end) { endCine(); return false; }
   const end = c.end ?? c.age + 3, inDur = c.bomb ? .7 : .2 * c.duration, outDur = c.bomb ? .8 : .2 * c.duration;
   const prog = c.bomb ? c.age / 6 : ease(T.MathUtils.clamp(c.age / c.duration, 0, 1));
-  const ang = c.angle + c.sweep * prog, r = c.radius * (1 - .2 * Math.sin(Math.PI * Math.min(1, prog)));
-  const shot = new T.Vector3(c.point.x + Math.cos(ang) * r, c.point.y + c.height + 1.1 * Math.sin(Math.PI * Math.min(1, prog)), c.point.z + Math.sin(ang) * r);
+  // Tall phone screens have a narrow horizontal view: widen the lens and back off a little.
+  const portrait = T.MathUtils.clamp((1.25 - camera.aspect) / .8, 0, 1);
+  const ang0 = c.angle + c.sweep * prog, r0 = c.radius * (1 + .3 * portrait) * (1 - .2 * Math.sin(Math.PI * Math.min(1, prog)));
+  const h0 = c.height + 1.1 * Math.sin(Math.PI * Math.min(1, prog));
+  // Keep the arch, pylons and decks out of the frame: probe the line of sight a few times a second
+  // and glide the orbit around (or over) whatever blocks it.
+  if (c.age >= c.probeAt) {
+   c.probeAt = c.age + .12;
+   if (blocked(c.point, ang0 + c.dodge.a, r0 * c.dodge.r, h0 + c.dodge.h)) {
+    const tries = [[.4, 0, 1], [-.4, 0, 1], [.8, 0, 1], [-.8, 0, 1], [0, 3, 1], [.4, 3, 1], [-.4, 3, 1], [1.2, 0, 1], [-1.2, 0, 1], [0, 2, .7], [0, 6, 1], [1.6, 4, 1], [-1.6, 4, 1]];
+    for (const [a, h, k] of tries) {
+     const da = c.dodge.a + a * (c.sweep > 0 ? 1 : -1), dh = Math.min(7, c.dodge.h + h), dr = k;
+     if (!blocked(c.point, ang0 + da, r0 * dr, h0 + dh)) { c.goal = {a: da, h: dh, r: dr}; break; }
+    }
+   } else if (c.goal.a || c.goal.h || c.goal.r !== 1) {
+    // drift back toward the planned orbit once the clean line no longer needs the detour
+    const back = {a: c.goal.a * .85, h: c.goal.h * .85, r: 1 + (c.goal.r - 1) * .85};
+    if (!blocked(c.point, ang0 + back.a, r0 * back.r, h0 + back.h)) c.goal = back;
+   }
+  }
+  const k = 1 - Math.exp(-dt * 3.2); // soft camera glide, never a jump cut
+  c.dodge.a += (c.goal.a - c.dodge.a) * k; c.dodge.h += (c.goal.h - c.dodge.h) * k; c.dodge.r += (c.goal.r - c.dodge.r) * k;
+  const ang = ang0 + c.dodge.a, r = r0 * c.dodge.r;
+  const shot = new T.Vector3(c.point.x + Math.cos(ang) * r, c.point.y + h0 + c.dodge.h, c.point.z + Math.sin(ang) * r);
   if (shot.y < .8) shot.y = .8;
   let w = ease(Math.min(1, c.age / inDur));
   if (c.end != null && c.age > end - outDur) w = Math.min(w, 1 - ease((c.age - (end - outDur)) / outDur));
+  const fov = c.baseFov + 16 * portrait * w;
+  if (Math.abs(camera.fov - fov) > .01) { camera.fov = fov; camera.updateProjectionMatrix(); }
   camera.position.copy(c.fromPos).lerp(shot, w);
   controls.target.copy(c.fromTarget).lerp(c.point, w);
   const since = c.boomAt != null ? c.age - c.boomAt : c.bomb ? 9 : c.age;
@@ -459,7 +495,8 @@ export function landscape(view) {
    cine = {point: point.clone(), age: 0, duration, end: opts.bomb ? null : duration, strength, fromPos, fromTarget,
     deckShot: !!opts.deckShot, follow: opts.follow ?? null, lift: new T.Vector3(0, opts.lift ?? 0, 0), bomb: !!opts.bomb, boomAt: null,
     angle: Math.atan2(rel.z, rel.x) + (Math.random() - .5) * .6, sweep: (Math.random() < .5 ? -1 : 1) * (opts.bomb ? 1.5 : 1.6 + .6 * strength),
-    radius: opts.radius ?? 7 + 2.5 * strength, height: opts.height ?? 2.4 + 1.2 * strength};
+    radius: opts.radius ?? 7 + 2.5 * strength, height: opts.height ?? 2.4 + 1.2 * strength,
+    baseFov: cine ? cine.baseFov : camera.fov, probeAt: 0, dodge: cine ? cine.dodge : {a: 0, h: 0, r: 1}, goal: cine ? cine.goal : {a: 0, h: 0, r: 1}};
    cineCooldown = 9; controls.enabled = false; view.classList.add('cinematic');
    return true;
   },

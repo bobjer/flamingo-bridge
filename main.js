@@ -412,7 +412,7 @@ function arcadeHud(){
  if(phase==='buy'){
   const kit=price(specs.sam[1])+price(specs.cruiser[1]);
   if(!units.length&&!barges.length&&cash>=kit)return order(tr('Зберіть стартову оборону: С-400 і крейсер.','Deploy a starter defence: S-400 and cruiser.'),tr('Розгорнути · ','Deploy · ')+money(kit),()=>{purchase('sam');purchase('cruiser')});
-  if(!units.length)return order(tr('Для початку купіть гарнізон в арсеналі.','Buy a defender in the arsenal to start.'),tr('Арсенал','Arsenal'),()=>{if($('arsenal-panel').hidden)document.querySelector('.panel-toggles [aria-controls="arsenal-panel"]').click()});
+  if(!units.length)return order(tr('Для початку купіть гарнізон в арсеналі.','Buy a defender in the arsenal to start.'),tr('Арсенал','Arsenal'),()=>{if(document.body.classList.contains('phone-game'))document.dispatchEvent(new CustomEvent('game-sheet',{detail:'arsenal'}));else if($('arsenal-panel').hidden)document.querySelector('.panel-toggles [aria-controls="arsenal-panel"]').click()});
   return order(tr('Гарнізон готовий. Третій прорив обвалить арку.','Garrison ready. The third flamingo hit brings down the arch.'),tr('Почати облогу →','Start siege →'),()=>$('start').click());
  }
  const low=capacity&&stock<=Math.ceil(capacity*.3);
