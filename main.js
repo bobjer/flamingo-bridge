@@ -90,7 +90,7 @@ const reserves = {easy: 7000, normal: 4500, hard: 2600};
 let reserve, waveDamage;
 const BREAK_SECONDS=8;
 let waveElapsed=0,breakLeft=0,die=1;
-let autoplay=false,botDelay=0,nextDeckWave=0;
+let autoplay=false,botDelay=0,nextDeckWave=0,lastSmokeWave=0;
 const deckInterval=()=>3+Math.floor(Math.random()*2);
 const intensity=()=>wave%9===0?1.9+die*.09:.65+die*.115;
 function waveHud(){
@@ -101,7 +101,7 @@ function waveHud(){
 }
 function watchGame(){
  if(autoplay){location.reload();return}
- saveMatch();autoplay=true;nextDeckWave=deckInterval();reset();
+ saveMatch();autoplay=true;lastSmokeWave=0;nextDeckWave=deckInterval();reset();
  cash=5000;
  for(const k of Object.keys(techs))tech[k]=3;
  for(const k of ['sam','cruiser','pantsir','dolphin'])purchase(k);
@@ -112,6 +112,9 @@ $('watch-game').onclick=watchGame;
 function botTurn(dt){
  botDelay-=dt;if(botDelay>0)return;botDelay=.75;
  const supply=supplyQuote(),urgent=supply.capacity&&supply.stock<=supply.capacity*.35;
+ if(!breakLeft&&wave>lastSmokeWave&&waveElapsed>=3&&(wave-lastSmokeWave>=2||die>=5)&&cash>=price(orders.smoke.cost)+supply.each*4){
+  issueOrder('smoke');lastSmokeWave=wave;return;
+ }
  if(urgent&&supply.amount){$('resupply').click();return}
  if(hp<100&&breakLeft&&cash>=repairCost()){repairDeck();return}
  if(breakLeft&&supply.amount&&supply.stock<supply.capacity*.8){$('resupply').click();return}
@@ -673,6 +676,9 @@ function step(dt){
    $('caption').textContent=crashed.has(e)?tr("ЗІТКНЕННЯ","COLLISION"):retreat?tr("ЦІЛЬ ЗАЛИШИЛА ЗОНУ","TARGET LEFT THE AREA"):tr("ПРОМАХ","MISS");
    continue;
   }
+  if(e.deckX!=null&&!retreat&&!offline&&!e.filmed&&d<5&&e.hp>0){
+   e.filmed=world.cinematic(p.clone(),2,{bomb:true,follow:e.m,radius:8,height:3});
+  }
   if(e.k==='baby'&&e.hp>0&&!e.filmed&&e.hp>fx.pendingDamage(e)){
    const ramTanker=tankers.near(p,1.6),ramShip=e.target?.k==='cruiser'&&units.includes(e.target)&&p.distanceTo(e.target.m.position)<3.4;
    if(ramTanker||ramShip){e.filmed=true;world.cinematic(p.clone(),2,{bomb:true,follow:e.m,lift:.6,radius:7.5,height:2.4})}
@@ -700,6 +706,7 @@ function step(dt){
     writeMessage(()=>tr("Паляниця розсипалася! Вантажівки стоять 4 секунди.","The loaf burst into crumbs! Trucks stop for 4 seconds."));
    }else if(e.k==='flamingo'&&e.deckX!=null){
     const point=new T.Vector3(e.deckX,3.23,0);
+    if(e.filmed)world.cinematicBoom(point,{subject:e.m});
     fx.explosion(point,1);damageDeck(12,point);
    }else if(e.k==='flamingo'&&autoplay&&Math.random()>.055){
     fx.feathers(p,0xff86ac);

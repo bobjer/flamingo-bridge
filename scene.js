@@ -456,7 +456,7 @@ export function landscape(view) {
   },
   // Detonation inside a bomb shot: freeze-frame, then a very slow release.
   cinematicBoom(point, opts = {}) {
-   if (!cine || !cine.bomb || cine.boomAt != null) return false;
+   if (!cine || !cine.bomb || cine.boomAt != null || (opts.subject && cine.follow !== opts.subject)) return false;
    if (point) cine.point.copy(point);
    cine.follow = opts.follow ?? null; cine.lift.set(0, 0, 0); cine.boomAt = cine.age;
    cine.end = opts.hold ? null : cine.age + 4.6;
