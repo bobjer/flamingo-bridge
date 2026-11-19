@@ -588,3 +588,6 @@ body[data-phase=buy] .m-dock-btn[data-tab=arsenal]{color:var(--fg)}
 
 .interface-switch{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:18;border:1px solid var(--line-2);border-radius:8px;background:#101922ed;color:var(--fg);padding:8px 12px;font:600 12px var(--mono);cursor:pointer}
 .interface-switch:hover,.interface-switch:focus-visible{border-color:var(--accent);color:var(--accent)}
+
+.defeat-quote{--i:2;margin:8px 4px 12px;color:var(--fg);font:italic 15px/1.4 var(--body)}
+.defeat-quote small{display:block;margin-top:2px;color:var(--muted);font:12px/1.4 var(--mono)}

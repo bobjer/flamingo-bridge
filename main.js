@@ -435,7 +435,14 @@ function arcadeHud(){
   // kicker · title · three stat tiles · the punchline · one primary action, records below
   let kicker=card.querySelector('.defeat-kicker'),tiles=card.querySelector('.defeat-stats');
   if(!kicker){kicker=document.createElement('div');kicker.className='defeat-kicker';card.querySelector('h2').before(kicker)}
-  if(!tiles){tiles=document.createElement('dl');tiles.className='defeat-stats';card.querySelector('h2').after(tiles)}
+  let quote=card.querySelector('.defeat-quote');
+  if(!quote){
+   quote=document.createElement('blockquote');quote.className='defeat-quote';
+   const credit=document.createElement('small');credit.textContent='© PeaceDealer';
+   quote.append(document.createElement('span'),credit);card.querySelector('h2').after(quote);
+  }
+  quote.firstElementChild.textContent=tr('«Його з усіх чотирьох боків оточує океан».','“It’s surrounded on four sides by ocean.”');
+  if(!tiles){tiles=document.createElement('dl');tiles.className='defeat-stats';quote.after(tiles)}
   kicker.textContent=tr('Арку закрито · хвиля ','Arch closed · wave ')+wave;
   card.querySelector('h2').textContent=tr('ПОТРАЧЕНО','WASTED');
   const tile=(label,value,unitText='')=>{const d=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value;if(unitText){const u=document.createElement('small');u.textContent=unitText;dd.append(u)}d.append(dt,dd);return d};

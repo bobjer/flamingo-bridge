@@ -1,46 +1,50 @@
-# Сезон хлопків / Pop Season
+# Pop Season
 
-На першій хвилі у вас є міст, гроші й план. На дев’ятій — міст, фламінго й запитання до того, хто затверджував кошторис.
+On wave one, you have a bridge, a budget, and a plan. By wave nine, you have a bridge, a flock of flamingos, and a few questions for whoever approved the budget.
 
-**[Грати в браузері](https://flamingo-bridge-vhs.rustyperch5.chatgpt.site)** · [English version](https://flamingo-bridge-vhs.rustyperch5.chatgpt.site/en)
+**[Play in English](https://flamingo-bridge-vhs.rustyperch5.chatgpt.site/en)** · [Play in Ukrainian](https://flamingo-bridge-vhs.rustyperch5.chatgpt.site)
 
-![Фламінго над мостом — обкладинка «Сезону хлопків»](public/share-uk.jpg)
+![Flamingos over the bridge on the Pop Season cover](public/share-en.jpg)
 
-Це сатирична 3D tower defense на Three.js. Перед першою хвилею закуповуєш оборону, а далі починається бухгалтерія. Дірку в дорозі можна залатати. Ракети можна докупити. Третє влучання в арку закриває і міст, і фінансовий рік.
+Pop Season is a satirical 3D tower defense game. Buy your defenses before the first wave. After that, it’s mostly accounting. You can patch a hole in the road and buy more missiles. The third hit on the arch closes both the bridge and the fiscal year. In true roguelike fashion, no matter how hard you try, Crimea will still end up an island.
 
-## Перша зміна
+> “It’s surrounded on four sides by ocean.” © PeaceDealer · [Donald Trump on Crimea, POLITICO interview, December 8, 2025](https://www.democrats.senate.gov/newsroom/trump-transcripts/transcript-president-trump-speaks-with-dasha-burns-of-politico-at-the-white-house-12825)
 
-1. Розгорни стартову оборону й почни облогу. Тягни пальцем або мишею, щоб облетіти арку. Щипок або коліщатко змінюють масштаб.
-2. Стеж за мітками на сцені. Натисни на пошкоджену ділянку для ремонту або на установку для поповнення запасу.
-3. Увімкни автогру, якщо хочеш подивитися, як із твоїм бюджетом упорається бот. Забрати керування можна в будь-який момент. Це та сама партія.
-4. Після поразки залиш псевдонім і порівняй свій результат з іншими на тій самій складності. Якщо керував і бот, біля рекорду буде позначка «Автогра».
+## Your first shift
 
-Партія зберігається в цьому браузері. Таблиця рекордів спільна. Її можна відкрити посеред хвилі — гра зачекає.
+1. Deploy your starting defenses and begin the siege. Drag to orbit the arch. Pinch or use the mouse wheel to zoom.
+2. Watch the markers on the bridge. Select a damaged section to patch it or a launcher to refill it.
+3. Switch on autoplay to see what the bot does with your budget. You can take over at any point in the same run.
+4. When the arch falls, enter a nickname to compare runs on the same difficulty. Runs that used autoplay get an Autoplay badge.
 
-## Запустити локально
+Your run is saved in this browser. The leaderboard is shared across players. Open it during a wave and the game pauses until you return.
 
-Потрібні Node.js 22.12+ та npm. У каталозі репозиторію виконай:
+## Run locally
+
+You’ll need Node.js 22.12+ and npm. From the repository root, run:
 
 ```sh
 npm ci
 npm run dev
 ```
 
-Відкрий адресу, яку надрукує Vite. Для перевірки збірки виконай `npm run build`. Локальний сервер Vite запускає гру. Для запису й читання рекордів потрібен ще серверний обробник із D1.
+Open the address Vite prints. Run `npm run build` to check the production build. Vite serves the game locally. Reading and submitting scores also requires the leaderboard worker and a D1 database.
 
-## Де що шукати
+## Where to make changes
 
-| Хочеш змінити | Почни тут |
+| To change | Start here |
 | --- | --- |
-| Правила хвиль, бюджет, автогру або збереження | [main.js](main.js) |
-| Камеру, міст або моделі | [scene.js](scene.js), [models.js](models.js) |
-| Мобільне меню | [game-menu.js](game-menu.js), [style.css](style.css) |
-| Таблицю рекордів | [records.js](records.js), [records-worker.js](records-worker.js), [drizzle/](drizzle/) |
+| Waves, budgets, autoplay, or saved games | [main.js](main.js) |
+| The camera, bridge, or models | [scene.js](scene.js), [models.js](models.js) |
+| The mobile menu or compact desktop layout | [game-menu.js](game-menu.js), [style.css](style.css) |
+| The leaderboard | [records.js](records.js), [records-worker.js](records-worker.js), [drizzle/](drizzle/) |
 
-## Гру зібрав за один вечір
+## Built in one evening
 
-За той вечір фламінго навчилися літати, а от зіграти достатньо партій, щоб перевірити баланс, я ще не встиг. Буду радий конструктивній участі всіх, кому гра цікава. Якщо щось зламалося, напиши, на якому пристрої та в якому браузері грав, що натиснув і що побачив. Для камери або мобільного меню кілька секунд відео допоможуть більше за бойове донесення на три сторінки.
+I vibe-coded this game in one evening. That was enough time to teach the flamingos to fly. Balancing the waves will take a few more playthroughs.
 
-Є ідея щодо балансу? Напиши, яку складність обрав, чи вмикав автогру й на якій хвилі стало занадто легко або безнадійно. А якщо вже маєш виправлення — з радістю прийму PR. [Обговорити в Issues](https://github.com/bobjer/flamingo-bridge/issues) · [Відкрити pull request](https://github.com/bobjer/flamingo-bridge/pulls)
+If a wave felt too easy or hopeless, tell me the wave number, difficulty, and whether autoplay was on. For bugs, include your device, browser, what you did, and what happened. For camera or mobile menu glitches, a few seconds of video beats a three-page field report.
+
+I’d love balance feedback, better 3D unit models, and pull requests with fixes. [Open an issue](https://github.com/bobjer/flamingo-bridge/issues) · [Pull requests](https://github.com/bobjer/flamingo-bridge/pulls)
 
 © No Sense 2026
