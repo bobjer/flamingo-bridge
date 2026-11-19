@@ -503,3 +503,5 @@ body[data-phase=buy] .m-dock-btn[data-tab=arsenal]{color:var(--fg)}
 .phone-game .rage-banner{top:calc(var(--safe-t) + 60px);left:calc(var(--safe-l) + 10px);max-width:calc(100% - 110px)}
 .phone-game:has(#view.cinematic) .rage-banner{top:calc(7% + 44px)}
 @media(prefers-reduced-motion:reduce){.tantrum,.tantrum *{animation:none!important}}
+
+.legal a{display:inline-block;color:var(--accent);padding:4px 6px;text-underline-offset:3px}

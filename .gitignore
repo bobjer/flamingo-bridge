@@ -3,3 +3,10 @@ dist/
 .DS_Store
 
 /main.js.bak-balance
+
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+.wrangler/
