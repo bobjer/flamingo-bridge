@@ -1,6 +1,6 @@
 import {readFile,mkdir,writeFile,readdir} from 'node:fs/promises';
 import {extname} from 'node:path';
-const types={'.jpg':'image/jpeg','.svg':'image/svg+xml','.js':'text/javascript','.css':'text/css','.html':'text/html'};
+const types={'.txt':'text/plain','.jpg':'image/jpeg','.svg':'image/svg+xml','.js':'text/javascript','.css':'text/css','.html':'text/html'};
 const assets={};
 for(const path of await readdir('dist',{recursive:true})){
  const type=types[extname(path)];
@@ -14,5 +14,5 @@ await writeFile('dist/server/index.js',(await readFile('records-worker.js','utf8
  if(path==='/api/records')return records(request,env.DB);
  const asset=assets[path==='/'?'/index.html':/^\\/en\\/?$/.test(path)?'/en.html':path];
  if(!Array.isArray(asset))return new Response('Not found',{status:404});
- return new Response(request.method==='HEAD'?null:Uint8Array.from(atob(asset[1]),c=>c.charCodeAt(0)),{headers:{'content-type':asset[0]}});
+ return new Response(request.method==='HEAD'?null:Uint8Array.from(atob(asset[1]),c=>c.charCodeAt(0)),{headers:{'content-type':asset[0],'cache-control':(path==='/release.txt'||asset[0]==='text/html')?'no-store':'public, max-age=3600'}});
  }};`);

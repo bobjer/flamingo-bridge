@@ -1,3 +1,4 @@
+import {watchRelease} from './release-notice.js';
 import {setupGameMenu} from './game-menu.js';
 import {showRecords} from './records.js';
 import {LANDFALL} from './terrain.js';
@@ -105,6 +106,7 @@ function waveHud(){
 }
 function watchGame(){
  if(autoplay){location.reload();return}
+ const update=$('release-notice');if(update)update.hidden=true;
  saveMatch();autoplay=true;lastSmokeWave=0;nextDeckWave=deckInterval();reset();
  cash=5000;
  for(const k of Object.keys(techs))tech[k]=3;
@@ -786,7 +788,8 @@ function saveMatch(){
   localStorage.setItem(SAVE_KEY,JSON.stringify({version:1,runId,state,tech,patches:road.patchedMeshes().map(m=>m.position.toArray()),damageSpots:damageSpots.map(s=>({point:s.point.toArray(),loss:s.loss})),difficulty:$('difficulty').value,inspection:$('inspection').value,
    trafficTime,oilSlicks:tankers.snapshot(),lostTankers:tankers.losses(),orders:[orders.gps.end,orders.net.end,orders.smoke.end],units:units.map(packEntity),enemies:enemies.map(packEntity),vehicles:vehicles.map(packEntity),
    barges:barges.map(packEntity),flights:fx.snapshot(enemies),camera:world.cameraPosition(),selectedShip:units.indexOf(selectedShip),placing}));
- }catch(err){console.warn('Could not save match',err)}
+  return true;
+ }catch(err){console.warn('Could not save match',err);return false}
 }
 function restoreMatch(){
  const data=JSON.parse(localStorage.getItem(SAVE_KEY));
@@ -831,6 +834,12 @@ $('restart').addEventListener('close',()=>{
 });
 reset();
 try{restoreMatch()}catch(err){console.warn('Could not restore match',err);reset()}
+watchRelease(()=>{
+ if(autoplay)return false;
+ if(phase==='live'){paused=true;ui()}
+ if(!saveMatch())return false;
+ location.reload();return true;
+},()=>!autoplay);
 setInterval(()=>{if(!document.hidden)saveMatch()},2000);
 window.addEventListener('pagehide',saveMatch);
 function pauseAway(){

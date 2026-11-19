@@ -443,3 +443,6 @@ body[data-phase=buy] .m-dock-btn[data-tab=arsenal]{color:var(--fg)}
 }
 @keyframes sheet-side{from{translate:100% 0}}
 @media(prefers-reduced-motion:reduce){#game-drawer[open]{animation:none}.m-wave::before{animation:none}}
+
+#release-notice:not([hidden]){position:fixed;z-index:50;top:max(8px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:max-content;max-width:94vw;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center;padding:8px 12px;background:var(--panel);color:var(--fg);border:1px solid var(--accent);box-shadow:0 3px 18px #0008}
+#release-notice button{min-height:40px;padding:4px 10px;background:var(--panel-2);color:var(--fg);border:1px solid var(--line-2)}
