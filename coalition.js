@@ -78,7 +78,7 @@ export function startCoalition() {
   : state === 'press' ? tr('ПРЕС-КОНФЕРЕНЦІЯ · ПЕРЕГЛЯДИ РОСТУТЬ, ВЛУЧАННЯ НЕ ЗНІМАЮТЬСЯ', 'PRESS BRIEFING · VIEWS GROW, HITS ARE NOT FILMED') : '';
 
  /* ---------- live score and popups ---------- */
- const queued = []; let popSlot = 0;
+ const queued = [];
  function ticker(text, cls) {
   const box = root.querySelector('[data-ticker]'); if (!box) return;
   const el = document.createElement('div'); el.className = cls; el.textContent = text; box.append(el);
@@ -87,11 +87,19 @@ export function startCoalition() {
  }
  function pop(text, cls, sub = '') {
   const box = root.querySelector('[data-pop]'); if (!box) return;
-  const el = document.createElement('div'); el.className = 'pop ' + cls; el.style.top = 'calc(24% + ' + (popSlot++ % 3) * 86 + 'px)';
+  const el = document.createElement('div'); el.className = 'pop ' + cls;
   el.innerHTML = '<b>' + text + '</b>' + (sub ? '<span>' + sub + '</span>' : '');
   box.append(el);
-  while (box.children.length > 4) box.firstChild.remove();
+  while (box.children.length > 2) box.firstChild.remove();
   setTimeout(() => el.remove(), 1700);
+ }
+ let pendingFrame = null;
+ function recordDroneFrame(cam) {
+  const shot = pendingFrame;
+  pendingFrame = null;
+  if (!shot || shot.report !== s.report || shot.cam !== cam || linkState(cam) !== 'live') return;
+  const image = feedLayer.still(stage.glCanvas);
+  if (image) (s.report.stills ??= {})[cam] = {image, time: shot.time};
  }
  const liveScore = () => watching() ? evaluate(s, s.captures, elapsed, { pressMs: s.live.pressMs }) : null;
  function resolveImpacts() {
@@ -106,6 +114,7 @@ export function startCoalition() {
    let kind = 'none';
    if (f.success && !f.decree) { if (s.cam === 3) kind = 'far'; else if (s.cam === f.marker && linkState(s.cam) === 'live') kind = 'drone' }
    s.captures[i] = kind;
+   if (kind === 'drone' && !r.stills?.[s.cam]) pendingFrame = {report:r, cam:s.cam, time:f.impact};
    const score = evaluate(s, s.captures, f.impact);
    const pay = score.payNow[i];
    const payout = (r.sponsor === 'conference' ? tr('Аванс','Advance') : tr('Виплата','Payout')) + ' +' + pay;
@@ -186,6 +195,11 @@ export function startCoalition() {
     '<details><summary>' + tr('Юніти','Units') + '</summary><p>' + units().map((n, i) => n + ' ' + costs[i] + ' — ' + unitHints()[i]).join('; ') + '.</p></details></section></aside>';
  }
  const unitList = list => list.map(([n, i]) => n + ' ×' + i).join(' → ');
+ function droneReel() {
+  const frames = Object.entries(s.report?.stills ?? {}).filter(([cam, shot]) => /^[0-2]$/.test(cam) && /^data:image\/jpeg;base64,[a-z0-9+/=]+$/i.test(shot?.image) && Number.isFinite(shot.time));
+  if (!frames.length) return '';
+  return '<div class="c-stills">' + frames.map(([cam, shot]) => '<figure><img src="' + shot.image + '" alt="' + zones()[cam] + '"><figcaption>DVR ' + (Number(cam)+1) + ' · ' + mmss(Math.floor(shot.time/1000)) + '<b>' + zones()[cam] + '</b></figcaption></figure>').join('') + '</div>';
+ }
  function leakReel() {
   const clips = s.report?.leaks ?? [];
   if (!clips.length) return '';
@@ -210,10 +224,10 @@ export function startCoalition() {
   return '<section class="c-card" data-tone="report" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ХВИЛЯ ','DONOR REPORT · WAVE ') + r.wave + '</div><h2 id="c-title">' + tr('Звіт донору','Donor report') + '</h2><small>' + sponsor(r.sponsor).name + '</small>' + leakReel() +
    '<dl class="c-stats">' + tile(tr('Знято','Filmed'), x.filmed + '/' + x.hits) + tile(tr('Не знято','Not filmed'), x.none + x.far) + tile(tr('Збито','Shot down'), x.shot) + '</dl>' +
    '<dl class="c-stats c-stats-2">' + tile(tr('Гроші','Money'), sign(x.money)) + tile(tr('Перегляди','Views'), fmtViews(x.views)) + tile(tr('Комбо','Combo'), '×' + x.combo) + '</dl>' +
-   lines.join('') + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
+   lines.join('') + droneReel() + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
  }
  function overCard() {
-  return '<section class="c-card" data-tone="lost" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ПІДСУМОК','DONOR REPORT · FINAL') + '</div><h2 id="c-title">' + tr('Спонсори згорнули програму','The sponsors pulled out') + '</h2>' + leakReel() +
+  return '<section class="c-card" data-tone="lost" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ПІДСУМОК','DONOR REPORT · FINAL') + '</div><h2 id="c-title">' + tr('Спонсори згорнули програму','The sponsors pulled out') + '</h2>' + droneReel() + leakReel() +
    '<dl class="c-stats c-stats-over">' + tile(tr('Перегляди','Views'), fmtViews(s.views)) + tile(tr('Хвиль','Waves'), s.wave) + tile(tr('Комбо','Combo'), '×' + s.bestCombo) + '</dl>' +
    '<p class="c-line">' + wavesWord(s.wave) + tr('. ', '. ') + tr(fmtViews(s.views) + ' переглядів. 0 змін. ', fmtViews(s.views) + ' views. 0 changes. ') + ending(s) + '</p>' +
    (s.assisted ? '<p class="c-note">' + tr('Забіг з автогрою','Run with autoplay') + '</p>' : '') +
@@ -441,7 +455,8 @@ export function startCoalition() {
   requestAnimationFrame(view);
   if (document.hidden) { prevView = 0; return }
   const dt = prevView ? Math.min(.1, (now - prevView) / 1000) : 0; prevView = now;
-  autoStep(now);
+  const filmFirst = !!pendingFrame && !!stage;
+  if (!filmFirst) autoStep(now);
   if (!stage) return;
   const key = s.wave + ':' + cameraSubjects(s).join() + ':' + (s.aa || []).map(Number).join('');
   if (key !== waveKey) { waveKey = key; stage.resetWave(); stage.setBroadcast(cameraSubjects(s), s.aa) }
@@ -450,7 +465,9 @@ export function startCoalition() {
   const orbital = !!s.offer.orbital && s.cam === 3;
   stage.step({ orbital, dt: live && paused ? 0 : dt, real: (now - realStart) / 1000, elapsed: s.phase === 'watch' ? elapsed : (report?.duration ?? 0), report, cam });
   feedLayer.pre({ orbital, now, cam, state, quality });
-  if (!feedLayer.frozen && state !== 'jam' && state !== 'dark') stage.render();
+  if (!feedLayer.frozen && state === 'live') { stage.render(); if (filmFirst) recordDroneFrame(s.cam) }
+  else if (state === 'press') stage.render();
+  if (filmFirst) { pendingFrame = null; autoStep(now) }
   feedLayer.post({ orbital, now, dt, cam, state, quality, watching: !!live, paused, stage, gl: stage.glCanvas, show: true,
    contract: s.offer ? s.offer.cards[s.offer.pick].marker : -1, names: camRec(), zones: zones() });
   if (!firstFrame) { firstFrame = true; window.dispatchEvent(new Event('game-ready')) }

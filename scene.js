@@ -645,13 +645,13 @@ export function landscape(view) {
    if (!hits) { falling.position.y = 0; falling.rotation.z = 0; falling.rotation.x = 0; }
    span.scale.y = 1 - .035 * hits;
   },
-  draw(gameTime=0,trafficTime=0,smoke=false) {
+  draw(gameTime=0,trafficTime=0,smoke=false,lightTime=gameTime) {
    for (const deck of looseDecks) {
     const drop = deck.since === null ? 0 : T.MathUtils.clamp((gameTime - deck.since) / 1.35, 0, 1);
     deck.pivot.rotation.z = deck.side * .59 * drop * drop;
     deck.pivot.position.y = 3.16 - .35 * drop;
    }
-   const angle=2*Math.PI*gameTime/DAY_SECONDS,altitude=Math.cos(angle);
+   const angle=2*Math.PI*lightTime/DAY_SECONDS,altitude=Math.cos(angle);
    const day=T.MathUtils.smoothstep(altitude,-.32,.6),dusk=1-Math.min(1,Math.abs(altitude)*3);daylight=day;
    sun.position.set(35*Math.cos(angle),13+40*Math.abs(altitude),46+20*Math.sin(angle));
    const nowMs = performance.now(), realDt = lastDraw ? Math.min(.1, (nowMs - lastDraw) / 1000) : 0; lastDraw = nowMs;

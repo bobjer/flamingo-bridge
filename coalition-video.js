@@ -108,6 +108,16 @@ export function createFeed() {
 
   const FAR_NAME = () => 'CAM-F · ZOOM ×12 · WHITE-HOT', FAR_SHORT = 'CAM-F · ×12';
   return {
+    still(gl) {
+      if (!gl?.width || !gl.height) return null;
+      const frame = document.createElement('canvas');
+      frame.width = Math.min(320, gl.width); frame.height = Math.max(1, Math.round(frame.width * gl.height / gl.width));
+      const ctx = frame.getContext('2d');
+      ctx.drawImage(gl, 0, 0, frame.width, frame.height);
+      ctx.fillStyle = 'rgba(5,18,14,.16)';
+      for (let y=1; y<frame.height; y+=3) ctx.fillRect(0,y,frame.width,1);
+      return frame.toDataURL('image/jpeg', .7);
+    },
     el,
     // the 3D host the renderer lives in
     host: stage,
@@ -140,7 +150,7 @@ export function createFeed() {
       noise.style.opacity = snow.toFixed(3);
       if (!reduced.matches && now - noiseAt > 50) { noiseAt = now; drawNoise() }
       // colour and brightness
-      let filter = c.orbital ? 'grayscale(1) contrast(1.45) brightness(1.12)' : drone ? '' : THERMAL;
+      let filter = c.orbital ? 'grayscale(1) contrast(1.45) brightness(1.12)' : drone ? 'saturate(.8) contrast(1.1)' : THERMAL;
       if (e?.type === 'bleed') filter += ' saturate(2) hue-rotate(' + e.hue.toFixed(0) + 'deg) contrast(1.3)';
       let band = -1;
       if (e?.type === 'pump') {
@@ -176,7 +186,7 @@ export function createFeed() {
       setText(q('[data-rec]'), c.orbital ? c.names[3] : far ? FAR_SHORT : c.names[cam]);
       const flight = mmss((now - startedAt) / 1000);
       const sats = dead ? 2 : Math.round(clamp(6 + quality * .07 + Math.sin(now / 5000 + cam) * 1.2, 3, 13));
-      setText(q('[data-sub]'), c.orbital ? 'MONO · ORBIT' : far ? 'WHITE-HOT' : 'T ' + flight + ' · SAT ' + sats);
+      setText(q('[data-sub]'), c.orbital ? 'MONO · ORBIT' : far ? 'WHITE-HOT' : 'DVR · T ' + flight + ' · SAT ' + sats);
       setText(q('[data-lq]'), (far ? 'LINK ' : 'LQ ') + Math.round(quality));
       sigBars.forEach((b, i) => b.classList.toggle('on', quality > i * 20 + 8));
       osd.classList.toggle('dead', dead);

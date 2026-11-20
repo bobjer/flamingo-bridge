@@ -3,7 +3,7 @@
 // Nothing plays until the first user gesture. During NO SIGNAL the tape "chews": pitch drops and wobbles.
 const key = 'pop-music-muted';
 const store = {
- get() { try { return localStorage.getItem(key) === '1' } catch { return false } },
+ get() { try { return localStorage.getItem(key) !== '0' } catch { return true } },
  set(v) { try { localStorage.setItem(key, v ? '1' : '0') } catch {} }
 };
 // Lead: one entry per eighth note. 0 = rest, -1 = hold the previous note. Two 8-bar parts (A then B).

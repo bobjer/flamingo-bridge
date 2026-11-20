@@ -41,6 +41,9 @@ export function tankerTraffic(scene) {
   const [{mesh}]=slicks.splice(i,1);mesh.removeFromParent();mesh.material.dispose();
  }
  return {
+  moor(point){
+   const ship=tanks[0].clone();ship.position.copy(point);scene.add(ship);return ship;
+  },
   move(clock){
    tanks.forEach((ship,i)=>{
     const progress=clock*1.18+i*13+20;

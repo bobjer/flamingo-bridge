@@ -1,3 +1,4 @@
+import {cruiserSinking} from './cruiser-sinking.js';
 import {pickGuest} from './guest-roll.js';
 import {watchRelease} from './release-notice.js';
 import {setupGameMenu} from './game-menu.js';
@@ -672,7 +673,7 @@ function rage(){
 }
 const tribute=document.createElement('div');tribute.className='tribute rooster-banner';tribute.hidden=true;
 tribute.innerHTML='<img class="cartoon-rooster" alt="" src="'+roosterUrl+'"><span></span>';$('view').append(tribute);
-const sinking=[];
+const sinking=cruiserSinking(fx);
 const sinkingBanner=document.createElement('div');
 sinkingBanner.className='tribute sinking-banner';sinkingBanner.hidden=true;
 $('view').append(sinkingBanner);
@@ -703,21 +704,14 @@ function floatOnSea(){
 function removeUnit(u){
  units.splice(units.indexOf(u),1);
  if(u.k!=='cruiser'){u.m.removeFromParent();return}
- sinking.push({mesh:u.m,startY:u.m.position.y,age:0});
- fx.burst(u.m.position);fx.spill(u.m.position,1.8,60);world.cinematic(u.m.position.clone(),1.3);
+ sinking.start(u.m);world.cinematic(u.m.position.clone(),1.3);
  sinkingBannerEnd=time+4;sinkingBanner.hidden=false;
 }
 function sinkStep(dt){
  sinkingBanner.hidden=time>=sinkingBannerEnd;
- for(let i=sinking.length-1;i>=0;i--){
-  const wreck=sinking[i];wreck.age+=dt;
-  const t=Math.min(1,wreck.age/3);
-  wreck.mesh.rotation.z=-.65*t;
-  wreck.mesh.position.y=wreck.startY-4*t*t;
-  if(t===1){wreck.mesh.removeFromParent();sinking.splice(i,1)}
- }
+ sinking.tick(dt);
 }
-function clearFlyby(){tantrum.hidden=true;rageUntil=rageReady=0;for(const wreck of sinking)wreck.mesh.removeFromParent();sinking.length=0;sinkingBannerEnd=0;sinkingBanner.hidden=true;crashArt.reset();tributeDelay=0;flyby?.m.removeFromParent();flyby=null;tributeUntil=0;tribute.hidden=true}
+function clearFlyby(){tantrum.hidden=true;rageUntil=rageReady=0;sinking.clear();sinkingBannerEnd=0;sinkingBanner.hidden=true;crashArt.reset();tributeDelay=0;flyby?.m.removeFromParent();flyby=null;tributeUntil=0;tribute.hidden=true}
 function aircraftStep(dt){
  crashArt.tick(dt);
  if(tributeDelay>0){tributeDelay-=dt;if(tributeDelay<=0)tributeUntil=time+4}
