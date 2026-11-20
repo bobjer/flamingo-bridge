@@ -107,12 +107,13 @@ export function purchase(s, id, delta = 1) {
 }
 
 // Trump's "peace deal": skip the wave for cash, donors tire twice as fast.
-export function acceptDeal(s) {
+export function acceptDeal(s, random = Math.random) {
   if (s.phase !== 'plan' || s.deal !== 'pending') return false;
   const gain = Math.round(CFG.trumpPay * s.fatigue);
   s.funds += gain; s.deal = 'signed';
   if ((s.offer.chanceFee ?? 1) !== 1) s.nextFee = s.offer.chanceFee;
   s.report = { wave: s.wave, skipped: true, result: { money: gain, views: 0, combo: 0 }, seed: [0, 0] };
+  deliverProduction(s, random);
   deliverLeaks(s);
   s.fatigue *= retentionFor(s) * CFG.trumpFatigue;
   s.phase = isOver(s) ? 'over' : 'report';
@@ -178,6 +179,12 @@ export function launch(s, random = Math.random) {
   report.decree = flights.some(f => f.decree);
   if (s.wave >= 2 && random() < .16) {
     report.cameraLoss = {camera:Math.floor(random()*3), at:Math.round(CFG.lead+1100+random()*Math.max(0,end-CFG.lead-1100))};
+  }
+  if (!s.production && random() < .15) {
+    const turns = 5 + Math.floor(random() * 6);
+    const type = Math.floor(random() * costs.length);
+    const batch = 2 + Math.floor(random() * (type === 0 ? 4 : 2));
+    report.orderOffer = {country: Math.floor(random() * 3), type, turns, remaining: turns * batch};
   }
   report.cuts = [{time:0,camera:s.cam === 4 ? 3 : s.cam}];
   s.report = report; s.captures = []; s.live = { resolved: [], pressMs: 0, stamps: 0 };
@@ -250,7 +257,13 @@ export function evaluate(s, captures, upTo = Infinity, extra = {}) {
     if (!f.success) { out.missed++; continue; }
     out.total++;
     const kind = f.decree ? 'none' : (captures[i] ?? 'none');
-    const { value, pay } = hitValue(r, f, kind);
+    const reward = hitValue(r, f, kind);
+    const value = reward.value;
+    let pay = reward.pay;
+    if (r.orderOffer && out.orderHit == null && pay > 0) {
+      out.orderHit = i;
+      pay = 0;
+    }
     const hitViews = value * CFG.viewsPer * (1 + CFG.comboStep * out.combo);
     out.hits.push({ i, kind, value, pay, views: hitViews, combo: out.combo, decree: f.decree });
     views += hitViews; out.money += pay; out.value += value;
@@ -290,6 +303,20 @@ function drawChance(s, result, random) {
   s.lastChanceWave = s.wave; s.lastChance = card.id;
 }
 
+// Each instalment supplies the following wave, including after a signed deal.
+function deliverProduction(s, random) {
+  const order = s.production;
+  if (!order) return;
+  const planned = Math.ceil(order.remaining / order.turnsLeft);
+  const lost = planned > 1 && random() < .35 ? 1 : 0;
+  const delivered = Math.min(planned - lost, CFG.cap - s.stock[order.type]);
+  s.stock[order.type] += delivered;
+  order.remaining -= delivered + lost;
+  order.turnsLeft = Math.max(1, order.turnsLeft - 1);
+  s.report.delivery = {type: order.type, delivered, lost, remaining: order.remaining};
+  if (!order.remaining) delete s.production;
+}
+
 export function finishWave(s, captures = s.captures, extra = {}, random = Math.random) {
   if (s.phase !== 'watch') return;
   const r = s.report, e = evaluate(s, captures, Infinity, extra);
@@ -325,9 +352,14 @@ export function finishWave(s, captures = s.captures, extra = {}, random = Math.r
       film, views: Math.round(40000 + random() * 80000),
       funding: Math.max(1, Math.round(CFG.hitOther * r.fatigue * .5)) });
   }
+  if (e.orderHit != null) {
+    r.signedOrder = {...r.orderOffer};
+    s.production = {...r.orderOffer, turnsLeft: r.orderOffer.turns};
+  }
+  deliverProduction(s, random);
   s.fatigue *= retentionFor(s);
   drawChance(s,e,random);
-  if (s.funds < Math.min(...costs)) {
+  if (!total(s) && s.funds < Math.min(...costs)) {
     const reserve = s.reserve ?? 2;
     if (reserve > 0) {
       s.stock[0] += reserve;

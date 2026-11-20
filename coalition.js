@@ -170,7 +170,7 @@ export function startCoalition() {
    if (kind === 'drone' && !r.stills?.[s.cam]) pendingFrame = {report:r, cam:s.cam, time:f.impact};
    const score = evaluate(s, s.captures, f.impact);
    const pay = score.payNow[i];
-   const payout = (r.sponsor === 'conference' ? tr('Аванс','Advance') : tr('Виплата','Payout')) + ' +' + pay;
+   const payout = score.orderHit === i ? tr('Передзамовлення','Preorder')+' · '+productionText(r.orderOffer) : (r.sponsor === 'conference' ? tr('Аванс','Advance') : tr('Виплата','Payout')) + ' +' + pay;
    if (f.intercepted) { say(tr('ЗБИТО','SHOT DOWN') + (pay ? ' · ' + payout : ''), 'shot', where); continue }
    const hit = score.hits.find(h => h.i === i);
    if (f.decree) say(tr('СКАСОВАНО УКАЗОМ','CANCELLED BY DECREE'), 'decree', where);
@@ -233,7 +233,7 @@ export function startCoalition() {
  }
  function header() {
   const muted = music.muted;
-  return '<header class="top"><div class="top-left"><img src="/flamingo.svg" width="30" height="30" alt=""><span class="label">' + tr('ШТАБ КОАЛІЦІЇ · ВІДДІЛ ЗВІТНОСТІ','COALITION HQ · REPORTING DEPARTMENT') + '</span></div>' +
+  return '<header class="top"><div class="top-left"><img src="/coalition-koala.svg" width="30" height="30" alt=""><span class="label">' + tr('ШТАБ КОАЛІЦІЇ · ВІДДІЛ ЗВІТНОСТІ','COALITION HQ · REPORTING DEPARTMENT') + '</span></div>' +
    '<div class="top-title"><strong>' + tr('СЕЗОН ХЛОПКІВ','POP SEASON') + '</strong><span>' + tr('КОАЛІЦІЯ ОХОЧИХ','COALITION OF THE WILLING') + '</span></div>' +
    '<div class="top-status">' + languageButton() + '<button type="button" class="c-sides c-quiet" data-action="quiet" aria-pressed="' + muted + '" aria-label="' + tr('Тихий режим','Quiet mode') + '"><span class="full">' + tr('Тихий режим','Quiet mode') + '</span><span class="short" aria-hidden="true">' + '♪' + '</span></button>' +
    autoButton() + '<button type="button" class="c-sides" data-coach-toggle aria-pressed="' + coach.enabled + '">' + tr('Навчання','Coach') + '</button><span class="label">' + tr('РЕЖИМ','MODE') + '</span><span class="chip"><i class="dot" aria-hidden="true"></i><span>' + phaseWord() + '</span></span>' + button('sides', tr('Спочатку','Start over'), false, 'c-sides') + '</div></header>';
@@ -246,7 +246,7 @@ export function startCoalition() {
    '<section class="panel br"><div class="label">' + tr('ЗВЕДЕННЯ','SUMMARY') + '</div>' +
     stat(tr('Бюджет','Budget'), s.funds, 'c-accent') + (s.offer.reach ? '<small class="c-tired">'+marketLine()+'</small>' : '') + '<div class="c-views"><label>' + tr('Перегляди','Views') + '</label><b class="big">' + fmtViews(s.views) + '</b></div>' +
     stat(tr('Найкраще комбо','Best combo'), '×' + s.bestCombo) + stat(tr('Імовірність збиття на ППО','Anti-air kill chance'), aaPct() + '%') +
-    (s.ious.length ? stat(tr('Конференція винна','Conference owes'), s.ious.reduce((a, x) => a + x.amount, 0)) : '') + '</section>' +
+    (s.production ? stat(tr('У виробництві','In production'), productionText(s.production)) : '') + (s.ious.length ? stat(tr('Конференція винна','Conference owes'), s.ious.reduce((a, x) => a + x.amount, 0)) : '') + '</section>' +
    '<section class="panel br"><div class="label">' + tr('ВТОМА ДОНОРІВ','DONOR FATIGUE') + '</div>' +
     '<progress max="100" value="' + Math.round(s.fatigue * 100) + '" aria-label="' + tr('Поточний множник виплат','Current payout multiplier') + '"></progress>' +
     '<small class="c-tired">' + tr('Донори втомились на ' + tired + '%','Donors are ' + tired + '% tired') + ' · ' + tr('виплати ×','payouts ×') + num(s.fatigue.toFixed(2)) + '</small></section>' +
@@ -313,13 +313,25 @@ export function startCoalition() {
     : tr('Гонорар наступної хвилі ','Next wave’s fee ')+sign(Math.round((c.fee-1)*100))+'%';
   return '<aside class="c-chance"><small>'+tr('КАРТКА «ШАНС»','CHANCE CARD')+'</small><strong>'+chanceTitle(c.id)+'</strong><span>'+effect+'</span></aside>';
  }
+ function productionText(order) {
+  const country = [tr('Данія','Denmark'),tr('Польща','Poland'),tr('Норвегія','Norway')][order.country];
+  return country+' · '+units()[order.type]+' ×'+order.remaining;
+ }
+ function productionReport(r) {
+  const deal = r.signedOrder, d = r.delivery;
+  return (deal ? '<p class="c-good">'+tr('За кадр спонсор оплатив виробництво','Sponsor prepaid production for the footage')+' · '+productionText(deal)+' · '+deal.turns+tr(' хвиль',' waves')+'</p>' : '') +
+   (d ? '<p>'+tr('Поставка','Delivery')+' · '+units()[d.type]+' +'+d.delivered+
+    (d.lost ? tr(' · зникло при закупівлі: ',' · lost to corruption: ')+d.lost : '')+
+    tr(' · залишилось поставити: ',' · still on order: ')+d.remaining+'</p>' : '');
+ }
  function reportCard() {
   const r = s.report, x = r.result;
   if (r.skipped) return '<section class="c-card" data-tone="report" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('КАМЕО · ТРАМП · ХВИЛЯ ','CAMEO · TRUMP · WAVE ') + r.wave + '</div><h2 id="c-title">' + tr('Угоду підписано','Deal signed') + '</h2>' +
    '<dl class="c-stats">' + tile(tr('Гроші','Money'), sign(x.money)) + tile(tr('Перегляди','Views'), fmtViews(x.views)) + tile(tr('Втома','Fatigue'), '×' + num((s.fatigue).toFixed(2))) + '</dl>' +
    '<p>' + tr('Угоду підписано. Війну завершено. У понеділок продовжимо.','Deal signed. War ended. We resume on Monday.') + '</p>' +
-   leakReel() + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
+   productionReport(r) + leakReel() + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
   const lines = donorLines(r, s).map(l => '<p class="c-line">' + l + '</p>');
+  lines.unshift(productionReport(r));
   if (r.reserveReleased) lines.unshift('<p class="c-good">'+tr('Фінансування згорнуто. У касі ','Funding withdrawn. Budget: ')+s.funds+tr('. На наступну хвилю зі складу видано ракет: ','. Reserve missiles available next wave: ')+r.reserveReleased+'.</p>');
   if (r.newSponsor) lines.unshift('<p class="c-good">'+tr('Новий спонсор: ','New sponsor: ')+sponsor(r.newSponsor).name+tr(' · аванс +',' · advance +')+r.advance+'</p>');
   if (r.sponsor === 'defence') lines.push('<p>' + tr('Оборонний концерн: освоєно ' + r.units + ' юнітів.','Defence Concern: ' + r.units + ' units absorbed.') + '</p>');
