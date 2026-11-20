@@ -83,7 +83,7 @@ export const retentionFor = s => 1 - (1-donorRetention[s.difficulty ?? 'normal']
 export const offContractRate = difficulty => difficulty === 'hard' ? 8 : CFG.hitOther;
 export function newSeason(random = Math.random, difficulty = 'normal') {
   const s = { version: saveVersion, difficulty, wave: 1, phase: 'plan', funds: openingBudget[difficulty], views: 0, bestCombo: 0, fatigue: 1,
-    stock: emptyStock(), bought: emptyStock(), ious: [], offer: null, aa: [], cameo: '', deal: '', event: '',
+    reserve: 2, stock: emptyStock(), bought: emptyStock(), ious: [], offer: null, aa: [], cameo: '', deal: '', event: '',
     report: null, captures: [], live: null, cam: 0, runId: '', submitted: false };
   const roll = random();
   s.market = roll < .24 ? 'local' : roll < .75 ? 'national' : 'network';
@@ -327,12 +327,32 @@ export function finishWave(s, captures = s.captures, extra = {}, random = Math.r
   }
   s.fatigue *= retentionFor(s);
   drawChance(s,e,random);
+  if (s.funds < Math.min(...costs)) {
+    const reserve = s.reserve ?? 2;
+    if (reserve > 0) {
+      s.stock[0] += reserve;
+      s.reserve = 0;
+      r.reserveReleased = reserve;
+    } else if (!s.replacementSponsor && random() < .35) {
+      const candidates = SPONSORS.filter(id => id !== r.sponsor);
+      s.replacementSponsor = candidates[Math.floor(random()*candidates.length)];
+      r.advance = 3 * Math.min(...costs);
+      s.funds += r.advance; r.result.money += r.advance;
+      r.newSponsor = s.replacementSponsor;
+    }
+  }
   s.phase = isOver(s) ? 'over' : 'report';
   if (s.phase === 'over') s.runId ||= newId();
 }
 
 export function nextWave(s, random = Math.random) {
   if (s.phase !== 'report') return;
+  const newcomer = s.report?.newSponsor;
   s.wave++; s.phase = 'plan'; s.report = null; s.captures = []; s.live = null;
   dealWave(s, random);
+  if (newcomer) {
+    const i = s.offer.cards.findIndex(c=>c.id===newcomer);
+    if(i<0) s.offer.cards[0].id=newcomer;
+    else s.offer.pick=i;
+  }
 }

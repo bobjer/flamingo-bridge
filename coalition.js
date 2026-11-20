@@ -320,6 +320,8 @@ export function startCoalition() {
    '<p>' + tr('Угоду підписано. Війну завершено. У понеділок продовжимо.','Deal signed. War ended. We resume on Monday.') + '</p>' +
    leakReel() + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
   const lines = donorLines(r, s).map(l => '<p class="c-line">' + l + '</p>');
+  if (r.reserveReleased) lines.unshift('<p class="c-good">'+tr('Фінансування згорнуто. У касі ','Funding withdrawn. Budget: ')+s.funds+tr('. На наступну хвилю зі складу видано ракет: ','. Reserve missiles available next wave: ')+r.reserveReleased+'.</p>');
+  if (r.newSponsor) lines.unshift('<p class="c-good">'+tr('Новий спонсор: ','New sponsor: ')+sponsor(r.newSponsor).name+tr(' · аванс +',' · advance +')+r.advance+'</p>');
   if (r.sponsor === 'defence') lines.push('<p>' + tr('Оборонний концерн: освоєно ' + r.units + ' юнітів.','Defence Concern: ' + r.units + ' units absorbed.') + '</p>');
   if (x.viral) lines.push('<p class="c-good">' + tr('Вірусно, бо нічого не видно: перегляди ×2.','Viral because nothing was visible: views ×2.') + '</p>');
   if (r.decree) lines.push('<p>' + tr('Трамп образився: одне влучання скасовано указом.','Trump took offence: one hit was cancelled by decree.') + '</p>');
@@ -337,7 +339,7 @@ export function startCoalition() {
    lines.join('') + droneReel() + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
  }
  function overCard() {
-  return '<section class="c-card" data-tone="lost" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ПІДСУМОК','DONOR REPORT · FINAL') + '</div><h2 id="c-title">' + tr('Спонсори згорнули програму','The sponsors pulled out') + '</h2>' + chanceCard() + droneReel() + leakReel() +
+  return '<section class="c-card" data-tone="lost" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ПІДСУМОК','DONOR REPORT · FINAL') + '</div><h2 id="c-title">' + tr('Спонсори згорнули програму','The sponsors pulled out') + '</h2><p>'+tr('Виплата за хвилю: ','Wave payout: ')+s.report.result.money+tr('. У касі ','. Budget: ')+s.funds+tr(', найдешевша ракета коштує ',', cheapest missile: ')+Math.min(...costs)+tr('. Склад порожній. Нового авансу немає.','. No missiles in stock and no new advance.')+'</p>' + chanceCard() + droneReel() + leakReel() +
    '<dl class="c-stats c-stats-over">' + tile(tr('Перегляди','Views'), fmtViews(s.views)) + tile(tr('Хвиль','Waves'), s.wave) + tile(tr('Комбо','Combo'), '×' + s.bestCombo) + '</dl>' +
    '<p class="c-line">' + wavesWord(s.wave) + tr('. ', '. ') + tr(fmtViews(s.views) + ' переглядів. 0 змін. ', fmtViews(s.views) + ' views. 0 changes. ') + ending(s) + '</p>' +
    (s.assisted ? '<p class="c-note">' + tr('Забіг з автогрою','Run with autoplay') + '</p>' : '') +
