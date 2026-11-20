@@ -26,6 +26,9 @@ function deliverLeaks(s) {
   s.leaks = (s.leaks ?? []).filter(l => l.due > s.wave);
   s.report.leaks = due;
   const bonus = due.reduce((sum, l) => sum + l.views, 0);
+  const funding = due.reduce((sum, clip) => sum + (clip.funding ?? 0), 0);
+  s.funds += funding;
+  s.report.result.money += funding;
   s.views += bonus;
   s.report.result.views += bonus;
 }
@@ -145,16 +148,52 @@ export function launch(s, random = Math.random) {
   if (s.event === 'committee') report.committee = { at: Math.round((.3 + .3 * random()) * end) };
   // Drawn last so earlier rolls keep their order: EW cuts one drone off for a while.
   if (random() < CFG.ewChance) report.ew = { marker: Math.floor(random() * 3), at: Math.round(random() * .5 * end), dur: CFG.ewDur };
+  assignScenes(cameraSubjects(s), flights, random);
+  report.assignedScenes = true;
+  const cruiser = flights.find(f => f.success && !f.decree && !f.extra && cameraSubjects(s)[f.marker] === 'cruiser');
+  if (cruiser) report.duration = Math.max(report.duration, cruiser.impact + 3400);
+  if (random() < .22) {
+    const first = Math.min(...flights.map(f => f.start));
+    const from = first + Math.floor(random() * (end-first));
+    report.partnerPass = {from, to:from+2300};
+  }
+  report.decree = flights.some(f => f.decree);
+  if (s.wave >= 2 && random() < .16) {
+    report.cameraLoss = {camera:Math.floor(random()*3), at:Math.round(CFG.lead+1100+random()*Math.max(0,end-CFG.lead-1100))};
+  }
+  report.cuts = [{time:0,camera:s.cam === 4 ? 3 : s.cam}];
   s.report = report; s.captures = []; s.live = { resolved: [], pressMs: 0, stamps: 0 };
   s.stock = emptyStock(); s.bought = emptyStock();
   s.phase = 'watch';
   return true;
 }
 
+// Cast each remaining arcade event into an open camera slot, in playback order.
+function assignScenes(subjects, flights, random) {
+  const remaining = subjects.map(id => id === 'arch' ? 3 : 1);
+  const extras = subjects.map(id => id === 'cruiser' ? 'tanker' : id === 'sam' ? 'truck' : null);
+  for (const f of [...flights].sort((a,b) => a.impact - b.impact)) {
+    if (!remaining[f.marker]) {
+      const open = remaining.map((n,i) => n || extras[i] ? i : -1).filter(i => i >= 0);
+      f.originalMarker = f.marker;
+      if (!open.length) {
+        f.noScene = true; f.success = false; f.intercepted = false; f.decree = false;
+        continue;
+      }
+      f.marker = open[Math.floor(random() * open.length)];
+      if (!remaining[f.marker]) f.extra = extras[f.marker];
+    }
+    if (f.success && !f.decree && !f.intercepted) {
+      if (f.extra) extras[f.marker] = null;
+      else remaining[f.marker]--;
+    }
+  }
+}
+
 // Money and views of one successful impact that was filmed as `kind` ('drone' | 'far' | 'none').
 export function hitValue(r, f, kind) {
   if (kind === 'none' || f.decree) return { value: 0, pay: 0 };
-  const base = f.marker === r.contract ? CFG.hitContract : (r.offContract ?? CFG.hitOther);
+  const base = f.marker === r.contract && !f.extra ? CFG.hitContract : (r.offContract ?? CFG.hitOther);
   let value = base * r.fatigue * (f.type === 2 ? CFG.loaf : 1);
   if (kind === 'far') value *= f.type === 2 ? CFG.loafFar : CFG.far;
   let pay;
@@ -223,10 +262,24 @@ export function finishWave(s, captures = s.captures, extra = {}, random = Math.r
   r.result = { money: gain, views, combo: e.best, hits: e.total, filmed: e.filmed, far: e.far, none: e.none, shot: e.shot, missed: e.missed,
     viral: e.viral, iou, owed: s.ious.reduce((a, x) => a + x.amount, 0), pressMs: extra.pressMs || 0 };
   deliverLeaks(s);
-  if (e.none && random() < .4) {
-    const clips = ['span', 'hole', 'train'];
+  const partnerShots = e.hits.filter(h => {
+    const time = r.flights[h.i].impact;
+    return !h.decree && r.partnerPass && time >= r.partnerPass.from && time <= r.partnerPass.to;
+  });
+  r.partnerShots = partnerShots.map(h => h.i);
+  r.partnerFunding = partnerShots.some(h => h.kind === 'none') ? Math.max(1,Math.round(CFG.hitOther*r.fatigue*.5)) : 0;
+  s.funds += r.partnerFunding; r.result.money += r.partnerFunding;
+  const unseen = e.hits.filter(h => h.kind === 'none' && !h.decree && !r.partnerShots.includes(h.i));
+  if (unseen.length && random() < .4) {
+    const {i} = unseen[Math.floor(random() * unseen.length)];
+    const f = r.flights[i], ids = cameraSubjects(s);
+    // Archive only this wave's small event script, never its images or previous reports.
+    const film = { subjects: [...ids], aa: [...s.aa], wave: r.wave, seed: r.seed,
+      assignedScenes: !!r.assignedScenes, flights: r.flights.filter(g => g.start <= f.impact + 1600),
+      marker: f.marker, subject: f.extra ?? ids[f.marker], time: f.impact, duration: r.duration };
     (s.leaks ??= []).push({ source: s.wave, due: s.wave + 1 + Math.floor(random() * 2),
-      clip: clips[Math.floor(random() * clips.length)], views: Math.round(40000 + random() * 80000) });
+      film, views: Math.round(40000 + random() * 80000),
+      funding: Math.max(1, Math.round(CFG.hitOther * r.fatigue * .5)) });
   }
   s.fatigue *= donorRetention[s.difficulty ?? 'normal'];
   s.phase = isOver(s) ? 'over' : 'report';

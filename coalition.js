@@ -5,6 +5,8 @@ import {changeSide, languageButton, read, write, levelField, preferredLevel, rem
 import {CFG, costs, openingBudget, donorRetention, offContractRate, newSeason, pickSponsor, purchase, launch, finishWave, nextWave, acceptDeal, declineDeal, evaluate, total, aaChance, cameraSubjects} from './coalition-rules.js';
 import {units, unitHints, subjectName, fmtViews, sponsor, cameo, donorLines, ending, wavesWord, icon} from './coalition-copy.js';
 import {createStage} from './coalition-world.js';
+import {signalAt,broadcastOverlay,drawBroadcast} from './broadcast-events.js';
+import {replayViewer} from './coalition-replay.js';
 import {createFeed} from './coalition-video.js';
 import {showCoalitionBoard} from './coalition-leaderboard.js';
 import {shareRun} from './coalition-share.js';
@@ -53,9 +55,11 @@ export function startCoalition() {
  const auto = { stage: '', t: 0, queue: null, launch: false, stampAt: 0, holdUntil: 0 };
  const feedLayer = createFeed();
  let stage = null, waveKey = '', prevView = 0, firstFrame = false;
+ let drawnCam = -1, holdShotUntil = 0;
+ const player = replayViewer(feedLayer.host, () => stage, rewind => { if (rewind) waveKey = ''; auto.t = performance.now()+2500 });
  let finale = 0;
  let pickedWave = 0;
- const coach = createCoach({isAuto:()=>autoOn && s.phase!=='over',help:coalitionHelp,suggest:coalitionSuggestion});
+ const coach = createCoach({isAuto:()=>autoOn && s.phase!=='over',help:coalitionHelp,suggest:coalitionSuggestion,idleMessage:()=>s.phase==='report'?tr('Ефір завершено. Перегляньте повтор або натисніть «Наступна хвиля».','Broadcast complete. Watch the replay or choose Next wave.'):null});
  const lessonGoal = 3;
  const lessonReady = () => (s.lessonBridgeShots ?? 0) >= lessonGoal && !s.lessonBridgeDone;
  function coalitionSuggestion(){
@@ -92,25 +96,19 @@ export function startCoalition() {
 
  /* ---------- link state of each camera ---------- */
  function linkState(cam) {
-  if (!watching()) return 'live';
-  const r = s.report;
-  if (cam === 4) return 'press';
-  if (cam === 3) return 'live';
-  if (r.ew && r.ew.marker === cam && elapsed >= r.ew.at && elapsed < r.ew.at + r.ew.dur) return 'jam';
-  if (r.musk && elapsed >= r.musk.from && elapsed < r.musk.from + r.musk.dur) return 'dark';
-  return 'live';
+  return signalAt(watching() && s.report,cam,elapsed);
  }
  // 0-100: baseline per camera, collapsing 1.5 s before an EW window, zero when jammed or blacked out
  function linkQuality(cam) {
   const st = linkState(cam);
-  if (st === 'jam' || st === 'dark') return 0;
+  if (st === 'jam' || st === 'dark' || st === 'down') return 0;
   if (cam >= 3) return baseLink[cam] === 100 ? 100 : baseLink[cam] + jit * .4;
   let q = baseLink[cam] + jit;
   const r = watching() && s.report, ew = r && r.ew;
   if (ew && ew.marker === cam && elapsed >= ew.at - 1500 && elapsed < ew.at) q *= Math.pow(1 - (elapsed - (ew.at - 1500)) / 1500, 1.3);
   return Math.max(0, Math.min(100, q));
  }
- const lostText = state => state === 'jam' ? tr('РЕБ · ЦЕЙ МАРКЕР ВИДНО ТІЛЬКИ З ДАЛЬНЬОЇ КАМЕРИ', 'EW · THIS MARKER IS ONLY VISIBLE ON THE FAR CAM')
+ const lostText = state => state === 'down' ? tr('Дрон збито','Camera drone down') : state === 'jam' ? tr('РЕБ · ЦЕЙ МАРКЕР ВИДНО ТІЛЬКИ З ДАЛЬНЬОЇ КАМЕРИ', 'EW · THIS MARKER IS ONLY VISIBLE ON THE FAR CAM')
   : state === 'dark' ? tr('ПРОШИВКУ ОНОВЛЕНО · «Ви ж просили свободу слова»', 'FIRMWARE UPDATED · “You did ask for free speech”')
   : state === 'press' ? tr('ПРЕС-КОНФЕРЕНЦІЯ · ПЕРЕГЛЯДИ РОСТУТЬ, ВЛУЧАННЯ НЕ ЗНІМАЮТЬСЯ', 'PRESS BRIEFING · VIEWS GROW, HITS ARE NOT FILMED') : '';
 
@@ -145,11 +143,21 @@ export function startCoalition() {
    const f = r.flights[i];
    if (L.resolved[i] || f.impact > elapsed) continue;
    L.resolved[i] = true;
-   const where = zones()[f.marker], big = s.cam === 3 || s.cam === f.marker;
+   const where = subjectName(f.extra ?? cameraSubjects(s)[f.marker]), big = s.cam === 3 || s.cam === f.marker;
    const say = (text, cls, sub) => big ? pop(text, cls, sub) : ticker(where + ' · ' + text, cls);
+   if (f.noScene) { ticker(tr('Усі об’єкти цієї хвилі вже вибули','No active objects left this wave'),'shot'); continue }
    if (!f.success && !f.intercepted) { say(tr('МИМО','MISSED'), 'shot', where); continue }
    let kind = 'none';
-   if (f.success && !f.decree) { if (s.cam === 3) kind = 'far'; else if (s.cam === f.marker && linkState(s.cam) === 'live') kind = 'drone' }
+   const state = linkState(s.cam);
+   if (f.success && !f.decree) {
+     if (s.cam === 3) kind = 'far';
+     else if (s.cam < 3 && state === 'live') {
+       const otherInShot = drawnCam === s.cam && stage?.project(f.marker);
+       if (s.cam === f.marker || otherInShot?.half >= 9) kind = 'drone';
+     }
+     (r.filmLog ??= {})[i] = {camera:s.cam,state};
+     if (kind !== 'none') holdShotUntil = Math.max(holdShotUntil,performance.now()+(cameraSubjects(s)[f.marker]==='cruiser' && !f.extra ? 3100 : 900));
+   }
    s.captures[i] = kind;
    if (coach.enabled && !autoOn && (kind === 'drone' || kind === 'far') && ['arch','pier','hole'].includes(cameraSubjects(s)[f.marker])) {
     s.lessonBridgeShots = Math.min(lessonGoal, (s.lessonBridgeShots ?? 0) + 1);
@@ -163,15 +171,16 @@ export function startCoalition() {
    if (f.decree) say(tr('СКАСОВАНО УКАЗОМ','CANCELLED BY DECREE'), 'decree', where);
    else if (kind === 'drone') say(tr('ЗНЯТО','FILMED') + ' · ' + payout, 'ok', hit.combo >= 1 ? tr('КОМБО ×','COMBO ×') + (hit.combo + 1) : where);
    else if (kind === 'far') say(tr('ЗАРЕВО','GLOW') + ' · ' + payout, 'far', where);
-   else say(tr('НЕ ЗНЯТО','NOT FILMED'), 'none', where);
+   else say(tr('ВЛУЧАННЯ · ','HIT · ') + where, 'none', ['down','jam','dark'].includes(state) ? tr('Втрачено зв’язок','Signal lost') : tr('Поза кадром','Off camera'));
   }
  }
 
  // Everything dynamic about the feed lives here, so switching camera never needs render().
  function refreshFeed() {
   const feed = root.querySelector('.c-feed'); if (!feed) return;
-  if (s.cam === 4 && !pressActive()) s.cam = 3;
+  if (s.cam === 4 && !pressActive()) selectFeed(3);
   const cam = s.cam, state = linkState(cam), now = watching();
+  drawBroadcast(feed.querySelector('.broadcast-overlay'),now && s.report,cam,elapsed,state);
   setAttr(feed, 'data-cam', String(cam)); setAttr(feed, 'data-state', state); setAttr(feed, 'data-frozen', String(now && frozen()));
   feed.classList.toggle('cam-far', cam >= 3);
   const air = [0, 0, 0], warn = [false, false, false];
@@ -192,10 +201,18 @@ export function startCoalition() {
   const viral = feed.querySelector('[data-viral]'); if (viral) viral.hidden = !(e && e.viral);
   music.setGlitch(now && !paused && (state === 'jam' || state === 'dark'));
  }
+ function selectFeed(n) {
+  s.cam = n;
+  if (watching()) {
+    const cuts = s.report.cuts ??= [];
+    if (cuts.at(-1)?.time === elapsed) cuts.pop();
+    if (cuts.at(-1)?.camera !== n) cuts.push({time:elapsed,camera:n});
+  }
+ }
  function setCam(n) {
   if (n === s.cam || (n === 4 ? !pressActive() : ![0, 1, 2, 3].includes(n))) return;
   if (s.phase === 'watch' && paused) return;
-  s.cam = n; save(); refreshFeed();
+  selectFeed(n); save(); refreshFeed();
  }
 
  /* ---------- copy ---------- */
@@ -214,7 +231,7 @@ export function startCoalition() {
   return '<header class="top"><div class="top-left"><img src="/flamingo.svg" width="30" height="30" alt=""><span class="label">' + tr('ШТАБ КОАЛІЦІЇ · ВІДДІЛ ЗВІТНОСТІ','COALITION HQ · REPORTING DEPARTMENT') + '</span></div>' +
    '<div class="top-title"><strong>' + tr('СЕЗОН ХЛОПКІВ','POP SEASON') + '</strong><span>' + tr('КОАЛІЦІЯ ОХОЧИХ','COALITION OF THE WILLING') + '</span></div>' +
    '<div class="top-status">' + languageButton() + '<button type="button" class="c-sides c-quiet" data-action="quiet" aria-pressed="' + muted + '" aria-label="' + tr('Тихий режим','Quiet mode') + '"><span class="full">' + tr('Тихий режим','Quiet mode') + '</span><span class="short" aria-hidden="true">' + '♪' + '</span></button>' +
-   autoButton() + '<button type="button" class="c-sides" data-coach-toggle aria-pressed="' + coach.enabled + '">' + tr('Навчання','Coach') + '</button><span class="label">' + tr('РЕЖИМ','MODE') + '</span><span class="chip"><i class="dot" aria-hidden="true"></i><span>' + phaseWord() + '</span></span>' + button('sides', tr('Сторони','Factions'), false, 'c-sides') + '</div></header>';
+   autoButton() + '<button type="button" class="c-sides" data-coach-toggle aria-pressed="' + coach.enabled + '">' + tr('Навчання','Coach') + '</button><span class="label">' + tr('РЕЖИМ','MODE') + '</span><span class="chip"><i class="dot" aria-hidden="true"></i><span>' + phaseWord() + '</span></span>' + button('sides', tr('Спочатку','Start over'), false, 'c-sides') + '</div></header>';
  }
  function left() {
   const tired = Math.round((1 - s.fatigue) * 100);
@@ -229,22 +246,59 @@ export function startCoalition() {
     '<progress max="100" value="' + Math.round(s.fatigue * 100) + '" aria-label="' + tr('Поточний множник виплат','Current payout multiplier') + '"></progress>' +
     '<small class="c-tired">' + tr('Донори втомились на ' + tired + '%','Donors are ' + tired + '% tired') + ' · ' + tr('виплати ×','payouts ×') + num(s.fatigue.toFixed(2)) + '</small></section>' +
    '<section class="panel br brief"><div class="label">' + tr('ІНСТРУКТАЖ','BRIEFING') + '</div>' +
-    '<details><summary>' + tr('Як це працює','How it works') + '</summary><p>' + tr('Спонсори платять не за влучання, а за відео влучання. Влучання зняте, якщо в момент удару відкритий дрон його маркера і в нього є сигнал: він платить 100%. Дальня камера дає 50% за паляницю й 30% за решту, з урахуванням умов спонсора. Незнято — 0.','Sponsors pay for the video of a hit, not for the hit. A hit counts as filmed if, at impact, the drone of that marker is open and has signal: it pays 100%. The far camera gives 50% for Palianytsia and 30% for other units, subject to sponsor terms. Not filmed pays 0.') + '</p><p>' + tr('Кожне наступне влучання, зняте дроном, дає +25% переглядів. Промах камери скидає комбо.','Each next hit filmed by a drone adds +25% views. A missed camera resets the combo.') + '</p><p>' + tr('«Автогра» віддає ефір підряднику: він купує зграю й перемикає дрони. Забіг позначається в лідерборді.','“Autoplay” outsources the broadcast to a contractor who buys the flock and switches drones. The run is marked on the leaderboard.') + '</p></details>' +
+    '<details><summary>' + tr('Як це працює','How it works') + '</summary><p>' + tr('Спонсори платять за кадр. Камера дрона зі зв’язком записує влучання у своєму кадрі. Дальня камера дає 50% за паляницю й 30% за решту, з урахуванням умов спонсора. Ігровий повтор доступний завжди. За пропущений кадр можуть заплатити партнери, якщо його зняв супутник або надійшов витік.','Sponsors pay for footage. A connected drone records hits in its frame. The far camera gives 50% for Palianytsia and 30% for other units, subject to sponsor terms. Game replays are always available. Satellite footage or a later leak can earn funding for an off-camera hit.') + '</p><p>' + tr('Кожне наступне влучання, зняте дроном, дає +25% переглядів. Промах камери скидає комбо.','Each next hit filmed by a drone adds +25% views. A missed camera resets the combo.') + '</p><p>' + tr('«Автогра» віддає ефір підряднику: він купує зграю й перемикає дрони. Забіг позначається в лідерборді.','“Autoplay” outsources the broadcast to a contractor who buys the flock and switches drones. The run is marked on the leaderboard.') + '</p></details>' +
     '<details><summary>' + tr('Камери','Cameras') + '</summary><p>' + tr('Три камери висвітлюють три сюжети хвилі. Назву сюжету видно на вкладці. Іноді на четвертій камері доступний супутниковий проліт за тарифом дальньої камери. На вкладці «▲N» — скільки юнітів летить до маркера; за 1,5 с до удару вона блимає. Клавіші 1–4 (5 — пресконференція).','Three cameras cover three stories each wave. Each tab names its story. Occasionally the fourth tab receives a satellite pass at the far-camera rate. “▲N” on a tab is how many units are heading to that marker; it blinks 1.5 s before impact. Keys 1–4 (5 is the press tab).') + '</p></details>' +
     '<details><summary>' + tr('Гарнізон і втома','Garrison and fatigue') + '</summary><p>' + tr('Над маркерами видно значки ППО. Шанс збиття 8% + 4,5% за хвилю, максимум 70%; Малюків збивають вдвічі рідше. На цій складності ставки за наступну хвилю падають на ' + cut + '%. Базова ставка за контрактний кадр — ' + CFG.hitContract + ', за інший — ' + offContractRate(s.difficulty) + '.','Anti-air icons sit above covered markers. Kill chance is 8% + 4.5% per wave, capped at 70%; Maliuk is hit half as often. At this difficulty rates fall by ' + cut + '% each wave. Base rates are ' + CFG.hitContract + ' for a contract shot and ' + offContractRate(s.difficulty) + ' for other footage.') + '</p></details>' +
     '<details><summary>' + tr('Юніти','Units') + '</summary><p>' + units().map((n, i) => n + ' ' + costs[i] + ' — ' + unitHints()[i]).join('; ') + '.</p></details></section></aside>';
  }
  const unitList = list => list.map(([n, i]) => n + ' ×' + i).join(' → ');
+ const legacyTitles = () => ({span:tr('Проліт упав · камера з човна','Span down · boat camera'),hole:tr('Діра в асфальті · відеореєстратор','Road crater · dashcam'),train:tr('Поїзд полетів · камера рибалки','Airborne train · angler’s camera')});
+ function playThumb(key, title, src) {
+   return '<button type="button" class="c-play-thumb" data-film="'+key+'" aria-label="'+tr('Відтворити: ','Play: ')+title+'"><img loading="lazy" src="'+src+'" alt=""><span aria-hidden="true">▶</span></button>';
+ }
+ const poster = subject => '/replay-'+subject+'.jpg';
  function droneReel() {
-  const frames = Object.entries(s.report?.stills ?? {}).filter(([cam, shot]) => /^[0-2]$/.test(cam) && /^data:image\/jpeg;base64,[a-z0-9+/=]+$/i.test(shot?.image) && Number.isFinite(shot.time));
-  if (!frames.length) return '';
-  return '<div class="c-stills">' + frames.map(([cam, shot]) => '<figure><img src="' + shot.image + '" alt="' + zones()[cam] + '"><figcaption>DVR ' + (Number(cam)+1) + ' · ' + mmss(Math.floor(shot.time/1000)) + '<b>' + zones()[cam] + '</b></figcaption></figure>').join('') + '</div>';
+   const r = s.report;
+   if (!r?.flights) return '';
+   const tiles = r.flights.flatMap((f,i) => {
+     if (f.noScene || f.decree) return [];
+     const capture = s.captures[i] ?? 'none', cam = r.filmLog?.[i]?.camera ?? f.marker;
+     const title = subjectName(f.extra ?? cameraSubjects(s)[f.marker]), still = r.stills?.[cam];
+     const src = still?.time === f.impact && /^data:image\/jpeg;base64,[a-z0-9+/=]+$/i.test(still.image) ? still.image : poster(cameraSubjects(s)[f.marker]);
+     const lost = ['jam','dark','down'].includes(r.filmLog?.[i]?.state);
+     const label = f.intercepted ? tr('Збито · повтор','Shot down · replay') : !f.success ? tr('Промах · повтор','Miss · replay') : capture==='drone' ? 'DVR '+(cam+1) : capture==='far' ? camNames()[3] : lost ? tr('Без зв’язку · повтор','Signal lost · replay') : tr('Поза кадром · повтор','Off camera · replay');
+     const redirect = f.originalMarker != null ? zones()[f.originalMarker]+' → ' : '';
+     return ['<figure>'+playThumb('hit-'+i,title,src)+'<figcaption>'+label+' · '+mmss(Math.floor(f.impact/1000))+'<b>'+redirect+title+'</b></figcaption></figure>'];
+   });
+   for (const i of r.partnerShots ?? []) {
+     const f = r.flights[i], title = subjectName(f.extra ?? cameraSubjects(s)[f.marker]);
+     tiles.push('<figure>'+playThumb('sat-'+i,title,poster(cameraSubjects(s)[f.marker]))+'<figcaption>'+tr('Супутник від партнерів','Partner satellite')+' · '+mmss(Math.floor(f.impact/1000))+'<b>'+title+'</b></figcaption></figure>');
+   }
+   if(r.cameraLoss) tiles.push('<figure>'+playThumb('loss-0',tr('Останній кадр дрона','Last drone transmission'),poster(cameraSubjects(s)[r.cameraLoss.camera]))+'<figcaption>'+tr('Дрон збито','Camera drone down')+' · '+mmss(Math.floor(r.cameraLoss.at/1000))+'</figcaption></figure>');
+   return '<button type="button" class="wave-replay" data-film="wave-0">▶ '+tr('Повтор хвилі','Replay wave')+'</button><div class="c-stills">'+tiles.join('')+'</div>';
+
  }
  function leakReel() {
-  const clips = s.report?.leaks ?? [];
-  if (!clips.length) return '';
-  const titles = {span: tr('Проліт упав · камера з човна','Span down · boat camera'), hole: tr('Діра в асфальті · відеореєстратор','Road crater · dashcam'), train: tr('Поїзд полетів · камера рибалки','Airborne train · angler’s camera')};
-  return clips.map(l => '<figure class="c-leak"><img src="/leak-' + l.clip + '.svg" alt="' + titles[l.clip] + '"><figcaption><small>' + tr('ВИТІК З ТОГО БОКУ · ХВИЛЯ ', 'LEAKED FOOTAGE · WAVE ') + l.source + '</small><strong>' + titles[l.clip] + '</strong><span>+' + fmtViews(l.views) + ' ' + tr('переглядів','views') + '</span></figcaption></figure>').join('');
+   return (s.report?.leaks ?? []).map((l,i) => {
+     const subject = l.film?.subjects[l.film.marker], title = subject ? subjectName(l.film.subject ?? subject) : legacyTitles()[l.clip];
+     if (!title) return '';
+     return '<figure class="c-leak">'+playThumb('leak-'+i,title,subject?poster(subject):'/leak-'+l.clip+'.svg')+'<figcaption><small>'+tr('ВИТІК З ТОГО БОКУ · ХВИЛЯ ','LEAKED FOOTAGE · WAVE ')+l.source+'</small><strong>'+title+'</strong><span>+'+fmtViews(l.views)+' '+tr('переглядів','views')+(l.funding?' · +'+l.funding+' '+tr('до бюджету','funding'):'')+'</span></figcaption></figure>';
+   }).join('');
+ }
+ function openFilm(b) {
+   const [kind,id] = b.dataset.film.split('-'), r = s.report;
+   if(kind === 'wave' || kind === 'loss') {
+     if(!r?.flights || (kind==='loss' && !r.cameraLoss)) return;
+     player.show(b,kind==='wave'?wave():tr('Останній кадр дрона','Last drone transmission'),{...r,aa:s.aa,subjects:cameraSubjects(s),whole:kind==='wave',camera:r.cameraLoss?.camera ?? 3,time:r.cameraLoss?.at ?? 0,orbital:s.offer.orbital,showSignal:true});
+   } else if(kind === 'leak') {
+     const l = r?.leaks?.[id]; if(!l) return;
+     if(l.film) player.show(b,subjectName(l.film.subject ?? l.film.subjects[l.film.marker]),{...l.film,reverse:true});
+     else if(Object.hasOwn(legacyTitles(),l.clip)) player.show(b,legacyTitles()[l.clip],null,l.clip);
+   } else {
+     const f = r?.flights?.[id]; if(!f || f.noScene || f.decree) return;
+     const camera = kind==='sat' || s.captures[id]==='far' ? 3 : s.captures[id]==='drone' ? (r.filmLog?.[id]?.camera ?? f.marker) : f.marker;
+     player.show(b,subjectName(f.extra ?? cameraSubjects(s)[f.marker]),{...r,aa:s.aa,subjects:cameraSubjects(s),time:f.impact,marker:f.marker,camera,satelliteSubject:kind==='sat'?f.marker:undefined,orbital:kind==='sat' || camera===3 && s.offer.orbital});
+   }
  }
  function reportCard() {
   const r = s.report, x = r.result;
@@ -256,13 +310,14 @@ export function startCoalition() {
   if (r.sponsor === 'defence') lines.push('<p>' + tr('Оборонний концерн: освоєно ' + r.units + ' юнітів.','Defence Concern: ' + r.units + ' units absorbed.') + '</p>');
   if (x.viral) lines.push('<p class="c-good">' + tr('Вірусно, бо нічого не видно: перегляди ×2.','Viral because nothing was visible: views ×2.') + '</p>');
   if (r.decree) lines.push('<p>' + tr('Трамп образився: одне влучання скасовано указом.','Trump took offence: one hit was cancelled by decree.') + '</p>');
+  if (r.partnerFunding) lines.push('<p class="c-good">'+tr('Супутник від партнерів · фінансування +','Partner satellite · funding +')+r.partnerFunding+'</p>');
   if (r.rebate) lines.push('<p>' + rebateText(r.rebate) + '</p>');
   if (x.pressMs) lines.push('<p>' + tr('Пресконференція: перегляди є, відео немає.','Press briefing: the views are there, the footage is not.') + '</p>');
   if (x.iou.paid) lines.push('<p class="c-good">' + tr('Конференція партнерів виплатила ' + x.iou.paid + '.','The Partners’ Conference paid ' + x.iou.paid + '.') + '</p>');
   if (x.iou.postponed) lines.push('<p>' + tr('Конференція партнерів: «перенесено на наступний рік» (' + x.iou.postponed + ').','Partners’ Conference: “postponed to next year” (' + x.iou.postponed + ').') + '</p>');
   if (r.sponsor === 'conference') lines.push('<p>' + tr('Конференція виплатить через дві хвилі. Може бути.','The conference pays in two waves. Maybe.') + '</p>');
   return '<section class="c-card" data-tone="report" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ХВИЛЯ ','DONOR REPORT · WAVE ') + r.wave + '</div><h2 id="c-title">' + tr('Звіт донору','Donor report') + '</h2><small>' + sponsor(r.sponsor).name + '</small>' + leakReel() +
-   '<dl class="c-stats">' + tile(tr('Знято','Filmed'), x.filmed + '/' + x.hits) + tile(tr('Не знято','Not filmed'), x.none + x.far) + tile(tr('Збито','Shot down'), x.shot) + '</dl>' +
+   '<dl class="c-stats">' + tile(tr('Знято','Filmed'), (x.filmed + x.far) + '/' + x.hits) + tile(tr('Не знято','Not filmed'), x.none) + tile(tr('Збито','Shot down'), x.shot) + '</dl>' +
    '<dl class="c-stats c-stats-2">' + tile(tr('Гроші','Money'), sign(x.money)) + tile(tr('Перегляди','Views'), fmtViews(x.views)) + tile(tr('Комбо','Combo'), '×' + x.combo) + '</dl>' +
    lines.join('') + droneReel() + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
  }
@@ -286,7 +341,7 @@ export function startCoalition() {
   const card = s.phase === 'over' ? overCard() : s.phase === 'report' ? reportCard() : s.phase === 'plan' && s.deal === 'pending' ? trumpCard() : '';
   const watch = s.phase === 'watch';
   return '<section class="c-feed br br-accent" data-cam="' + s.cam + '" data-state="live" data-frozen="false" data-mode="' + s.phase + '" aria-label="' + tr('Відеоканал дрона','Drone video feed') + '">' +
-   '<div class="feed-slot"></div>' +
+   '<div class="feed-slot"></div>' + broadcastOverlay() +
    '<div class="hud hud-score c-score"><span><small>' + (watch ? tr('ПЕРЕГЛЯДИ ХВИЛІ','WAVE VIEWS') : tr('ПЕРЕГЛЯДИ','VIEWS')) + '</small><b data-views>0</b></span><span class="c-combo"><small>' + (watch ? tr('КОМБО','COMBO') : tr('НАЙКР. КОМБО','BEST COMBO')) + '</small><b data-combo>×0</b></span><span class="c-viral" data-viral hidden>' + tr('ВІРУСНО ×2','VIRAL ×2') + '</span></div>' +
    '<div class="feed-lost" role="status"><div class="feed-plate"><b data-plate>' + tr('NO SIGNAL','NO SIGNAL') + '</b><span data-lost></span></div></div>' +
    '<div class="c-committee" role="group" aria-label="' + tr('Погодження з комітетом','Committee approval') + '"><p>' + tr('ПОГОДЖЕННЯ З КОМІТЕТОМ · атака замерзла. Поставте 3 печатки.','COMMITTEE APPROVAL · the attack is frozen. Apply 3 stamps.') + '</p><div>' +
@@ -350,14 +405,29 @@ export function startCoalition() {
   s.cam = [0, 1, 2, 3, 4].includes(s.cam) ? s.cam : 0;
   if (s.cam === 4 && !pressActive()) s.cam = 3;
   root.innerHTML = header() + '<div class="c-main">' + left() + '<div class="c-play">' + feed() + arcade() + '</div>' + right() + '</div>' + footer();
+  const card = root.querySelector('.c-card');
+  if (card) {
+    const actions = card.querySelector(':scope > .c-actions, :scope > [data-action="next"]');
+    const body = document.createElement('div'); body.className = 'c-card-body';
+    const replay = card.querySelector('.wave-replay');
+    if (replay && actions) {
+      const footer = document.createElement('div'); footer.className = 'c-actions replay-actions';
+      replay.classList.add('c-ghost'); footer.append(replay);
+      if (actions.matches('.c-actions')) { footer.append(...actions.children); actions.remove() }
+      else footer.append(actions);
+      body.append(...card.children); card.append(body,footer);
+    } else {
+      body.append(...[...card.children].filter(el => el !== actions)); card.prepend(body);
+    }
+  }
   feedLayer.attach(root.querySelector('.feed-slot'));
   root.querySelectorAll('.col').forEach((c, i) => { c.scrollTop = scrolls[i] || 0 });
   if (key) root.querySelector(key + ':not(:disabled)')?.focus({ preventScroll: true });
-  else if (!hadCard) root.querySelector('.c-card button')?.focus({ preventScroll: true });
+  else if (!hadCard) (root.querySelector('.c-card [data-action="next"],.c-card [data-action="fresh"]') ?? root.querySelector('.c-card button'))?.focus({ preventScroll: true });
   music.setMood(watching() && !paused ? 'watch' : 'plan');
   if (watching()) paint(); else { jit = 0; refreshFeed(); music.setGlitch(false) }
   if (reduced.matches) feedLayer.drawNoiseOnce();
-  if (s.phase === 'over') showCoalitionBoard(root.querySelector('.c-card'), { id: s.views > 0 ? s.runId : '', submitted: s.submitted, waves: s.wave, views: s.views, combo: s.bestCombo, assisted: !!s.assisted }, () => { s.submitted = true; save() });
+  if (s.phase === 'over') showCoalitionBoard(root.querySelector('.c-card-body'), { id: s.views > 0 ? s.runId : '', submitted: s.submitted, waves: s.wave, views: s.views, combo: s.bestCombo, assisted: !!s.assisted }, () => { s.submitted = true; save() });
   while (queued.length) pop(...queued.shift());
  }
  function paint() {
@@ -375,14 +445,19 @@ export function startCoalition() {
   finishWave(s, s.captures, { pressMs: s.live.pressMs });
   elapsed = previous = 0; save(); render();
  }
+ function watchRate() { return autoOn ? Math.min(.6, coach.rate()) : 1 }
  function tick(now) {
   if (s.phase !== 'watch' || paused) return;
+  if (document.querySelector('.faction-picker:modal')) { previous=now; frame=requestAnimationFrame(tick); return }
   const dt = previous ? Math.min(100, now - previous) : 0; previous = now;
   const r = s.report, c = r.committee;
   if (!frozen()) {
-   elapsed += dt * coach.rate();
+   elapsed += dt * watchRate();
    if (c && s.live.stamps < 3 && elapsed >= c.at) elapsed = c.at;
-   if (s.cam === 4 && pressActive()) s.live.pressMs += dt * coach.rate();
+   if (s.cam === 4 && pressActive()) s.live.pressMs += dt * watchRate();
+  }
+  if (r.partnerPass && !s.live.partnerNotified && elapsed >= r.partnerPass.from && elapsed <= r.partnerPass.to) {
+    ticker(tr('Супутник від партнерів · запис','Partner satellite · recording'),'ok'); s.live.partnerNotified = true;
   }
   resolveImpacts();
   if (elapsed >= r.duration && !frozen()) { settle(); return }
@@ -413,26 +488,27 @@ export function startCoalition() {
   if (!autoOn || document.hidden || coach.slowing) return;
   if (s.phase === 'over') { autoOn = false; refreshAuto(); return }
   if (s.phase === 'watch' && paused) return;
-  if (auto.stage !== s.phase) { Object.assign(auto, { stage: s.phase, t: now + ({ plan: 800, report: s.report?.leaks?.length ? 6200 : 2500 }[s.phase] ?? 0), queue: null, launch: false, stampAt: 0, holdUntil: 0 }) }
+  if (s.phase === 'report') return;
+  if (auto.stage !== s.phase) { Object.assign(auto, { stage: s.phase, t: now + (s.phase === 'plan' ? 1800 : 0), queue: null, launch: false, stampAt: 0, holdUntil: 0 }) }
   if (s.phase === 'plan') {
    if (now < auto.t) return;
    if (auto.launch) { if (attack()) { save(); render(); coach.explain(()=>tr('Запускаю ефір: склад хвилі зібрано, тепер обиратиму камеру.','Starting the broadcast. The lineup is ready, so I can switch to directing.')) } auto.t = now + 500; return }
    auto.queue ??= planMoves(s, Math.random);
    const m = auto.queue.shift();
-   if (!m) { auto.launch = true; auto.t = now + 1000; return }
+   if (!m) { auto.launch = true; auto.t = now + 2600; return }
    const done=applyMove(s, m); save(); render();
    if(done) coach.explain(()=>{
     if(m.do==='pick')return tr('Обираю контракт «','Choosing “')+sponsor(s.offer.cards[m.i].id).name+tr('»: бот порівняв умови двох карток.','”: its terms scored higher for this broadcast.');
     if(m.do==='buy')return tr('Додаю до хвилі: ','Adding to the lineup: ')+units()[m.id]+tr('. Ціна — ','. Cost: ')+costs[m.id]+tr('. Після покупки лишилось ','. Budget left: ')+s.funds+'.';
     return m.do==='deal'?tr('Приймаю угоду: бюджет малий, тому беру виплату за паузу.','Taking the deal: cash is low, so I accept a paid break.'):tr('Відмовляюся від угоди: бюджету вистачає на наступний ефір.','Declining the deal: there is enough money to keep broadcasting.');
    });
-   if (m.do === 'deal' || m.do === 'nodeal') { auto.queue = null; auto.t = now + 800 } else { auto.t = now + (m.do === 'buy' ? 150 : 350); if (!auto.queue.length) { auto.launch = true; auto.t = now + 1000 } }
-  } else if (s.phase === 'report') {
-   if (now >= auto.t) { nextWave(s); save(); render(); coach.explain(()=>tr('Звіт закрито. Відкриваю новий бюджет і картки спонсорів.','Closing the report to open the next budget and sponsor offers.')) }
+   if (m.do === 'deal' || m.do === 'nodeal') { auto.queue = null; auto.t = now + 800 } else { auto.t = now + (m.do === 'buy' ? 1150 : 2000); if (!auto.queue.length) { auto.launch = true; auto.t = now + 2600 } }
   } else if (s.phase === 'watch' && s.report) {
    if (frozen()) { if (now >= auto.stampAt) { const b = root.querySelector('[data-stamp]:not(.done)'); if (b) { b.click(); coach.explain(()=>tr('Ставлю печатку. Після третьої ефір продовжиться.','Stamping the form. Three stamps let the broadcast continue.')); auto.stampAt = now + 350 } } return }
-   if (now < auto.t) return;
-   auto.t = now + 350;
+   if (now < auto.t || (now < auto.holdUntil && linkState(s.cam)==='live')) return;
+   const loss = s.report.cameraLoss;
+   if(loss?.camera === s.cam && elapsed >= loss.at-1100 && elapsed < loss.at+700) return;
+   auto.t = now + 500;
    const tabs = Array.from(root.querySelectorAll('.feed-cams button:not([hidden])'), button => ({
     id: Number(button.dataset.cam), link: button.dataset.link,
     warn: button.dataset.warn === 'true', air: Number(button.querySelector('[data-air]').textContent.slice(1))
@@ -441,7 +517,7 @@ export function startCoalition() {
    if (next !== s.cam) {
     setCam(next);
     coach.explain(()=>next===4?tr('Відкриваю пресконференцію, щоб зібрати перегляди.','Switching to the press feed to collect views.'):next===3?tr('Обираю загальний план: зараз немає кращого сигналу з подією.','Taking the wide shot while the drone feeds are quiet.'):tr('Перемикаюся на камеру ','Switching to camera ')+(next+1)+tr(': її індикатор показав рух у кадрі.',' because its tab shows activity.'));
-    auto.holdUntil = now + 1500;
+    auto.holdUntil = now + 2400;
    }
   }
  }
@@ -449,7 +525,7 @@ export function startCoalition() {
  document.addEventListener('visibilitychange', () => { if (document.hidden) pause() });
  window.addEventListener('blur', pause);
  document.addEventListener('keydown', e => {
-  if (e.ctrlKey || e.metaKey || e.altKey || !/^[1-5]$/.test(e.key) || !root.isConnected) return;
+  if (player.open || e.ctrlKey || e.metaKey || e.altKey || !/^[1-5]$/.test(e.key) || !root.isConnected) return;
   if (e.target.closest?.('select,input,textarea,[contenteditable]')) return;
   setCam(Number(e.key) - 1);
  });
@@ -468,6 +544,7 @@ export function startCoalition() {
   if (canPickLevel()) { s.difficulty = level; s.funds = openingBudget[level]; save(); render() }
  };
  root.onclick = e => {
+  const thumb = e.target.closest('[data-film]'); if (thumb) { openFilm(thumb); return }
   const cam = e.target.closest('button[data-cam]');
   if (cam) { setCam(Number(cam.dataset.cam)); return }
   const stamp = e.target.closest('[data-stamp]');
@@ -499,25 +576,26 @@ export function startCoalition() {
  /* ---------- the 3D loop: one rAF for the whole coalition, paused while the tab is hidden ---------- */
  function view(now) {
   requestAnimationFrame(view);
-  if (document.hidden) { prevView = 0; return }
+  if (document.hidden || document.querySelector('.faction-picker:modal')) { prevView = 0; return }
   const dt = prevView ? Math.min(.1, (now - prevView) / 1000) : 0; prevView = now;
+  if (player.open) { player.tick(dt); return }
   if(finale){
    if(!coach.enabled || autoOn || !['report','over'].includes(s.phase)){endFinale(false)}
    else {stage.renderLesson(dt);finale-=dt;if(finale<=0)endFinale(true);return}
   }
   const filmFirst = !!pendingFrame && !!stage;
-  if (!filmFirst) autoStep(now);
+  if (!filmFirst && now >= holdShotUntil) autoStep(now);
   if (!stage) return;
   const key = s.wave + ':' + cameraSubjects(s).join() + ':' + (s.aa || []).map(Number).join('');
   if (key !== waveKey) { waveKey = key; stage.resetWave(); stage.setBroadcast(cameraSubjects(s), s.aa) }
   const cam = s.cam === 4 ? 3 : s.cam, state = linkState(s.cam), quality = linkQuality(s.cam);
   const live = watching(), report = s.phase === 'watch' || s.phase === 'report' ? s.report : null;
   const orbital = !!s.offer.orbital && s.cam === 3;
-  stage.step({ orbital, dt: live && paused ? 0 : dt * coach.rate(), real: (now - realStart) / 1000, elapsed: s.phase === 'watch' ? elapsed : (report?.duration ?? 0), report, cam });
+  stage.step({ orbital, dt: live && paused ? 0 : dt * watchRate(), real: (now - realStart) / 1000, elapsed: s.phase === 'watch' ? elapsed : (report?.duration ?? 0), report, cam });
   feedLayer.pre({ orbital, now, cam, state, quality });
-  if (!feedLayer.frozen && state === 'live') { stage.render(); if (filmFirst) recordDroneFrame(s.cam) }
+  if ((!feedLayer.frozen || filmFirst || now < holdShotUntil) && state === 'live') { stage.render(); drawnCam=cam; if (filmFirst) recordDroneFrame(s.cam) }
   else if (state === 'press') stage.render();
-  if (filmFirst) { pendingFrame = null; autoStep(now) }
+  if (filmFirst) { pendingFrame = null; if(now >= holdShotUntil) autoStep(now) }
   feedLayer.post({ orbital, now, dt, cam, state, quality, watching: !!live, paused, stage, gl: stage.glCanvas, show: true,
    contract: s.offer ? s.offer.cards[s.offer.pick].marker : -1, names: camRec(), zones: zones() });
   if (!firstFrame) { firstFrame = true; window.dispatchEvent(new Event('game-ready')) }

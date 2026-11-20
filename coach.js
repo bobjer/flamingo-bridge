@@ -2,7 +2,7 @@ import {tr} from './language.js';
 import './coach.css';
 
 const key = 'pop-coach-enabled';
-export function createCoach({isAuto, help, suggest}) {
+export function createCoach({isAuto, help, suggest, idleMessage}) {
   let enabled = false;
   try { enabled = localStorage.getItem(key) === '1' } catch {}
   let until = 0, notice = null, following = false, tip = null, highlighted = null, lastMode;
@@ -31,10 +31,10 @@ export function createCoach({isAuto, help, suggest}) {
     if (!enabled) { layer.remove(); return }
     const parent = document.querySelector('dialog:modal') || document.body;
     if (layer.parentElement !== parent) parent.append(layer);
-    card.hidden = !!document.querySelector('#score-board:modal,#restart:modal');
+    card.hidden = !!document.querySelector('#score-board:modal,#restart:modal,.c-replay:modal,.faction-picker:modal');
     const now = performance.now();
     const step = !auto && following ? suggest() : null;
-    const text = auto ? (notice && now < until ? notice() : tr('Автогра · чекаю наступного рішення.','Autoplay · waiting for the next decision.')) : step ? tr(step[1],step[2]) : '';
+    const text = auto ? (notice && now < until ? notice() : idleMessage?.() || tr('Автогра · чекаю наступного рішення.','Autoplay · waiting for the next decision.')) : step ? tr(step[1],step[2]) : '';
     if (line.textContent !== text) line.textContent = text;
     line.hidden = !text;
     next.hidden = auto;

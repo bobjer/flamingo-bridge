@@ -87,13 +87,13 @@ export function createStage(host) {
   const sinking = cruiserSinking(fx);
   // Units come in from far to the side over the sea, swing north of the bridge (in front of the drones) and
   // dive on the marker, so they cross the frame laterally for the last half of the flight.
-  function plan(i, f, flights) {
+  function plan(i, f, report) {
     const story = stories[f.marker];
-    const previous = flights.filter(g => g.marker === f.marker && g.success && !g.decree && g.impact < f.impact).length;
-    const extra = previous > 0 && (story === 'cruiser' || story === 'sam' || previous % 2 === 1);
+    const previous = report.assignedScenes ? 0 : report.flights.filter(g => g.marker === f.marker && g.success && !g.decree && g.impact < f.impact).length;
+    const extra = f.extra || previous > 0 && (story === 'cruiser' || story === 'sam' || previous % 2 === 1);
     const kind = extra ? neighbours[story].kind : story;
     const target = extra ? neighbours[story].point : shots[f.marker].point, side = hash(i + 5) < .5 ? -1 : 1, hit = f.success || f.intercepted;
-    if (f.type === 3) {
+    if (f.type === 3 && !f.noScene) {
       const end = target.clone();
       return { kind, S: V(end.x + side*12, -4, end.z+5), C: V(end.x+side*5, 0, end.z+2),
         E: end, sea: true, mesh: null, phase: 'pending', shots: 0, tI: f.start+.73*(f.impact-f.start) };
@@ -182,7 +182,7 @@ export function createStage(host) {
     const flights = report?.flights ?? [];
     for (let i = 0; i < flights.length; i++) {
       const f = flights[i]; if (elapsed < f.start) continue;
-      const R = recs[i] ??= plan(i, f, flights), dur = f.impact - f.start;
+      const R = recs[i] ??= plan(i, f, report), dur = f.impact - f.start;
       if (R.phase === 'done') continue;
       if (R.phase === 'pending') {
         if (elapsed < f.start) continue;
@@ -271,7 +271,7 @@ export function createStage(host) {
   /* ---------- per-frame ---------- */
   const proj = V();
   let real = 0;
-  function step({ dt, real: realT, elapsed, report, cam, orbital }) {
+  function step({ dt, real: realT, elapsed, report, cam, orbital, reverse = false, satelliteSubject }) {
     real = realT;
     sceneTime += dt;
     screenSmoke = !!report && report.wave >= 2 && (report.seed?.[0] < .4 || report.wave % 4 === 0) && elapsed >= 1400 && elapsed < Math.min(report.duration,11500);
@@ -279,6 +279,14 @@ export function createStage(host) {
     // camera
     const el = host.clientWidth / Math.max(1, host.clientHeight);
     const pose = cameraPose(cam, realT, orbital);
+    if (satelliteSubject != null) {
+      const point = shots[satelliteSubject].point;
+      pose.target = point.clone(); pose.position = point.clone().add(V(8*Math.sin(realT*.12),56,23)); pose.fov = 30;
+    }
+    if (reverse) {
+      const point = shots[cam].point;
+      pose.target = point.clone(); pose.position = point.clone().add(V(-8, 5, -19)); pose.roll = 0; pose.fov = 49;
+    }
     if (el < 1 && pose.fov > 40) pose.fov = Math.min(100, pose.fov + (1 - el) * 45);
     state.fov = pose.fov;
     world.setPose(pose);
