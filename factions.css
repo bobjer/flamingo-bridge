@@ -434,3 +434,6 @@ button.c-sponsor:hover{border-color:var(--accent)}
 .restart-actions {display:flex;flex:none;gap:8px;padding-top:12px}
 .restart-actions button {flex:1;min-height:40px;border-radius:8px;border:1px solid var(--line-2);background:var(--panel-2);color:var(--fg)}
 .restart-actions [data-confirm] {background:var(--accent);color:var(--accent-ink);font-weight:700}
+.c-card .c-chance {display:grid;gap:5px;margin:12px 0;padding:12px 14px;background:#2e2517;border:1px solid #826137;border-radius:9px;text-align:left}
+.c-chance small {color:#ffd087;letter-spacing:.1em}
+.c-chance span {color:#ffdba1;font:600 13px var(--mono)}

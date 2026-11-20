@@ -61,15 +61,32 @@ export function dealWave(s, random = Math.random) {
   s.bought = emptyStock();
   s.offer.subjects = drawSubjects(random);
   s.offer.orbital = s.wave > 1 && random() < .08;
+  const market = marketFor(s);
+  // The schedule is published with the offers, so reloads keep the same audience and fee.
+  const spotlight = s.wave >= 2 && random() < .23;
+  s.offer.spotlight = spotlight;
+  s.offer.reach = market.reach * (spotlight ? 2.4 : 1);
+  s.offer.chanceFee = s.nextFee ?? 1;
+  s.offer.fee = market.fee * (spotlight ? 1.4 : 1) * s.offer.chanceFee;
+  delete s.nextFee;
 }
 
 export const openingBudget = {easy: 140, normal: CFG.start, hard: 70};
 export const donorRetention = {easy: .965, normal: CFG.fatigue, hard: .88};
+const markets = {
+  local: { reach:.75, fee:.85, decay:1.3 },
+  national: { reach:1.35, fee:1.12, decay:.85 },
+  network: { reach:2, fee:1.65, decay:.5 }
+};
+const marketFor = s => markets[s.market] ?? {reach:1,fee:1,decay:1};
+export const retentionFor = s => 1 - (1-donorRetention[s.difficulty ?? 'normal'])*marketFor(s).decay;
 export const offContractRate = difficulty => difficulty === 'hard' ? 8 : CFG.hitOther;
 export function newSeason(random = Math.random, difficulty = 'normal') {
   const s = { version: saveVersion, difficulty, wave: 1, phase: 'plan', funds: openingBudget[difficulty], views: 0, bestCombo: 0, fatigue: 1,
     stock: emptyStock(), bought: emptyStock(), ious: [], offer: null, aa: [], cameo: '', deal: '', event: '',
     report: null, captures: [], live: null, cam: 0, runId: '', submitted: false };
+  const roll = random();
+  s.market = roll < .24 ? 'local' : roll < .75 ? 'national' : 'network';
   dealWave(s, random);
   return s;
 }
@@ -94,9 +111,10 @@ export function acceptDeal(s) {
   if (s.phase !== 'plan' || s.deal !== 'pending') return false;
   const gain = Math.round(CFG.trumpPay * s.fatigue);
   s.funds += gain; s.deal = 'signed';
+  if ((s.offer.chanceFee ?? 1) !== 1) s.nextFee = s.offer.chanceFee;
   s.report = { wave: s.wave, skipped: true, result: { money: gain, views: 0, combo: 0 }, seed: [0, 0] };
   deliverLeaks(s);
-  s.fatigue *= donorRetention[s.difficulty ?? 'normal'] * CFG.trumpFatigue;
+  s.fatigue *= retentionFor(s) * CFG.trumpFatigue;
   s.phase = isOver(s) ? 'over' : 'report';
   if (s.phase === 'over') s.runId ||= newId();
   return true;
@@ -137,9 +155,9 @@ export function launch(s, random = Math.random) {
     at += (count - 1) * CFG.spacing + CFG.groupGap;
   }
   const end = lastImpact(flights);
-  const report = { wave: s.wave, flights, units: flights.length, sponsor: card.id, contract: card.marker, fatigue: s.fatigue, offContract: offContractRate(s.difficulty),
+  const report = { wave: s.wave, flights, units: flights.length, reach:s.offer.reach ?? 1, fee:s.offer.fee ?? 1, sponsor: card.id, contract: card.marker, fatigue: s.fatigue, offContract: offContractRate(s.difficulty),
     duration: end + CFG.tail, cameo: s.cameo, event: s.event, rebate, musk: null, ew: null, press: null, committee: null, decree: false, seed: [random(), random()] };
-  if (s.cameo === 'musk') report.musk = { from: Math.round(.3 * end), dur: CFG.muskDur };
+  if (s.cameo === 'musk' || (s.cameo === 'trump' && s.deal === 'declined' && random() < .22)) report.musk = { from: Math.round(.3 * end), dur: CFG.muskDur };
   if (s.cameo === 'trump' && s.deal === 'declined') {
     const wins = flights.filter(f => f.success);
     if (wins.length) { wins[Math.floor(random() * wins.length)].decree = true; report.decree = true; }
@@ -205,7 +223,7 @@ export function hitValue(r, f, kind) {
     case 'analytic': value *= CFG.analyticHit; pay = value; break;
     default: pay = value;
   }
-  return { value, pay };
+  return { value, pay:pay*(r.fee ?? 1) };
 }
 
 function waveCash(r, eventPay) {
@@ -242,8 +260,34 @@ export function evaluate(s, captures, upTo = Infinity, extra = {}) {
     if (r.musk && kind === 'far' && f.impact >= r.musk.from && f.impact < r.musk.from + r.musk.dur) out.viral = true;
   }
   views += (extra.pressMs || 0) / 1000 * CFG.pressViews * fat;
-  out.views = views * (out.viral ? CFG.muskViral : 1);
+  out.views = views * (r.reach ?? 1) * (out.viral ? CFG.muskViral : 1);
   return out;
+}
+
+// Interest changes in percentage points. Rights adjustments last for one upcoming broadcast.
+const chanceDeck = [
+  {id:'poland',interest:.05}, {id:'election',fee:.90}, {id:'filmclub',interest:.09},
+  {id:'syndication',fee:1.20}, {id:'audit',fee:.85}, {id:'festival',interest:.13}
+];
+function drawChance(s, result, random) {
+  const r = s.report;
+  if (s.wave < 2 || s.wave === s.lastChanceWave + 1) return;
+  const surprise = result.hits.some(({i,decree}) => !decree && (r.cameo === 'trump' ||
+    (r.musk && r.flights[i].impact >= r.musk.from && r.flights[i].impact < r.musk.from+r.musk.dur)));
+  const doubleCameo = r.cameo === 'trump' && r.musk;
+  let card;
+  if (surprise && random() < (doubleCameo ? .85 : .45)) {
+    card = {id:doubleCameo?'double':'comeback',interest:doubleCameo ? .20 : .12};
+  } else if (random() < .25) {
+    const pool = chanceDeck.filter(c => c.id !== s.lastChance);
+    card = pool[Math.floor(random()*pool.length)];
+  }
+  if (!card) return;
+  const before = s.fatigue;
+  if (card.interest) s.fatigue = Math.min(1, before+card.interest);
+  if (card.fee) s.nextFee = card.fee;
+  r.chance = {id:card.id, points:Math.round(100*s.fatigue)-Math.round(100*before), fee:card.fee ?? 1};
+  s.lastChanceWave = s.wave; s.lastChance = card.id;
 }
 
 export function finishWave(s, captures = s.captures, extra = {}, random = Math.random) {
@@ -256,7 +300,7 @@ export function finishWave(s, captures = s.captures, extra = {}, random = Math.r
     if (x.ok) iou.paid += x.amount; else iou.postponed += x.amount;
     return false;
   });
-  if (r.sponsor === 'conference') s.ious.push({ due: r.wave + CFG.conferenceDelay, amount: Math.round(CFG.conferenceMult * e.value), ok: random() < CFG.conferenceOk });
+  if (r.sponsor === 'conference') s.ious.push({ due: r.wave + CFG.conferenceDelay, amount: Math.round(CFG.conferenceMult * e.value * (r.fee ?? 1)), ok: random() < CFG.conferenceOk });
   const gain = waveCash(r, e.money) + iou.paid, views = Math.round(e.views);
   s.funds += gain; s.views += views; s.bestCombo = Math.max(s.bestCombo, e.best);
   r.result = { money: gain, views, combo: e.best, hits: e.total, filmed: e.filmed, far: e.far, none: e.none, shot: e.shot, missed: e.missed,
@@ -281,7 +325,8 @@ export function finishWave(s, captures = s.captures, extra = {}, random = Math.r
       film, views: Math.round(40000 + random() * 80000),
       funding: Math.max(1, Math.round(CFG.hitOther * r.fatigue * .5)) });
   }
-  s.fatigue *= donorRetention[s.difficulty ?? 'normal'];
+  s.fatigue *= retentionFor(s);
+  drawChance(s,e,random);
   s.phase = isOver(s) ? 'over' : 'report';
   if (s.phase === 'over') s.runId ||= newId();
 }

@@ -90,3 +90,17 @@ const glyphs = [
   '<path fill="none" stroke="#f4c660" stroke-width="3.5" stroke-linecap="round" d="M0 16v-33m-10 3v6q0 7 10 7t10-7v-6"/><path d="M-24 11q6-6 12 0t12 0 12 0 12 0" fill="none" stroke="#75e2eb" stroke-width="3"/>'
 ];
 export const icon = id => '<svg aria-hidden="true" viewBox="-30 -23 60 46">' + glyphs[id] + '</svg>';
+
+export function chanceTitle(id) {
+ const titles = {
+  poland: ['Ракета залетіла в Польщу. Спонсори знову на лінії.','A missile lands in Poland. The sponsors are back on the line.'],
+  election: ['Макрон програв вибори. Новий кабінет переглядає кошторис.','Macron loses the election. The new cabinet reviews the budget.'],
+  filmclub: ['Кіноклуб показав ваш ефір. Наступний перегляд уже з аншлагом.','A film club screens your broadcast. The next showing sells out.'],
+  syndication: ['Телеканал купує права на наступну хвилю.','A TV network buys the rights to your next wave.'],
+  audit: ['Бухгалтер знайшов другу таблицю витрат. Почалася перевірка.','An accountant finds a second expense sheet. The audit begins.'],
+  festival: ['Приз глядацьких симпатій! Донори передивляються сезон.','Audience award! The donors are watching the season again.'],
+  comeback: ['Ефір зірвали. Влучання все одно стало хітом.','The broadcast went sideways. The hit went viral anyway.'],
+  double: ['Трамп зірвав угоду, Маск — зв’язок. А кадри все одно розійшлися.','Trump sank the deal. Musk cut the feed. The story still got out.']
+ };
+ return tr(...(titles[id] ?? ['Несподіваний поворот','An unexpected turn']));
+}

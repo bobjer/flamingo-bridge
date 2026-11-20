@@ -2,8 +2,8 @@ import {createCoach} from './coach.js';
 import {coalitionHelp} from './coach-help.js';
 import {tr} from './language.js';
 import {changeSide, languageButton, read, write, levelField, preferredLevel, rememberLevel} from './factions.js';
-import {CFG, costs, openingBudget, donorRetention, offContractRate, newSeason, pickSponsor, purchase, launch, finishWave, nextWave, acceptDeal, declineDeal, evaluate, total, aaChance, cameraSubjects} from './coalition-rules.js';
-import {units, unitHints, subjectName, fmtViews, sponsor, cameo, donorLines, ending, wavesWord, icon} from './coalition-copy.js';
+import {CFG, costs, openingBudget, retentionFor, offContractRate, newSeason, pickSponsor, purchase, launch, finishWave, nextWave, acceptDeal, declineDeal, evaluate, total, aaChance, cameraSubjects} from './coalition-rules.js';
+import {units, unitHints, subjectName, fmtViews, sponsor, cameo, donorLines, ending, wavesWord, icon, chanceTitle} from './coalition-copy.js';
 import {createStage} from './coalition-world.js';
 import {signalAt,broadcastOverlay,drawBroadcast} from './broadcast-events.js';
 import {replayViewer} from './coalition-replay.js';
@@ -44,6 +44,11 @@ export function startCoalition() {
  const orbitalName = () => tr('СУПУТНИК','SATELLITE');
  const camTab = () => [...zones().map((z, i) => (i + 1) + ' · ' + z.toUpperCase()), s.offer.orbital ? orbitalName() : tr('ДАЛЬНЯ','FAR'), tr('ПРЕС','PRESS')];
  const camRec = () => [...zones().map((z, i) => camNames()[i] + ' · ' + z.toUpperCase()), s.offer.orbital ? orbitalName() : tr('ДАЛЬНЯ','FAR CAM'), tr('ПРЕС-КОНФЕРЕНЦІЯ','PRESS BRIEFING')];
+ const marketLine = () => {
+  if (!s.offer.reach) return '';
+  const name = s.offer.spotlight ? tr('Прайм-тайм','Prime time') : s.market === 'local' ? tr('Місцевий ефір','Local broadcast') : s.market === 'network' ? tr('Мережа каналів','Network syndication') : tr('Національний ефір','National broadcast');
+  return name+' · '+tr('аудиторія ×','audience ×')+num(s.offer.reach.toFixed(2))+' · '+tr('гонорар ×','fee ×')+num(s.offer.fee.toFixed(2));
+ };
  const wave = () => tr('Хвиля ', 'Wave ') + s.wave;
  const watching = () => s.phase === 'watch' && s.report;
  const pressActive = () => { const p = watching() && s.report.press; return !!p && elapsed >= p.at && elapsed < p.at + p.dur };
@@ -235,11 +240,11 @@ export function startCoalition() {
  }
  function left() {
   const tired = Math.round((1 - s.fatigue) * 100);
-  const cut = num(Math.round(1000 * (1 - donorRetention[s.difficulty])) / 10);
+  const cut = num(Math.round(1000 * (1 - retentionFor(s))) / 10);
   return '<aside class="col c-left" aria-label="' + tr('Штаб','HQ') + '">' +
    '<section class="panel br"><div class="label">' + tr('ПОТОЧНА ФАЗА','CURRENT PHASE') + '</div><div class="phase-row"><b class="big" aria-hidden="true">' + String(s.wave).padStart(2, '0') + '</b><div><h1>' + tr('Нема відео — <i>не було</i>','No video — <i>no happened</i>') + '</h1><div class="c-phase">● ' + phaseWord() + '</div></div></div></section>' +
    '<section class="panel br"><div class="label">' + tr('ЗВЕДЕННЯ','SUMMARY') + '</div>' +
-    stat(tr('Бюджет','Budget'), s.funds, 'c-accent') + '<div class="c-views"><label>' + tr('Перегляди','Views') + '</label><b class="big">' + fmtViews(s.views) + '</b></div>' +
+    stat(tr('Бюджет','Budget'), s.funds, 'c-accent') + (s.offer.reach ? '<small class="c-tired">'+marketLine()+'</small>' : '') + '<div class="c-views"><label>' + tr('Перегляди','Views') + '</label><b class="big">' + fmtViews(s.views) + '</b></div>' +
     stat(tr('Найкраще комбо','Best combo'), '×' + s.bestCombo) + stat(tr('Імовірність збиття на ППО','Anti-air kill chance'), aaPct() + '%') +
     (s.ious.length ? stat(tr('Конференція винна','Conference owes'), s.ious.reduce((a, x) => a + x.amount, 0)) : '') + '</section>' +
    '<section class="panel br"><div class="label">' + tr('ВТОМА ДОНОРІВ','DONOR FATIGUE') + '</div>' +
@@ -300,6 +305,14 @@ export function startCoalition() {
      player.show(b,subjectName(f.extra ?? cameraSubjects(s)[f.marker]),{...r,aa:s.aa,subjects:cameraSubjects(s),time:f.impact,marker:f.marker,camera,satelliteSubject:kind==='sat'?f.marker:undefined,orbital:kind==='sat' || camera===3 && s.offer.orbital});
    }
  }
+ function chanceCard() {
+  const c = s.report?.chance;
+  if (!c) return '';
+  const effect = c.fee === 1
+    ? tr('Інтерес спонсорів +','Sponsor interest +')+c.points+tr(' в. п.',' pp')
+    : tr('Гонорар наступної хвилі ','Next wave’s fee ')+sign(Math.round((c.fee-1)*100))+'%';
+  return '<aside class="c-chance"><small>'+tr('КАРТКА «ШАНС»','CHANCE CARD')+'</small><strong>'+chanceTitle(c.id)+'</strong><span>'+effect+'</span></aside>';
+ }
  function reportCard() {
   const r = s.report, x = r.result;
   if (r.skipped) return '<section class="c-card" data-tone="report" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('КАМЕО · ТРАМП · ХВИЛЯ ','CAMEO · TRUMP · WAVE ') + r.wave + '</div><h2 id="c-title">' + tr('Угоду підписано','Deal signed') + '</h2>' +
@@ -310,19 +323,21 @@ export function startCoalition() {
   if (r.sponsor === 'defence') lines.push('<p>' + tr('Оборонний концерн: освоєно ' + r.units + ' юнітів.','Defence Concern: ' + r.units + ' units absorbed.') + '</p>');
   if (x.viral) lines.push('<p class="c-good">' + tr('Вірусно, бо нічого не видно: перегляди ×2.','Viral because nothing was visible: views ×2.') + '</p>');
   if (r.decree) lines.push('<p>' + tr('Трамп образився: одне влучання скасовано указом.','Trump took offence: one hit was cancelled by decree.') + '</p>');
+  if (s.offer.spotlight) lines.push('<p>'+marketLine()+'</p>');
+  if ((s.offer.chanceFee ?? 1)!==1) lines.push('<p>'+tr('Картка «Шанс» · гонорар цієї хвилі ','Chance card · this wave’s fee ')+sign(Math.round(100*(s.offer.chanceFee-1)))+'%</p>');
   if (r.partnerFunding) lines.push('<p class="c-good">'+tr('Супутник від партнерів · фінансування +','Partner satellite · funding +')+r.partnerFunding+'</p>');
   if (r.rebate) lines.push('<p>' + rebateText(r.rebate) + '</p>');
   if (x.pressMs) lines.push('<p>' + tr('Пресконференція: перегляди є, відео немає.','Press briefing: the views are there, the footage is not.') + '</p>');
   if (x.iou.paid) lines.push('<p class="c-good">' + tr('Конференція партнерів виплатила ' + x.iou.paid + '.','The Partners’ Conference paid ' + x.iou.paid + '.') + '</p>');
   if (x.iou.postponed) lines.push('<p>' + tr('Конференція партнерів: «перенесено на наступний рік» (' + x.iou.postponed + ').','Partners’ Conference: “postponed to next year” (' + x.iou.postponed + ').') + '</p>');
   if (r.sponsor === 'conference') lines.push('<p>' + tr('Конференція виплатить через дві хвилі. Може бути.','The conference pays in two waves. Maybe.') + '</p>');
-  return '<section class="c-card" data-tone="report" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ХВИЛЯ ','DONOR REPORT · WAVE ') + r.wave + '</div><h2 id="c-title">' + tr('Звіт донору','Donor report') + '</h2><small>' + sponsor(r.sponsor).name + '</small>' + leakReel() +
+  return '<section class="c-card" data-tone="report" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ХВИЛЯ ','DONOR REPORT · WAVE ') + r.wave + '</div><h2 id="c-title">' + tr('Звіт донору','Donor report') + '</h2><small>' + sponsor(r.sponsor).name + '</small>' + chanceCard() + leakReel() +
    '<dl class="c-stats">' + tile(tr('Знято','Filmed'), (x.filmed + x.far) + '/' + x.hits) + tile(tr('Не знято','Not filmed'), x.none) + tile(tr('Збито','Shot down'), x.shot) + '</dl>' +
    '<dl class="c-stats c-stats-2">' + tile(tr('Гроші','Money'), sign(x.money)) + tile(tr('Перегляди','Views'), fmtViews(x.views)) + tile(tr('Комбо','Combo'), '×' + x.combo) + '</dl>' +
    lines.join('') + droneReel() + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
  }
  function overCard() {
-  return '<section class="c-card" data-tone="lost" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ПІДСУМОК','DONOR REPORT · FINAL') + '</div><h2 id="c-title">' + tr('Спонсори згорнули програму','The sponsors pulled out') + '</h2>' + droneReel() + leakReel() +
+  return '<section class="c-card" data-tone="lost" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ПІДСУМОК','DONOR REPORT · FINAL') + '</div><h2 id="c-title">' + tr('Спонсори згорнули програму','The sponsors pulled out') + '</h2>' + chanceCard() + droneReel() + leakReel() +
    '<dl class="c-stats c-stats-over">' + tile(tr('Перегляди','Views'), fmtViews(s.views)) + tile(tr('Хвиль','Waves'), s.wave) + tile(tr('Комбо','Combo'), '×' + s.bestCombo) + '</dl>' +
    '<p class="c-line">' + wavesWord(s.wave) + tr('. ', '. ') + tr(fmtViews(s.views) + ' переглядів. 0 змін. ', fmtViews(s.views) + ' views. 0 changes. ') + ending(s) + '</p>' +
    (s.assisted ? '<p class="c-note">' + tr('Забіг з автогрою','Run with autoplay') + '</p>' : '') +

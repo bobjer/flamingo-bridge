@@ -14,7 +14,7 @@ function bot(s, q, random) {
     if (!f.success || f.decree) return;
     const jam = r.ew && r.ew.marker === f.marker && f.impact >= r.ew.at && f.impact < r.ew.at + r.ew.dur;
     const dark = r.musk && f.impact >= r.musk.from && f.impact < r.musk.from + r.musk.dur;
-    const blocked = jam || dark;
+    const blocked = jam || dark || (r.cameraLoss?.camera === f.marker && f.impact >= r.cameraLoss.at);
     // skill q means: right camera at the right time. Blocked drones can only be answered with the far camera.
     captures[i] = random() < q ? (blocked ? 'far' : 'drone') : random() < .5 ? 'far' : 'none';
   });
