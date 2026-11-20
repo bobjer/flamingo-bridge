@@ -137,7 +137,7 @@ export function setupGameMenu(){
   ['#arcade',bottom],[dock,bottom],
   ['.helm',panes.arsenal],['#arsenal-panel',panes.arsenal],
   ['#wave-roll',panes.hq],['#hq-panel',panes.hq],['#timeline',panes.hq],
-  ['#watch-game',side],['.panel-toggles .scores',menuList],['#new-game',menuList],
+  ['#watch-game',side],['#training-toggle',side],['.panel-toggles .scores',menuList],['#new-game',menuList],
   ['.top .lang',langRow],['.legal',panes.game]
  ].map(([what,where])=>{
   const node=typeof what==='string'?document.querySelector(what):what;

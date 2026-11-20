@@ -313,6 +313,14 @@ export function createStage(host) {
   return {
     world, fx, glCanvas,
     step, render: () => render(gameTime(real)), setBroadcast, resetWave,
+    lessonFinale(on) {
+      world.setHits(0, true);
+      world.setHits(on ? 3 : Math.min(archHits,3), !on);
+      if (on) world.setPose({position:V(-36,20,50),target:V(0,2,0),fov:35,roll:0});
+    },
+    renderLesson(dt) {
+      sceneTime += dt; fx.tick(dt,[]); world.draw(sceneTime,trafficTime,false,gameTime(real));
+    },
     telemetry: () => ({ pos: state.pos, vel: state.vel, pitch: state.pitch, roll: state.roll, fov: state.fov }),
     // screen position and apparent size of marker i for the current camera, or null when it is off screen
     project(i) {

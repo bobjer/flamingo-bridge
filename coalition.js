@@ -1,3 +1,5 @@
+import {createCoach} from './coach.js';
+import {coalitionHelp} from './coach-help.js';
 import {tr} from './language.js';
 import {changeSide, languageButton, read, write, levelField, preferredLevel, rememberLevel} from './factions.js';
 import {CFG, costs, openingBudget, donorRetention, offContractRate, newSeason, pickSponsor, purchase, launch, finishWave, nextWave, acceptDeal, declineDeal, evaluate, total, aaChance, cameraSubjects} from './coalition-rules.js';
@@ -51,6 +53,41 @@ export function startCoalition() {
  const auto = { stage: '', t: 0, queue: null, launch: false, stampAt: 0, holdUntil: 0 };
  const feedLayer = createFeed();
  let stage = null, waveKey = '', prevView = 0, firstFrame = false;
+ let finale = 0;
+ let pickedWave = 0;
+ const coach = createCoach({isAuto:()=>autoOn && s.phase!=='over',help:coalitionHelp,suggest:coalitionSuggestion});
+ const lessonGoal = 3;
+ const lessonReady = () => (s.lessonBridgeShots ?? 0) >= lessonGoal && !s.lessonBridgeDone;
+ function coalitionSuggestion(){
+  const progress = ' (' + (s.lessonBridgeShots ?? 0) + '/' + lessonGoal + ')';
+  if(finale) return ['.c-feed','Навчальний фінал: камера пише обвал. Після кадру повернемося до звіту.','Training finale: the camera is rolling as the bridge falls. Your report follows.'];
+  if(['report','over'].includes(s.phase) && lessonReady() && stage)
+   return [null,'Три кадри мосту знято! Покажіть обвал у фіналі навчального ефіру.','Three bridge hits on film! Roll the collapse for the finale of your training broadcast.',startFinale];
+  if(s.phase==='over') return ['[data-action="fresh"]','Сезон закінчено. Почніть новий ефір, щоб знову пройти навчання.','The season is over. Start another broadcast to try the lesson again.'];
+  if(s.phase==='report') return ['[data-action="next"]',s.lessonBridgeDone?'Фінал знято! Можете продовжити свою партію.':'Відкрийте наступну хвилю. Для навчального фіналу зберіть три кадри влучань у міст.'+progress,s.lessonBridgeDone?'Finale filmed! You can keep playing this run.':'Open the next wave. Collect three shots of the bridge taking damage for the training finale.'+progress];
+  if(s.phase==='plan'){
+   if(s.deal==='pending') return ['[data-action="nodeal"]','Відхиліть паузу в контракті, щоб провести ефір цієї хвилі.','Decline the deal to keep this wave on air.'];
+   if(pickedWave!==s.wave && !total(s)) return ['[data-offer]','Оберіть одну картку спонсора. Її умови визначають виплату за відео.','Pick a sponsor card. Its terms decide how much your footage earns.'];
+   if(!total(s)) return ['.c-plus:not(:disabled)','Додайте учасника до ефіру кнопкою +1.','Add a unit to the broadcast with +1.'];
+   if(s.lessonBridgeDone) return ['[data-action="attack"]','Навчання пройдено. Запускайте наступний ефір, коли будете готові.','Lesson complete. Launch the next broadcast when you are ready.'];
+   return ['[data-action="attack"]','Натисніть «Пуск». Навчальна ціль — зняти три влучання в міст і показати його обвал.'+progress,'Press Launch. Film three bridge hits across your broadcasts to unlock the collapse.'+progress];
+  }
+  if(paused) return ['[data-action="pause"]','Продовжіть ефір, щоб камери знову запрацювали.','Resume the broadcast to bring the cameras back.'];
+  if(frozen()) return ['[data-stamp]:not(.done)','Зберіть три печатки. Ефір продовжиться після останньої.','Collect all three stamps to restart the broadcast.'];
+  const signal='.feed-cams button[data-link="live"][data-warn="true"]';
+  if(lessonReady()) return ['.c-score','Є три кадри! Дочекайтеся звіту й натисніть «Показати фінал».','Three shots recorded! Wait for the report, then choose Roll finale.'];
+  const tab=[...root.querySelectorAll(signal)].find(el=>['arch','pier','hole'].includes(cameraSubjects(s)[Number(el.dataset.cam)]));
+  if(tab) return [signal+'[data-cam="'+tab.dataset.cam+'"]','Блимає камера '+(Number(tab.dataset.cam)+1)+'. Відкрийте її й потримайте до появи суми.','Camera '+(Number(tab.dataset.cam)+1)+' is flashing. Keep it open until the payment appears.'];
+  return ['.feed-cams button[data-cam="3"]','Увімкніть загальний план, поки немає підказки від камери мосту. Він теж зараховує зняті влучання.'+progress,'Use the wide feed while you wait for a bridge camera to flash. Wide shots also count.'+progress];
+ }
+ function startFinale(){
+  if(!stage || !lessonReady() || !['report','over'].includes(s.phase) || finale)return;
+  finale=6.5;stage.lessonFinale(true);root.classList.add('coach-finale');root.querySelector('.c-feed')?.scrollIntoView({block:'nearest'});
+ }
+ function endFinale(completed){
+  finale=0;stage.lessonFinale(false);root.classList.remove('coach-finale');
+  if(completed && s.report){s.lessonBridgeDone=true;save()}coach.sync();
+ }
  const realStart = performance.now();
 
  /* ---------- link state of each camera ---------- */
@@ -114,6 +151,9 @@ export function startCoalition() {
    let kind = 'none';
    if (f.success && !f.decree) { if (s.cam === 3) kind = 'far'; else if (s.cam === f.marker && linkState(s.cam) === 'live') kind = 'drone' }
    s.captures[i] = kind;
+   if (coach.enabled && !autoOn && (kind === 'drone' || kind === 'far') && ['arch','pier','hole'].includes(cameraSubjects(s)[f.marker])) {
+    s.lessonBridgeShots = Math.min(lessonGoal, (s.lessonBridgeShots ?? 0) + 1);
+   }
    if (kind === 'drone' && !r.stills?.[s.cam]) pendingFrame = {report:r, cam:s.cam, time:f.impact};
    const score = evaluate(s, s.captures, f.impact);
    const pay = score.payNow[i];
@@ -174,7 +214,7 @@ export function startCoalition() {
   return '<header class="top"><div class="top-left"><img src="/flamingo.svg" width="30" height="30" alt=""><span class="label">' + tr('ШТАБ КОАЛІЦІЇ · ВІДДІЛ ЗВІТНОСТІ','COALITION HQ · REPORTING DEPARTMENT') + '</span></div>' +
    '<div class="top-title"><strong>' + tr('СЕЗОН ХЛОПКІВ','POP SEASON') + '</strong><span>' + tr('КОАЛІЦІЯ ОХОЧИХ','COALITION OF THE WILLING') + '</span></div>' +
    '<div class="top-status">' + languageButton() + '<button type="button" class="c-sides c-quiet" data-action="quiet" aria-pressed="' + muted + '" aria-label="' + tr('Тихий режим','Quiet mode') + '"><span class="full">' + tr('Тихий режим','Quiet mode') + '</span><span class="short" aria-hidden="true">' + '♪' + '</span></button>' +
-   autoButton() + '<span class="label">' + tr('РЕЖИМ','MODE') + '</span><span class="chip"><i class="dot" aria-hidden="true"></i><span>' + phaseWord() + '</span></span>' + button('sides', tr('Сторони','Factions'), false, 'c-sides') + '</div></header>';
+   autoButton() + '<button type="button" class="c-sides" data-coach-toggle aria-pressed="' + coach.enabled + '">' + tr('Навчання','Coach') + '</button><span class="label">' + tr('РЕЖИМ','MODE') + '</span><span class="chip"><i class="dot" aria-hidden="true"></i><span>' + phaseWord() + '</span></span>' + button('sides', tr('Сторони','Factions'), false, 'c-sides') + '</div></header>';
  }
  function left() {
   const tired = Math.round((1 - s.fatigue) * 100);
@@ -340,9 +380,9 @@ export function startCoalition() {
   const dt = previous ? Math.min(100, now - previous) : 0; previous = now;
   const r = s.report, c = r.committee;
   if (!frozen()) {
-   elapsed += dt;
+   elapsed += dt * coach.rate();
    if (c && s.live.stamps < 3 && elapsed >= c.at) elapsed = c.at;
-   if (s.cam === 4 && pressActive()) s.live.pressMs += dt;
+   if (s.cam === 4 && pressActive()) s.live.pressMs += dt * coach.rate();
   }
   resolveImpacts();
   if (elapsed >= r.duration && !frozen()) { settle(); return }
@@ -370,22 +410,27 @@ export function startCoalition() {
   save(); refreshAuto();
  }
  function autoStep(now) {
-  if (!autoOn || document.hidden) return;
+  if (!autoOn || document.hidden || coach.slowing) return;
   if (s.phase === 'over') { autoOn = false; refreshAuto(); return }
   if (s.phase === 'watch' && paused) return;
   if (auto.stage !== s.phase) { Object.assign(auto, { stage: s.phase, t: now + ({ plan: 800, report: s.report?.leaks?.length ? 6200 : 2500 }[s.phase] ?? 0), queue: null, launch: false, stampAt: 0, holdUntil: 0 }) }
   if (s.phase === 'plan') {
    if (now < auto.t) return;
-   if (auto.launch) { if (attack()) { save(); render() } auto.t = now + 500; return }
+   if (auto.launch) { if (attack()) { save(); render(); coach.explain(()=>tr('Запускаю ефір: склад хвилі зібрано, тепер обиратиму камеру.','Starting the broadcast. The lineup is ready, so I can switch to directing.')) } auto.t = now + 500; return }
    auto.queue ??= planMoves(s, Math.random);
    const m = auto.queue.shift();
    if (!m) { auto.launch = true; auto.t = now + 1000; return }
-   applyMove(s, m); save(); render();
+   const done=applyMove(s, m); save(); render();
+   if(done) coach.explain(()=>{
+    if(m.do==='pick')return tr('Обираю контракт «','Choosing “')+sponsor(s.offer.cards[m.i].id).name+tr('»: бот порівняв умови двох карток.','”: its terms scored higher for this broadcast.');
+    if(m.do==='buy')return tr('Додаю до хвилі: ','Adding to the lineup: ')+units()[m.id]+tr('. Ціна — ','. Cost: ')+costs[m.id]+tr('. Після покупки лишилось ','. Budget left: ')+s.funds+'.';
+    return m.do==='deal'?tr('Приймаю угоду: бюджет малий, тому беру виплату за паузу.','Taking the deal: cash is low, so I accept a paid break.'):tr('Відмовляюся від угоди: бюджету вистачає на наступний ефір.','Declining the deal: there is enough money to keep broadcasting.');
+   });
    if (m.do === 'deal' || m.do === 'nodeal') { auto.queue = null; auto.t = now + 800 } else { auto.t = now + (m.do === 'buy' ? 150 : 350); if (!auto.queue.length) { auto.launch = true; auto.t = now + 1000 } }
   } else if (s.phase === 'report') {
-   if (now >= auto.t) { nextWave(s); save(); render() }
+   if (now >= auto.t) { nextWave(s); save(); render(); coach.explain(()=>tr('Звіт закрито. Відкриваю новий бюджет і картки спонсорів.','Closing the report to open the next budget and sponsor offers.')) }
   } else if (s.phase === 'watch' && s.report) {
-   if (frozen()) { if (now >= auto.stampAt) { const b = root.querySelector('[data-stamp]:not(.done)'); if (b) { b.click(); auto.stampAt = now + 350 } } return }
+   if (frozen()) { if (now >= auto.stampAt) { const b = root.querySelector('[data-stamp]:not(.done)'); if (b) { b.click(); coach.explain(()=>tr('Ставлю печатку. Після третьої ефір продовжиться.','Stamping the form. Three stamps let the broadcast continue.')); auto.stampAt = now + 350 } } return }
    if (now < auto.t) return;
    auto.t = now + 350;
    const tabs = Array.from(root.querySelectorAll('.feed-cams button:not([hidden])'), button => ({
@@ -395,6 +440,7 @@ export function startCoalition() {
    const next = chooseCamera(tabs, s.cam, now < auto.holdUntil);
    if (next !== s.cam) {
     setCam(next);
+    coach.explain(()=>next===4?tr('Відкриваю пресконференцію, щоб зібрати перегляди.','Switching to the press feed to collect views.'):next===3?tr('Обираю загальний план: зараз немає кращого сигналу з подією.','Taking the wide shot while the drone feeds are quiet.'):tr('Перемикаюся на камеру ','Switching to camera ')+(next+1)+tr(': її індикатор показав рух у кадрі.',' because its tab shows activity.'));
     auto.holdUntil = now + 1500;
    }
   }
@@ -433,7 +479,7 @@ export function startCoalition() {
   }
   if (e.target.closest('[data-language]')) { document.querySelector('.lang').click(); return }
   const offer = e.target.closest('[data-offer]');
-  if (offer) { pickSponsor(s, Number(offer.dataset.offer)); save(); render(); return }
+  if (offer) { pickedWave=s.wave; pickSponsor(s, Number(offer.dataset.offer)); save(); render(); return }
   const el = e.target.closest('[data-action]'); if (!el) return;
   const [action, key] = el.dataset.action.split('-'), id = Number(key);
   if (action === 'sides') { save(); changeSide(); return }
@@ -445,7 +491,7 @@ export function startCoalition() {
   if (action === 'next') nextWave(s);
   if (action === 'deal') acceptDeal(s);
   if (action === 'nodeal') declineDeal(s);
-  if (action === 'fresh' && s.phase === 'over') { const c = s.cam; s = newSeason(Math.random, preferredLevel()); s.cam = c; elapsed = 0; sharing = ''; waveKey = ''; feedLayer.reset() }
+  if (action === 'fresh' && s.phase === 'over') { pickedWave=0; const c = s.cam; s = newSeason(Math.random, preferredLevel()); s.cam = c; elapsed = 0; sharing = ''; waveKey = ''; feedLayer.reset() }
   if (action === 'buy') purchase(s, id, 1);
   if (action === 'undo') purchase(s, id, -1);
   save(); render();
@@ -455,6 +501,10 @@ export function startCoalition() {
   requestAnimationFrame(view);
   if (document.hidden) { prevView = 0; return }
   const dt = prevView ? Math.min(.1, (now - prevView) / 1000) : 0; prevView = now;
+  if(finale){
+   if(!coach.enabled || autoOn || !['report','over'].includes(s.phase)){endFinale(false)}
+   else {stage.renderLesson(dt);finale-=dt;if(finale<=0)endFinale(true);return}
+  }
   const filmFirst = !!pendingFrame && !!stage;
   if (!filmFirst) autoStep(now);
   if (!stage) return;
@@ -463,7 +513,7 @@ export function startCoalition() {
   const cam = s.cam === 4 ? 3 : s.cam, state = linkState(s.cam), quality = linkQuality(s.cam);
   const live = watching(), report = s.phase === 'watch' || s.phase === 'report' ? s.report : null;
   const orbital = !!s.offer.orbital && s.cam === 3;
-  stage.step({ orbital, dt: live && paused ? 0 : dt, real: (now - realStart) / 1000, elapsed: s.phase === 'watch' ? elapsed : (report?.duration ?? 0), report, cam });
+  stage.step({ orbital, dt: live && paused ? 0 : dt * coach.rate(), real: (now - realStart) / 1000, elapsed: s.phase === 'watch' ? elapsed : (report?.duration ?? 0), report, cam });
   feedLayer.pre({ orbital, now, cam, state, quality });
   if (!feedLayer.frozen && state === 'live') { stage.render(); if (filmFirst) recordDroneFrame(s.cam) }
   else if (state === 'press') stage.render();
