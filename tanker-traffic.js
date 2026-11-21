@@ -48,6 +48,7 @@ export function tankerTraffic(scene) {
    tanks.forEach((ship,i)=>{
     const progress=clock*1.18+i*13+20;
     ship.userData.trip=Math.floor(progress/52);
+    ship.userData.dir=i%2?-1:1;
     ship.visible=ship.userData.trip!==ship.userData.lostTrip;
     ship.position.z=((progress%52)-26)*(i%2?-1:1);
    });
@@ -58,9 +59,9 @@ export function tankerTraffic(scene) {
   near(p,margin=3){return tanks.find(s=>s.visible&&Math.abs(s.position.x-p.x)<1.35+margin&&Math.abs(s.position.z-p.z)<3.4+margin)??null},
   collide(p,time){
    const ship=tanks.find(s=>s.visible&&Math.abs(s.position.x-p.x)<1.35&&Math.abs(s.position.z-p.z)<3.4);
-   if(!ship)return false;
+   if(!ship)return null;
    ship.userData.lostTrip=ship.userData.trip;ship.visible=false;
-   add(p.x,p.z,time);return true;
+   add(p.x,p.z,time);return ship;
   },
   draw(time){
    for(let i=slicks.length-1;i>=0;i--){
