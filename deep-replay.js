@@ -62,14 +62,14 @@ export function mountStrikeReplay(host,{site=0,seed=1,hit=true,hits=1,impact,wav
  const root=document.createElement('div');root.className='dr-replay';
  root.innerHTML='<div class="dr-screen"><canvas width="'+W+'" height="'+H+'"></canvas></div>'+
   '<div class="dr-ctrl"><button type="button" class="dr-btn dr-play"></button><div class="dr-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div></div>'+
-  '<div class="dr-export"><button type="button" class="dr-btn" data-prepare></button><a class="dr-btn" download hidden></a><button type="button" class="dr-btn" data-share hidden></button></div>'+
+  '<div class="dr-export"><button type="button" class="dr-btn" data-share></button><a class="dr-btn" download hidden></a></div>'+
   '<video class="dr-preview" controls playsinline hidden></video>'+
   '<div class="dr-share"><button type="button" class="dr-btn" data-copy></button><a class="dr-btn" target="_blank" rel="noopener noreferrer">X</a><a class="dr-btn" target="_blank" rel="noopener noreferrer">Telegram</a><a class="dr-btn" target="_blank" rel="noopener noreferrer">Facebook</a></div>'+
   '<small class="dr-status" role="status"></small>';
  host.append(root);
  const canvas=root.querySelector('canvas'),ctx=canvas.getContext('2d');
  const playBtn=root.querySelector('.dr-play'),bar=root.querySelector('.dr-bar'),fill=bar.firstChild;
- const prepare=root.querySelector('[data-prepare]'),download=root.querySelector('a[download]'),share=root.querySelector('[data-share]');
+ const download=root.querySelector('a[download]'),share=root.querySelector('[data-share]');
  const preview=root.querySelector('.dr-preview'),status=root.querySelector('.dr-status'),copy=root.querySelector('[data-copy]');
  const [linkX,linkTg,linkFb]=root.querySelectorAll('.dr-share a');
  const origin=location.origin,enc=encodeURIComponent;
@@ -80,14 +80,14 @@ export function mountStrikeReplay(host,{site=0,seed=1,hit=true,hits=1,impact,wav
  linkFb.href='https://www.facebook.com/sharer/sharer.php?u='+enc(origin);
  for(const a of [linkX,linkTg,linkFb])a.setAttribute('aria-label',tr('Поділитися: ','Share on ')+a.textContent);
  copy.textContent=tr('Копіювати підпис','Copy caption');
- download.textContent=tr('Зберегти відео','Save video');share.textContent=tr('Поділитися','Share');
- prepare.textContent=tr('Підготувати відео','Prepare video');
+ download.textContent=tr('Зберегти відео','Save video');share.textContent=tr('Поділитися анімацією','Share animation');
+ status.setAttribute('aria-live','polite');
  const setPlay=()=>{playBtn.textContent=playing?'❚❚ '+tr('Пауза','Pause'):u>=DUR?'⟳ '+tr('Повтор','Replay'):'▶ '+tr('Відтворити','Play')};
 
  // ---- state --------------------------------------------------------------
  let u=0,playing=false,atPoster=false,frameId=0,lastTs=0,disposed=false,recording=null,built=null,damaged=false,observer,fileUrl,file;
  const supportsRecord=!!(window.MediaRecorder&&HTMLCanvasElement.prototype.captureStream);
- if(!supportsRecord){prepare.disabled=true;status.textContent=tr('Браузер не підтримує запис відео.','This browser does not support video recording.')}
+ if(!supportsRecord){share.disabled=true;status.textContent=tr('Браузер не підтримує запис відео.','This browser does not support video recording.')}
 
  // ---- timeline constants -------------------------------------------------
  // Arrival times (hit) or interception times (miss), in effect time.
@@ -421,15 +421,15 @@ export function mountStrikeReplay(host,{site=0,seed=1,hit=true,hits=1,impact,wav
  // ---- recording ------------------------------------------------------------------
  function resetFile(){
   if(fileUrl)URL.revokeObjectURL(fileUrl);fileUrl=null;file=null;
-  preview.hidden=download.hidden=share.hidden=true;preview.removeAttribute('src');download.removeAttribute('href');
+  preview.hidden=download.hidden=true;preview.removeAttribute('src');download.removeAttribute('href');
  }
  function endRecording(ok){
   const rec=recording;recording=null;
   rec?.stream.getTracks().forEach(t=>t.stop());
-  playBtn.disabled=false;prepare.disabled=!supportsRecord;prepare.hidden=ok;
+  playBtn.disabled=false;share.disabled=!supportsRecord;
   if(!ok)status.textContent=tr('Не вдалося записати відео. Спробуйте ще раз.','Recording failed. Try again.');
  }
- prepare.onclick=()=>{
+ function prepareVideo(){
   if(!supportsRecord||recording)return;
   resetFile();
   let stream,recorder;
@@ -450,14 +450,18 @@ export function mountStrikeReplay(host,{site=0,seed=1,hit=true,hits=1,impact,wav
    endRecording(true);
    preview.src=fileUrl+'#t=0.01';preview.hidden=false;
    download.href=fileUrl;download.download=file.name;download.hidden=false;
-   share.hidden=!navigator.canShare?.({files:[file]});
-   status.textContent='';poster();
+   status.textContent=navigator.canShare?.({files:[file]})?tr('Відео готове. Натисніть «Поділитися анімацією», щоб обрати застосунок.','Video ready. Select Share animation to choose an app.'):tr('Відео готове. Збережіть його й прикріпіть до допису.','Video ready. Save it and attach it to your post.');
+   poster();
   };
-  prepare.disabled=playBtn.disabled=true;
+  share.disabled=playBtn.disabled=true;
   status.textContent=tr('Записуємо повтор у реальному часі… тримайте вкладку відкритою.','Recording the replay in real time… keep this tab open.');
   recorder.start(250);startPlayback(0);
  };
  share.onclick=async()=>{
+  if(!file){prepareVideo();return}
+  if(!navigator.share||!navigator.canShare?.({files:[file]})){
+   download.click();status.textContent=tr('Прикріпіть завантажене відео до допису.','Attach the downloaded video to your post.');return;
+  }
   try{await navigator.share({files:[file],title:tr('Pop Season · удар','Pop Season · strike'),text:caption})}
   catch(e){if(e.name!=='AbortError')status.textContent=tr('Завантажте файл, щоб опублікувати його.','Download the file to publish it.')}
  };
