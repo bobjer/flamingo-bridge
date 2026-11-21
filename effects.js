@@ -157,6 +157,9 @@ const ogive=(R,y0,y1,n=10)=>{ // tangent ogive, ascending y, tip at y1
  return pts.reverse();
 };
 const mStd=(color,roughness,metalness=0)=>new T.MeshStandardMaterial({color,roughness,metalness});
+// ---------- shrapnel (shared geometry/materials, built once) ----------
+const shardGeos=[new T.BoxGeometry(1,1,1),new T.IcosahedronGeometry(.7,0)];
+const shardMats=[new T.MeshStandardMaterial({color:0x2b2e33,roughness:.55,metalness:.7,flatShading:true}),new T.MeshStandardMaterial({color:0x3a2418,roughness:.6,metalness:.5,flatShading:true,emissive:0x5a1c08,emissiveIntensity:.6})];
 const finShape=(pts,depth)=>{const s=new T.Shape();pts.forEach(([x,y],i)=>i?s.lineTo(x,y):s.moveTo(x,y));
  const g=new T.ExtrudeGeometry(s,{depth,bevelEnabled:false});g.translate(0,0,-depth/2);return g};
 const bodyParts=[
@@ -338,10 +341,27 @@ export function fireworks(scene){
   }
   explosion(centre,1.9);sparks(centre,1.2,30,0xfff0c0);
  }
+ // Hand a single mesh (keeps its world transform) to the chunk physics: flies, burns, splashes.
+ function piece(mesh,vel,{burn=true,life=9,spin}={}){
+  scene.attach(mesh);
+  chunks.push({m:mesh,v:vel.clone(),spin:spin??around(6),age:0,life,smoke:0,landed:false,burn});
+ }
+ // Shrapnel for a non-critical hit: dark metal bits, half of them burning, plus sparks and a small flash.
+ function shards(p,k=1){
+  p=p.clone();
+  for(let i=0;i<Math.round(7*k);i++){
+   const hot=rnd()<.3,m=new T.Mesh(shardGeos[rnd()<.5?0:1],shardMats[hot?1:0]);
+   m.scale.set(.08+rnd()*.12,.08+rnd()*.12,.08+rnd()*.12);m.position.copy(p).add(around(.15));scene.add(m);
+   const a=rnd()*Math.PI*2,sp=3+rnd()*5;
+   chunks.push({m,v:v3(Math.cos(a)*sp,3+rnd()*4,Math.sin(a)*sp),spin:around(10),age:0,life:3.5,smoke:0,landed:false,burn:rnd()<.5,tiny:true});
+  }
+  sparks(p,k,18);explosion(p,.9*k);
+ }
  // Fire and smoke streaming from a falling hulk.
  let trailClock=0;
- function burnTrail(p,dt,k=1){
-  trailClock-=dt;if(trailClock>0)return;trailClock=.02;
+ function burnTrail(p,dt,k=1,site){ // optional site object keeps its own clock so several trails can run at once
+  if(site){site.trail=(site.trail??0)-dt;if(site.trail>0)return;site.trail=.02}
+  else{trailClock-=dt;if(trailClock>0)return;trailClock=.02}
   fire.emit({pos:p.clone().add(around(.2)),v:around(.6),drag:2,life:.35+rnd()*.3,s0:.9*k,s1:.3,c0:C(0xffd890,3),c1:C(0xff4a10,1.4),alpha:.5,fadeIn:.02});
   smoke.emit({pos:p.clone().add(around(.2)),v:around(.4).add(v3(0,.6,0)),drag:.8,gravity:-.3,life:2.2+rnd()*1.6,s0:.6*k,s1:(2.4+rnd())*k,c0:C(0x1e1915),c1:C(0x5f5b57),cRate:1.2,alpha:.6,fadeIn:.04});
  }
@@ -427,7 +447,7 @@ export function fireworks(scene){
      if(c.age<(c.burn?5:1.2))glow.emit({pos:p.clone(),v:v3(0,0,0),life:.12,s0:.5,s1:.2,c0:C(0xffa040,4),alpha:1,fadeIn:.01,fadePow:1})}
     if(p.y<floor+.12&&c.v.y<0){
      if(deck&&Math.abs(c.v.y)>1.6){c.v.y*=-.32;c.v.x*=.55;c.v.z*=.55;c.spin.multiplyScalar(.5);sparks(p,.4,8);}
-     else if(!deck){splash(v3(p.x,0,p.z),.45);c.landed=true;c.life=c.age+3;}
+     else if(!deck){if(c.tiny){for(let n=0;n<3;n++)spray.emit({pos:v3(p.x,.1,p.z),v:v3((rnd()-.5)*1.4,2+rnd()*2,(rnd()-.5)*1.4),gravity:12,drag:.4,life:.6+rnd()*.3,s0:.12,s1:.3,c0:C(0xf3fbff,1.5),c1:C(0xc9e4ee,1.2),alpha:.7,fadeIn:.03,fadePow:1.8});c.landed=true;c.life=c.age+.6}else{splash(v3(p.x,0,p.z),.45);c.landed=true;c.life=c.age+3}}
      else{p.y=floor+.03;c.landed=true;c.life=c.age+5}
     }
    }else if(p.y<.5){p.y-=dt*.25}
@@ -448,7 +468,7 @@ export function fireworks(scene){
   reset();for(const d of decals){d.m.removeFromParent();d.m.material.dispose()}decals.length=0;for(const c of chunks)c.m.removeFromParent();chunks.length=0;
   for(const f of flashes)f.l.intensity=0;flashes.length=0;smoke.reset();spray.reset();fire.reset();glow.reset();
  }
- return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,flak,kill,feathers,wreck,throwCar,breakup,burnTrail,blaze,sparks,breaker,
+ return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,flak,kill,feathers,wreck,throwCar,breakup,piece,shards,smokeColumn,burnTrail,blaze,sparks,breaker,
   burst:p=>explosion(p,1.5),
   pendingDamage(target){return flights.reduce((sum,f)=>sum+(f.target===target?f.damage:0),0)},
   snapshot(enemies){return flights.filter(f=>enemies.includes(f.target)).map(f=>({origin:f.origin.toArray(),target:enemies.indexOf(f.target),damage:f.damage,age:f.age,duration:f.duration,position:f.rocket.position.toArray()}))},

@@ -267,7 +267,9 @@ export function startCoalition() {
  function droneReel() {
    const r = s.report;
    if (!r?.flights) return '';
-   const tiles = r.flights.flatMap((f,i) => {
+   const selected = [], subjects = cameraSubjects(s);
+   const collapse = r.archFell ? r.flights.filter(f=>f.archDamage).sort((a,b)=>b.impact-a.impact)[0] : null;
+   const candidates = r.flights.flatMap((f,i) => {
      if (f.noScene || f.decree) return [];
      const capture = s.captures[i] ?? 'none', cam = r.filmLog?.[i]?.camera ?? f.marker;
      const title = subjectName(f.extra ?? cameraSubjects(s)[f.marker]), still = r.stills?.[cam];
@@ -275,13 +277,23 @@ export function startCoalition() {
      const lost = ['jam','dark','down'].includes(r.filmLog?.[i]?.state);
      const label = f.intercepted ? tr('Збито · повтор','Shot down · replay') : !f.success ? tr('Промах · повтор','Miss · replay') : capture==='drone' ? 'DVR '+(cam+1) : capture==='far' ? camNames()[3] : lost ? tr('Без зв’язку · повтор','Signal lost · replay') : tr('Поза кадром · повтор','Off camera · replay');
      const redirect = f.originalMarker != null ? zones()[f.originalMarker]+' → ' : '';
-     return ['<figure>'+playThumb('hit-'+i,title,src)+'<figcaption>'+label+' · '+mmss(Math.floor(f.impact/1000))+'<b>'+redirect+title+'</b></figcaption></figure>'];
+     const satellite = r.partnerShots?.includes(i) && capture !== 'drone';
+     const subject = f.extra ?? subjects[f.marker];
+     const outcome = f === collapse ? 'collapse' : f.intercepted ? 'intercept' : f.success ? 'impact' : 'miss';
+     const priority = f === collapse ? 10 : satellite ? 7 : f.success && capture === 'drone' ? 6 : f.success ? 4 : f.intercepted ? 2 : 1;
+     const caption = f === collapse ? tr('Обвал арки','Arch collapse') : satellite ? tr('Супутник від партнерів','Partner satellite') : label;
+     const thumb = playThumb((satellite?'sat-':'hit-')+i,title,satellite?poster(subjects[f.marker]):src);
+     return [{subject, outcome, priority, time:f.impact, html:'<figure>'+thumb+'<figcaption>'+caption+' · '+mmss(Math.floor(f.impact/1000))+'<b>'+redirect+title+'</b></figcaption></figure>'}];
    });
-   for (const i of r.partnerShots ?? []) {
-     const f = r.flights[i], title = subjectName(f.extra ?? cameraSubjects(s)[f.marker]);
-     tiles.push('<figure>'+playThumb('sat-'+i,title,poster(cameraSubjects(s)[f.marker]))+'<figcaption>'+tr('Супутник від партнерів','Partner satellite')+' · '+mmss(Math.floor(f.impact/1000))+'<b>'+title+'</b></figcaption></figure>');
+   if (r.cameraLoss) candidates.push({subject:'camera', outcome:'signal-loss', priority:8, time:r.cameraLoss.at,
+     html:'<figure>'+playThumb('loss-0',tr('Останній кадр дрона','Last drone transmission'),poster(subjects[r.cameraLoss.camera]))+'<figcaption>'+tr('Дрон збито','Camera drone down')+' · '+mmss(Math.floor(r.cameraLoss.at/1000))+'</figcaption></figure>'});
+   const limit = Math.max(0, 3 - (r.leaks?.length ?? 0));
+   for (const clip of candidates.sort((a,b)=>b.priority-a.priority || a.time-b.time)) {
+     if (selected.length >= limit) break;
+     if (selected.some(prev=>prev.subject===clip.subject || (prev.outcome===clip.outcome && clip.outcome!=='impact'))) continue;
+     selected.push(clip);
    }
-   if(r.cameraLoss) tiles.push('<figure>'+playThumb('loss-0',tr('Останній кадр дрона','Last drone transmission'),poster(cameraSubjects(s)[r.cameraLoss.camera]))+'<figcaption>'+tr('Дрон збито','Camera drone down')+' · '+mmss(Math.floor(r.cameraLoss.at/1000))+'</figcaption></figure>');
+   const tiles = selected.sort((a,b)=>a.time-b.time).map(clip=>clip.html);
    return '<button type="button" class="wave-replay" data-film="wave-0">▶ '+tr('Повтор хвилі','Replay wave')+'</button><div class="c-stills">'+tiles.join('')+'</div>';
 
  }

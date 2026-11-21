@@ -40,6 +40,14 @@ async function pickSide(restart){
   const dialog=document.createElement('dialog');
   dialog.className='faction-picker';dialog.setAttribute('aria-labelledby','faction-title');
   document.body.append(dialog);
+  function placeDifficulty() {
+    const field=dialog.querySelector('.side-level');
+    for(const card of dialog.querySelectorAll('[data-side]')){
+      const selected=card.dataset.side===side;
+      card.setAttribute('aria-pressed',String(selected));
+      if(selected) card.after(field);
+    }
+  }
   const render=()=>{
     dialog.innerHTML='<div class="faction-head"><span>POP SEASON</span>'+languageButton()+'</div><h1 id="faction-title">'+tr('Оберіть сторону','Choose your side')+'</h1>'+(restart?'<p class="restart-warning">'+tr('Увесь прогрес збережених партій обох сторін буде втрачено. Нова гра почнеться з першої хвилі.','All saved progress for both factions will be lost. The new game starts at wave one.')+'</p>':'')+levelField(level,true)+'<div class="faction-options">'+
       '<button data-side="coalition"><img src="/coalition-koala.svg" alt=""><small>'+tr('НАСТУП','OFFENCE')+'</small><strong>'+tr('Коаліція охочих','Coalition of the Willing')+'</strong><span>'+tr('Зберіть зграю, виконайте контракт і переконайте спонсорів оплатити наступну хвилю.','Build a flock, deliver the contract and convince the sponsors to fund another wave.')+'</span></button>'+
@@ -47,7 +55,7 @@ async function pickSide(restart){
     if (restart) {
       const body=document.createElement('div'); body.className='faction-body'; body.append(...dialog.children);dialog.append(body);
       dialog.insertAdjacentHTML('beforeend','<footer class="restart-actions"><button type="button" data-cancel>'+tr('Скасувати','Cancel')+'</button><button type="button" data-confirm>'+tr('Почати спочатку','Start over')+'</button></footer>');
-      dialog.querySelectorAll('[data-side]').forEach(card=>card.setAttribute('aria-pressed',String(card.dataset.side===side)));
+      placeDifficulty();
     }
   };
   render();document.addEventListener('siege-language',render);
@@ -62,7 +70,7 @@ async function pickSide(restart){
       const card=e.target.closest('[data-side]');if(!card)return;
       side=card.dataset.side;
       if(!restart)resolve({side,level});
-      else dialog.querySelectorAll('[data-side]').forEach(el=>el.setAttribute('aria-pressed',String(el===card)));
+      else placeDifficulty();
     };
   });
   dialog.close();dialog.remove();document.removeEventListener('siege-language',render);

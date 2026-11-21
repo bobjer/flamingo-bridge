@@ -2,6 +2,7 @@ import {checkpoint} from './ranked-session.js';
 import {createCoach} from './coach.js';
 import {defenceHelp} from './coach-help.js';
 import {cruiserSinking} from './cruiser-sinking.js';
+import {tankerSinking} from './tanker-sinking.js';
 import {pickGuest} from './guest-roll.js';
 import {watchRelease} from './release-notice.js';
 import {setupGameMenu} from './game-menu.js';
@@ -91,7 +92,8 @@ $('resupply').onclick=()=>{
 };
 const rewards={drone:[1,6],loaf:[2,7],baby:[1,7],flamingo:[1,9],bird:[1,6],neptune:[8,80]};
 const infl=()=>Math.pow(1.03,Math.max(0,wave-1))*(1+.3*(1-reserve/reserve0))*Math.pow(.93,tech.logi);
-const MISSILE=6,PATCH=70;
+const MISSILE=6,PATCH=70,CRIT_SINK=.04; // CRIT_SINK: chance that any cruiser hit is a magazine detonation and sinks it outright
+const repairKeys=new WeakMap();
 const bountyMul={easy:1.2,normal:1,hard:.85};
 const price=base=>base>0?Math.max(1,Math.round(base*infl())):0;
 const armored=x=>Math.min(hp,Math.round(x*Math.pow(.88,tech.armor)));
@@ -100,7 +102,7 @@ function upkeepBill(){return Math.round((units.reduce((s,u)=>s+upkeep[u.k],0)*Ma
 function repairCost(){return price(PATCH*Math.min(25,100-hp)/25)}
 function researchTech(k){
  rp-=techCost(tech[k]);tech[k]++;
- if(k==='armor')for(const u of units)u.hull++;
+ if(k==='armor')for(const u of units){u.hull++;u.maxHull=(u.maxHull??u.hull-1)+1}
  writeMessage(()=>getTechs()[k][0]+tr(" · рів. "," · lvl ")+tech[k]+': '+getTechs()[k][1]+'.');ui();
 }
 const reserves = {easy: 7000, normal: 4500, hard: 2600};
@@ -445,6 +447,33 @@ function patchDeck(spot){
  ui();
 }
 function repairDeck(){patchDeck(null)}
+function repairStepCost(){return price(specs.cruiser[1]*.18)}
+function repairCruiser(u){
+ const cost=repairStepCost();
+ if(!units.includes(u)||phase!=='live'||paused||cash<cost||(u.hull>=u.maxHull&&!u.fire))return;
+ spend(cost);u.hull=Math.min(u.maxHull,u.hull+1);
+ if(u.hull>=u.maxHull){u.fire=false;u.fireSite=null}
+ writeMessage(()=>tr("Крейсер полагоджено · міцність ","Cruiser repaired · hull ")+u.hull+'/'+u.maxHull);ui();
+}
+function cruiserFires(dt){
+ for(const u of units){
+  if(u.k!=='cruiser'||!u.fire)continue;
+  const site=u.fireSite||(u.fireSite={p:new T.Vector3(),k:1});
+  u.m.localToWorld(site.p.set(.2,.9,0));site.k=.7+.8*(1-u.hull/u.maxHull);fx.blaze(site,dt);
+ }
+}
+function hitCruiser(u,dmg,point,boomed){
+ const lucky=Math.random()<CRIT_SINK;u.hull=Math.max(0,u.hull-dmg);
+ const at=point||u.m.position.clone().add(new T.Vector3(0,.9,0));
+ if(lucky||u.hull<=0){
+  u.hull=0;u.fire=false;u.fireSite=null;removeUnit(u);
+  writeMessage(()=>lucky?tr("Влучання в бойовий запас — крейсер розірвало навпіл.","A hit in the magazine tore the cruiser in two."):tr("Крейсер розколовся й іде на дно.","The cruiser broke in two and is going down."));
+ }else{
+  u.fire=true;fx.shards?.(at,1);if(!boomed)fx.explosion(at,1.2);
+  writeMessage(()=>tr("Крейсер горить · міцність ","Cruiser on fire · hull ")+u.hull+'/'+u.maxHull);
+ }
+ ui();
+}
 function localAmmo(u){
  const each=Math.max(1,price(MISSILE)),missing=magazine[u.k]-u.ammo;
  const amount=Math.min(8,missing,Math.floor(cash/each));
@@ -470,6 +499,11 @@ function updateMarkers(){
    const label=specs[u.k][0]+' · '+u.ammo+'/'+capacity;
    const detail=(amount?tr('Поповнити +','Restock +')+amount:tr('Бракує коштів','Low funds'))+' · '+cost+currency;
    items.push({key:u,kind:'ammo',point:u.m.position,label,short:u.ammo+'/'+capacity,urgent:!u.ammo,detail,disabled:paused||!amount,action:()=>refillUnit(u)});
+  }
+  for(const u of units){
+   if(u.k!=='cruiser'||(u.hull>=u.maxHull&&!u.fire))continue;
+   const cost=repairStepCost();let key=repairKeys.get(u);if(!key)repairKeys.set(u,key={});
+   items.push({key,kind:'ammo',point:u.m.position,label:tr('Ремонт крейсера +','Repair cruiser +')+Math.max(1,u.maxHull-u.hull),short:'🔧'+u.hull+'/'+u.maxHull,urgent:u.fire,detail:(u.fire?tr('Загасити пожежу · ','Put out fire · '):'')+cost+currency,disabled:paused||cash<cost,action:()=>repairCruiser(u)});
   }
   for(const e of enemies){
    if(!e.striker||e.hp<=0)continue;
@@ -550,7 +584,7 @@ function purchase(k,pad){const cost=price(specs[k][1]);const n=units.filter(u=>u
  const marine=k==='dolphin'||k==='cruiser';const x=side*(2+Math.floor(n/2)*2.7)+(k==='turret'?1:0);const z=marine?(k==='cruiser'?-10:6)+side*(n%3):k==='sam'?-1.2:1.2;
  if(k==='cruiser'&&barges.some(b=>Math.hypot(x-b.m.position.x,z-b.m.position.z)<4.1)){writeMessage(()=>tr("Місце спуску зайняте баржею.","A barge blocks the launch site."));return}
  spend(cost);
- const m=pad?put(k,pad.position.x,3.32,pad.position.z):(k==='sam'||k==='pantsir')?put(k,side*(20+Math.floor(n/2)%5),1.0,(k==='pantsir'?-4.2:3.7)+Math.floor(n/10)*1.4):put(k,x,marine?.24:3.2,z);m.scale.setScalar(k==='cruiser'?1.2:.78);units.push({k,m,pad,ammo:magazine[k],cd:0,hull:(k==='cruiser'?4:2)+tech.armor});ui()}
+ const m=pad?put(k,pad.position.x,3.32,pad.position.z):(k==='sam'||k==='pantsir')?put(k,side*(20+Math.floor(n/2)%5),1.0,(k==='pantsir'?-4.2:3.7)+Math.floor(n/10)*1.4):put(k,x,marine?.24:3.2,z);m.scale.setScalar(k==='cruiser'?1.2:.78);const hull=(k==='cruiser'?4:2)+tech.armor;units.push({k,m,pad,ammo:magazine[k],cd:0,hull,maxHull:hull,fire:false});ui()}
 const grant=w=>Math.max(24,Math.round(150*Math.pow(.95,Math.max(0,w-1))));
 function nextWave(){
  if(wave===0){
@@ -689,6 +723,7 @@ function rage(){
 const tribute=document.createElement('div');tribute.className='tribute rooster-banner';tribute.hidden=true;
 tribute.innerHTML='<img class="cartoon-rooster" alt="" src="'+roosterUrl+'"><span></span>';$('view').append(tribute);
 const sinking=cruiserSinking(fx);
+const tankerSink=tankerSinking(fx);
 const sinkingBanner=document.createElement('div');
 sinkingBanner.className='tribute sinking-banner';sinkingBanner.hidden=true;
 $('view').append(sinkingBanner);
@@ -725,8 +760,9 @@ function removeUnit(u){
 function sinkStep(dt){
  sinkingBanner.hidden=time>=sinkingBannerEnd;
  sinking.tick(dt);
+ tankerSink.tick(dt);
 }
-function clearFlyby(){tantrum.hidden=true;rageUntil=rageReady=0;sinking.clear();sinkingBannerEnd=0;sinkingBanner.hidden=true;crashArt.reset();tributeDelay=0;flyby?.m.removeFromParent();flyby=null;tributeUntil=0;tribute.hidden=true}
+function clearFlyby(){tantrum.hidden=true;rageUntil=rageReady=0;sinking.clear();tankerSink.clear();sinkingBannerEnd=0;sinkingBanner.hidden=true;crashArt.reset();tributeDelay=0;flyby?.m.removeFromParent();flyby=null;tributeUntil=0;tribute.hidden=true}
 function aircraftStep(dt){
  crashArt.tick(dt);
  if(tributeDelay>0){tributeDelay-=dt;if(tributeDelay<=0)tributeUntil=time+4}
@@ -815,7 +851,7 @@ function step(dt){
   for(const order of Object.values(orders))if(order!==orders.smoke&&order.end>time)order.end+=elapsed;
   time+=elapsed;breakLeft=Math.max(0,breakLeft-elapsed);
   advanceTraffic(time-elapsed,time);moveShips(elapsed);showBreak();showSignals();
-  fx.tick(elapsed,flyby?[flyby]:[]);fx.smolder(elapsed,damageSpots); // let smoke and debris settle during the break
+  fx.tick(elapsed,flyby?[flyby]:[]);fx.smolder(elapsed,damageSpots);cruiserFires(elapsed); // let smoke and debris settle during the break
   if(breakLeft===0){nextWave();if(wave%4===0)spawn('neptune');if(!flyby&&wave>=4){
    const roll=Math.random();
    const type=roll<.3?'jet':roll<.5?'helicopter':null;
@@ -824,7 +860,7 @@ function step(dt){
   return;
  }
  waveElapsed+=dt;
- fx.tick(dt,[...enemies,flyby,incoming].filter(Boolean));fx.smolder(dt,damageSpots);guestStep(dt);
+ fx.tick(dt,[...enemies,flyby,incoming].filter(Boolean));fx.smolder(dt,damageSpots);cruiserFires(dt);guestStep(dt);
  {const night=nightLevel();flakTimer-=dt;
   if(night>.45&&flakTimer<=0&&enemies.length){
    flakTimer=.35+Math.random()*.7/night;
@@ -899,13 +935,14 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
    else if(sw<WIND+SWING+HOLD){tr3.rotation.z=strikeAngle+Math.sin((sw-WIND-SWING)*40)*.015;e.m.rotation.z=0}
    else{const k=Math.min(1,(sw-WIND-SWING-HOLD)/1),s=k*k*(3-2*k);tr3.rotation.z=strikeAngle*(1-s);e.m.rotation.z=0}
    if(before<WIND+SWING&&sw>=WIND+SWING){
-    const u=e.prey,hit=neptuneTip(e);u.hull=Math.max(0,u.hull-2);
+    const u=e.prey,hit=neptuneTip(e),cr=!shore&&u.k==='cruiser';if(!cr)u.hull=Math.max(0,u.hull-2);
     world.cinematicBoom(hit,{subject:e.m});fx.explosion(hit,1.9);fx.sparks?.(hit,1,24);if(shore)fx.dust(hit,1.5);else{fx.splash(q,2.4);fx.splash(hit.clone().setY(0),1.4);}
     if(shore){
      if(u.hull===0){fx.breakup(u.m,new T.Vector3(0,1,0));removeUnit(u)}
      writeMessage(()=>getSpecs()[u.k][0]+tr(' · удар тризубом',' · trident strike'));
      e.prey=null;
-    }else if(u.hull<=0){removeUnit(u);writeMessage(()=>tr("Нептун розколов крейсер тризубом.","Neptune split the cruiser with his trident."))}
+    }else if(cr)hitCruiser(u,2,hit,true);
+    else if(u.hull<=0){removeUnit(u);writeMessage(()=>tr("Нептун розколов крейсер тризубом.","Neptune split the cruiser with his trident."))}
     else writeMessage(()=>tr("Нептун ударив по крейсеру · міцність ","Neptune struck the cruiser · hull ")+u.hull);
     ui();
    }
@@ -955,10 +992,11 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
    if(ramTanker||ramShip){e.filmed=true;world.cinematic(p.clone(),2,{bomb:true,follow:e.m,lift:.6,radius:7.5,height:2.4})}
   }
   if(e.filmed&&e.k==='baby'&&e.hp<=fx.pendingDamage(e))world.cinematicCancel(e.m);
-  if(e.k==='baby'&&e.hp>0&&tankers.collide(p,time)){
+  const hitShip=e.k==='baby'&&e.hp>0?tankers.collide(p,time):null;
+  if(hitShip){
    const blast=p.clone().setY(.9);world.cinematicBoom(blast,{subject:e.m});
-   fx.explosion(blast,2.6);fx.explosion(blast.clone().add(new T.Vector3(0,.4,1.4)),1.6);fx.explosion(blast.clone().add(new T.Vector3(0,.3,-1.5)),1.5);
-   fx.wreck(blast,Math.random()<.5?1:-1);crashArt.splash(p);fx.splash(p,2.2);
+   fx.explosion(blast,2.6);crashArt.splash(p);
+   tankerSink.start(hitShip,{drift:new T.Vector3(0,0,(hitShip.userData.dir||1)*1.18*(1-world.stormLevel()))});
    e.m.removeFromParent();enemies.splice(i,1);
    writeMessage(()=>tr('Пупс врізався в танкер. Нафтова пляма зникне за дві доби.','A baby hit an oil tanker. The slick will clear in two days.'));
    continue;
@@ -972,12 +1010,13 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
      // the loaf rams the launcher: frozen frame, then the whole battery comes apart with its missiles cooking off
      const hit=u.m.position.clone();hit.y+=.6;world.cinematicBoom(hit,{subject:e.m});
      fx.crumbs(hit);fx.explosion(hit,2.3);fx.explosion(hit.clone().add(new T.Vector3(.8,.5,-.6)),1.4);fx.dust(hit,1.4);
-     fx.breakup(u.m,new T.Vector3((Math.random()-.5)*2,2.5,(Math.random()-.5)*2));u.hull=1;
+     if(u.k!=='cruiser'){fx.breakup(u.m,new T.Vector3((Math.random()-.5)*2,2.5,(Math.random()-.5)*2));u.hull=1}
      for(let k=0;k<3;k++)setTimeout(()=>fx.explosion(hit.clone().add(new T.Vector3((Math.random()-.5)*3,.8+Math.random()*2,(Math.random()-.5)*3)),.8+Math.random()*.6),900+k*700);
     }
     if(e.k==='baby'&&units.includes(u)){const blast=p.clone().setY(.9);world.cinematicBoom(blast,{subject:e.m});fx.explosion(blast,1.8);fx.splash(p,1.8)}
-    if(units.includes(u)&&--u.hull<=0)removeUnit(u);
-    writeMessage(()=>getSpecs()[u.k][0]+(u.hull?tr(" · міцність "," · hull ")+u.hull:tr(" вибув із ладу"," out of action")));
+    if(u.k==='cruiser'&&units.includes(u))hitCruiser(u,e.k==='loaf'?2:1,p.clone().setY(.9),e.k==='loaf'||e.k==='baby');
+    else{if(units.includes(u)&&--u.hull<=0)removeUnit(u);
+    writeMessage(()=>getSpecs()[u.k][0]+(u.hull?tr(" · міцність "," · hull ")+u.hull:tr(" вибув із ладу"," out of action")));}
    }else if(e.k==='loaf'){
     const point=new T.Vector3(e.deckX??p.x,3.23,e.deckX!=null?0:p.z);
     const filmed=e.filmed&&world.cinematicBoom(point,{subject:e.m});
@@ -1019,13 +1058,14 @@ document.addEventListener('siege-language',()=>{
 });
 const SAVE_KEY='pink-siege:match:v1';
 function packEntity(entity){
- const {m,pad,target,prey,destination,oldPoint,exitPoint,...state}=entity;
+ const {m,pad,target,prey,destination,oldPoint,exitPoint,fireSite,...state}=entity;
  return {...state,type:m.name,position:m.position.toArray(),rotation:m.quaternion.toArray(),scale:m.scale.toArray(),
   pad:pads.indexOf(pad),target:units.indexOf(target),prey:prey?units.indexOf(prey):-1,lostTarget:target&&!units.includes(target)?target.m.position.toArray():null,
   destination:destination?.toArray(),oldPoint:oldPoint?.toArray(),exitPoint:exitPoint?.toArray()};
 }
 function unpackEntity(item){
  const {type,position,rotation,scale,pad,target,prey,lostTarget,destination,oldPoint,exitPoint,...state}=item;
+ if(specs[type]){const base=(type==='cruiser'?4:2)+tech.armor;state.hull=Number.isFinite(state.hull)?state.hull:base;state.maxHull=Number.isFinite(state.maxHull)?Math.max(state.maxHull,state.hull):Math.max(base,state.hull);state.fire=state.fire===true&&type==='cruiser'}
  if(magazine[type])state.ammo=Number.isInteger(state.ammo)?Math.max(0,Math.min(magazine[type],state.ammo)):magazine[type];
  const m=put(type,...position);m.quaternion.fromArray(rotation);m.scale.fromArray(scale);
  return {...state,m,pad:pads[pad],prey:units[prey]??null,target:units[target]??(lostTarget?{m:{position:new T.Vector3(...lostTarget)}}:null),

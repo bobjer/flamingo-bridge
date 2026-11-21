@@ -1,4 +1,5 @@
 import {cruiserSinking} from './cruiser-sinking.js';
+import {tankerSinking} from './tanker-sinking.js';
 // The coalition's 3D stage: the real bridge scene (scene.js) with three targets, anti-air, flying units
 // and the camera rig (three FPV drones plus a tripod on the far shore). No DOM besides the host element.
 import * as T from 'three';
@@ -87,6 +88,7 @@ export function createStage(host) {
   const blazes = [];
   const airborne = [];
   const sinking = cruiserSinking(fx);
+  const tankerSink = tankerSinking(fx);
   // Units come in from far to the side over the sea, swing north of the bridge (in front of the drones) and
   // dive on the marker, so they cross the frame laterally for the last half of the flight.
   function plan(i, f, report) {
@@ -140,7 +142,6 @@ export function createStage(host) {
       const index = aaUnits.findIndex(u => u.i === 2);
       if (index >= 0) {
         const [ship] = aaUnits.splice(index, 1);
-        if (!silent) fx.breakup(ship.m, V(0,1,0));
         sinking.start(ship.m, age, silent);
       } else if (!silent) fx.splash(sea, 1.8);
       return;
@@ -148,7 +149,7 @@ export function createStage(host) {
     if (R.kind === 'tanker') {
       if (moored.visible) {
         moored.visible = false;
-        if (!silent) { fx.explosion(p, 3); fx.splash(p, 2.4); fx.spill(p, 2, 50) }
+        if (age < 14) tankerSink.start(moored, {elapsed: age, quiet: silent});
         startBlaze(i,p,1.6,12500,late);
       } else if (!silent) fx.splash(p,1.8);
       return;
@@ -240,7 +241,7 @@ export function createStage(host) {
   }
   function resetWave() {
     for (const R of recs) { if (R.mesh) R.mesh.removeFromParent() }
-    sinking.clear(); fx.clear();
+    sinking.clear(); tankerSink.clear(); fx.clear();
     recs = []; blazes.length = 0; airborne.length = 0;
 
   }
@@ -311,6 +312,7 @@ export function createStage(host) {
     // world
     updateFlights(dt, elapsed, report);
     sinking.tick(dt);
+    tankerSink.tick(dt);
     for (const c of cars) { if (!screenSmoke && !closedRoad) c.x += c.dir * c.speed * dt; if (Math.abs(c.x) > 130) c.x = -c.dir * 130; c.m.position.set(c.x, world.deckTop(c.x) + .06, c.dir * .8) }
     for (const u of aaUnits) {
       let best = null, bd = 1e9;
