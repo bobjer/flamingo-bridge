@@ -46,3 +46,7 @@ If a wave felt too easy or hopeless, tell me the wave number, difficulty, and wh
 I’d love balance feedback, better 3D unit models, and pull requests with fixes. [Open an issue](https://github.com/bobjer/flamingo-bridge/issues) · [Pull requests](https://github.com/bobjer/flamingo-bridge/pulls)
 
 © No Sense 2026
+
+## License
+
+You can use, remix, host, and sell Pop Season. Keep the [license](LICENSE) with your version and credit the [original idea by No Sense](https://github.com/bobjer/flamingo-bridge) somewhere your users can find it.

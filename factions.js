@@ -49,7 +49,7 @@ async function pickSide(restart){
     }
   }
   const render=()=>{
-    dialog.innerHTML='<div class="faction-head"><span>POP SEASON</span>'+languageButton()+'</div><h1 id="faction-title">'+tr('Оберіть сторону','Choose your side')+'</h1>'+(restart?'<p class="restart-warning">'+tr('Увесь прогрес збережених партій обох сторін буде втрачено. Нова гра почнеться з першої хвилі.','All saved progress for both factions will be lost. The new game starts at wave one.')+'</p>':'')+levelField(level,true)+'<div class="faction-options">'+
+    dialog.innerHTML='<div class="faction-head"><span>POP SEASON</span><a href="/license.html" target="_blank" rel="noopener">'+tr('Ліцензія','License')+'</a>'+languageButton()+'</div><h1 id="faction-title">'+tr('Оберіть сторону','Choose your side')+'</h1>'+(restart?'<p class="restart-warning">'+tr('Увесь прогрес збережених партій обох сторін буде втрачено. Нова гра почнеться з першої хвилі.','All saved progress for both factions will be lost. The new game starts at wave one.')+'</p>':'')+levelField(level,true)+'<div class="faction-options">'+
       '<button data-side="coalition"><img src="/coalition-koala.svg" alt=""><small>'+tr('НАСТУП','OFFENCE')+'</small><strong>'+tr('Коаліція охочих','Coalition of the Willing')+'</strong><span>'+tr('Зберіть зграю, виконайте контракт і переконайте спонсорів оплатити наступну хвилю.','Build a flock, deliver the contract and convince the sponsors to fund another wave.')+'</span></button>'+
       '<button data-side="bridge">'+paperclip+'<small>'+tr('ОБОРОНА','DEFENCE')+'</small><strong>'+tr('Гарнізон','Garrison')+'</strong><span>'+tr('Тримайте міст, латайте полотно й освоюйте бюджет.','Hold the bridge, patch the road and burn through the budget.')+'</span></button></div>';
     if (restart) {
