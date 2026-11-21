@@ -2,8 +2,10 @@ import {launchPrices,overhead} from './deep-economy.js';
 
 const surveyType=launchPrices.length-1;
 const strikeLimit=8;
+const massStrikeSize=6;
+const cheapestStrike=Math.min(...launchPrices.slice(0,surveyType));
 
-export function planDeepWave({credits,stock,targets,sectorCount,firstSector}){
+export function planDeepWave({credits,trust,stock,targets,sectorCount,firstSector,canStockpile}){
  const remaining=[...stock];
  const strikes=new Map();
  const surveys={};
@@ -26,6 +28,15 @@ export function planDeepWave({credits,stock,targets,sectorCount,firstSector}){
    spent+=launchPrices[type];
    strikeCount++;
   }
+ }
+
+ // Keep a small strike group in reserve for one production cycle when the
+ // treasury can already cover a mass wave of the cheapest strike aircraft.
+ if(canStockpile&&trust>=60&&strikeCount>0&&strikeCount<massStrikeSize&&
+    strikeBudget>=massStrikeSize*cheapestStrike&&remaining[surveyType]>0&&sectorCount>0){
+  strikes.clear();
+  spent=0;
+  strikeCount=0;
  }
 
  // One returning dummy earns the survey payout. Spread backups over sectors.

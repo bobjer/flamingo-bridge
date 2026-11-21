@@ -771,7 +771,11 @@ export function startDeepstrike(){
     return [{id,types,objective,groupSize:objective&&damage<75?3:2}];
    }).sort((a,b)=>Number(b.objective)-Number(a.objective)||a.types.length-b.types.length);
    const firstSector=((s.lastAutoSurvey??-1)+1)%surveySectors.length;
-   const plan=planDeepWave({credits:s.credits,stock:s.stock,targets,sectorCount:surveySectors.length,firstSector});
+   const previousFlights=s.lastTracks??[];
+   const previousSurveyOnly=previousFlights.length>0&&previousFlights.every(f=>f.survey);
+   const canStockpile=!previousSurveyOnly&&s.base.damage<100&&(!s.base.moved||s.wave%2!==0);
+   const plan=planDeepWave({credits:s.credits,trust:s.trust,stock:s.stock,targets,
+    sectorCount:surveySectors.length,firstSector,canStockpile});
    for(const [id,row] of plan.strikes)selected.set(id,row);
    Object.assign(surveys,plan.surveys);
    if(Object.keys(plan.surveys).length)s.lastAutoSurvey=firstSector;
