@@ -1,3 +1,4 @@
+import {launchPrices,openingFunds,openingTrust,dealAdvance,dealTrustCost,minimumLaunch,waveCost,settleWave} from './deep-economy.js';
 import {coalitionHeader} from './coalition-header.js';
 import {beginDiplomacy,recordLaunch,deliveryChance} from './deep-supply.js';
 import {partnerTurn,patrolSectors} from './deep-partners.js';
@@ -64,7 +65,7 @@ const surveySectors=[
 ];
 const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 const bridgeReach=Math.hypot((43.5+50)/2-7,(89.7+90.7)/2-48);
-const initial=()=>({wave:1,credits:2,intel:{},reports:[],flights:[],started:0,marks:[]});
+const initial=()=>({wave:1,credits:openingFunds,trust:openingTrust,intel:{},reports:[],flights:[],started:0,marks:[]});
 export function startDeepstrike(){
  const s=read(key)||initial(),visible=s.plan?.layers??[true,true,true];
  // Plan targets are site -> {type:count}. Older saves stored [site,type] pairs (or a type list).
@@ -78,6 +79,9 @@ export function startDeepstrike(){
   else if(value)for(const [type,n] of Object.entries(value))add(+type,Math.floor(+n)||0);
   if(Object.keys(row).length)selected.set(+site,row);
  }
+ // Give pre-economy saves the same opening grant without discarding earned credits.
+ const legacy=s.trust===undefined;
+ if(legacy){s.trust=openingTrust;s.credits+=openingFunds-2}
  const surveys=s.plan?.surveys??{};
  for(const [sectorKey,row] of Object.entries(surveys)){for(const type of Object.keys(row))if(!fleet[type]?.surveyOnly)delete row[type];if(!Object.keys(row).length)delete surveys[sectorKey]}
  let sector=s.plan?.sector??0;
@@ -98,7 +102,7 @@ export function startDeepstrike(){
  const assigned=type=>[...selected.values()].reduce((n,row)=>n+(row[type]??0),0)+Object.values(surveys).reduce((n,row)=>n+(row[type]??0),0);
  const available=type=>s.stock[type]-assigned(type);
  const save=()=>write(key,{...s,plan:{targets:[...selected],surveys,sector,layers:visible,unit:active,city}});
- if(retired.length||JSON.stringify([...selected])!==JSON.stringify(s.plan?.targets??[]))save();
+ if(legacy||retired.length||JSON.stringify([...selected])!==JSON.stringify(s.plan?.targets??[]))save();
  const root=document.createElement('main');root.className='deep-board';document.body.append(root);
  const radius=(type=active)=>Math.min(fleet[type].limit,bridgeReach+(fleet[type].limit-69)*.8+(s.wave-1)*5);
  const distance=i=>Math.hypot(points[i][0]-7,points[i][1]-48);
@@ -130,7 +134,7 @@ export function startDeepstrike(){
  }
  if(!read(key))intelligence();
  if(!s.diplomacy){s.diplomacy=beginDiplomacy(s.wave);save()}
- function finish(){
+ function finish(deal=false){
   const surveyFlights=s.flights.filter(f=>f.survey);
   s.surveyReports=surveyFlights.map(({sector,type,count})=>({sector,type,count}));
   s.surveyReports.forEach((group,index)=>{
@@ -160,7 +164,10 @@ export function startDeepstrike(){
   fleet.forEach((item,id)=>{
    if(s.wave%item.cycle===0&&(!item.partner||Math.random()<deliveryChance(item,s.wave,s.diplomacy)))s.stock[id]+=item.batch??1;
   });
-  s.lastTracks=s.flights;s.wave++;s.credits++;s.started=0;s.flights=[];s.diplomacy=beginDiplomacy(s.wave,s.diplomacy.embargoThrough);s.partner=partnerTurn(s.partner,s.wave);intelligence();save();
+  const result=settleWave(s.trust,s.reports,s.surveyReports.reduce((n,g)=>n+g.count-g.lost,0),deal,s.wave<=s.diplomacy.embargoThrough);
+  s.trust=result.trust;s.credits+=result.payout-result.embargoFee;
+  s.invoice={...result,wave:s.wave,cost:s.launchCost??0};s.launchCost=0;
+  s.lastTracks=s.flights;s.wave++;s.started=0;s.flights=[];s.diplomacy=beginDiplomacy(s.wave,s.diplomacy.embargoThrough);s.partner=partnerTurn(s.partner,s.wave);intelligence();save();
  }
  function render(){
   closeReport?.();closeReport=null;
@@ -183,6 +190,26 @@ export function startDeepstrike(){
   root.querySelector('[data-language]').onclick=()=>document.querySelector('.lang').click();
   root.querySelector('[data-auto]').onclick=()=>{autoOn=!autoOn;render()};
   const controls=root.querySelector('.deep-layers'),panel=root.querySelector('[data-plan]'),supply=root.querySelector('[data-supply]');
+  const treasury=document.createElement('section');treasury.className='panel br';
+  supply.before(treasury);
+  const details=document.createElement('details'),summary=document.createElement('summary');
+  summary.textContent=tr('Спонсори · довіра ','Sponsors · trust ')+s.trust+'%';
+  details.append(summary,document.createTextNode(tr(
+   'Хвиля: 5 кредитів + ціна кожного борта. За підтверджений звіт: новини 30, супутник 36, помножені на 50% + половину довіри. Розвідка з поверненням: 3 за хвилю. Без підтверджень: −12 довіри, з поверненням розвідки: −4. Підтвердження: +5. Ембарго: −4 кредити за хвилю.',
+   'Wave: 5 credits plus each unit. Confirmed report: news 30, satellite 36, scaled by 50% plus half your trust. Returning survey: 3 per wave. No confirmations: −12 trust, or −4 with a returning survey. Confirmation: +5. Embargo: −4 credits per wave.')));
+  treasury.append(details);
+  if(s.invoice){
+   const r=s.invoice,line=document.createElement('p');
+   line.textContent=tr('Хвиля ','Wave ')+r.wave+' · '+tr('Витрати ','Spent ')+r.cost+' · '+(r.deal?tr('Аванс ','Advance '):tr('Виплата ','Payout '))+r.payout+(r.embargoFee?' · '+tr('Ембарго −','Embargo −')+r.embargoFee:'')+' · '+tr('Довіра ','Trust ')+(r.trustChange>0?'+':'')+r.trustChange;
+   treasury.append(line);
+  }
+  if(!flying&&(s.trust===0||s.credits<minimumLaunch(s.stock))){
+   autoOn=false;root.querySelector('[data-auto]').disabled=true;
+   root.querySelector('.deep-phase-chip').textContent=tr('Гру завершено','Game over');
+   panel.textContent=s.trust===0?tr('Спонсори закрили програму.','Sponsors withdrew funding.'):tr('Бюджету не вистачає на наступну хвилю.','The budget cannot fund another wave.');
+   button(panel,tr('Нова кампанія','New campaign'),()=>{if(write(key,null))location.reload()});
+   return;
+  }
   const embargo=s.wave<=s.diplomacy.embargoThrough;
   if(embargo||s.diplomacy.talks){
    const notice=document.createElement('div');notice.className='c-phase deep-notice';
@@ -212,7 +239,7 @@ export function startDeepstrike(){
      (unit.surveyOnly?'<span class="deep-chips"><small class="deep-chip survey" title="'+tr('Розвідка · ризик перехоплення','Survey · interception chance')+' '+Math.round(unit.surveyLoss*100)+'%">'+tr('Розвідка · ризик перехоплення','Survey · interception chance')+' <b>'+Math.round(unit.surveyLoss*100)+'%</b></small></span>':
      '<span class="deep-chips"><small class="deep-chip" title="'+tr(...defense.profile)+' · '+tr('Шанс перехоплення','Intercept chance')+' '+unit.baseChance+'%">'+tr('Перехоплення','Intercept')+' <b>'+unit.baseChance+'%</b></small>'+
      '<small class="deep-chip weak" title="'+tr('Проти ППО','Against')+' «'+tr(...defense.name)+'» · '+interceptionChance(unit,unit.weakTo)+'%">'+tr('Слабкий проти','Weak to')+' «'+tr(...defense.name)+'» <b>'+interceptionChance(unit,unit.weakTo)+'%</b></small></span>')+
-     '<small class="deep-prod">'+(unit.partner?tr('Шанс поставки','Delivery chance')+' '+Math.round(deliveryChance(unit,s.wave,s.diplomacy)*100)+'%':tr('Виробництво','Production'))+' +'+(unit.batch??1)+' / '+unit.cycle+' '+tr('хв. гри','game waves')+'</small>';
+     '<small class="deep-prod">'+tr('Ціна борта','Unit cost')+' '+launchPrices[id]+' · '+(unit.partner?tr('Шанс поставки','Delivery chance')+' '+Math.round(deliveryChance(unit,s.wave,s.diplomacy)*100)+'%':tr('Виробництво','Production'))+' +'+(unit.batch??1)+' / '+unit.cycle+' '+tr('хв. гри','game waves')+'</small>';
     card.onclick=()=>{active=id;render();root.querySelector('[data-unit="'+id+'"]').focus({preventScroll:true})};
     const group=document.createElement('div');group.className='deep-unit-group';group.append(card);
     if(unit.surveyOnly){
@@ -467,7 +494,10 @@ export function startDeepstrike(){
   const acts=document.createElement('div');acts.className='deep-actions';panel.append(acts);
   const ghosts=document.createElement('div');ghosts.className='deep-ghosts';
   const groups=Object.entries(surveys).flatMap(([sectorKey,row])=>Object.entries(row).map(([type,count])=>({sector:Number(sectorKey),type:Number(type),count})));
+  const cost=waveCost(fleet.map((_,id)=>assigned(id)));
   const launch=button(acts,tr('Запустити хвилю','Launch wave')+' ('+launchTotal+')',()=>{
+   if(!cost||s.credits<cost)return;
+   s.credits-=cost;s.launchCost=cost;
    recordLaunch(s.diplomacy,s.wave,selected);
    s.flights=[];
    for(const [i,row] of selected){
@@ -492,9 +522,13 @@ export function startDeepstrike(){
    }
    for(const sectorKey of Object.keys(surveys))delete surveys[sectorKey];
    selected.clear();marking=false;s.started=Date.now();save();render();
-  },!launchTotal);
+  },!launchTotal||s.credits<cost);
   launch.className='c-start deep-launch';
-  launch.innerHTML='<span>'+tr('Запустити хвилю','Launch wave')+'</span><span class="deep-pill">'+launchTotal+'</span>';
+  launch.innerHTML='<span>'+tr('Запустити хвилю','Launch wave')+'</span><span class="deep-pill">'+launchTotal+' · '+cost+' '+tr('кр.','cr.')+'</span>';
+  if(s.diplomacy.talks)button(acts,tr('Прийняти умови Трампа','Accept Trump’s deal')+' · +'+dealAdvance+' / −'+dealTrustCost+'% · '+tr('пропустити хвилю','skip wave'),()=>{
+   selected.clear();for(const k of Object.keys(surveys))delete surveys[k];
+   finish(true);render();
+  },false,undefined,'c-sides deep-ghost');
   acts.append(ghosts);
   const buy=button(ghosts,tr('Купити знімок · 1','Buy imagery · 1'),()=>{s.credits--;intelligence(true);save();render()},s.credits<1,undefined,'c-sides deep-ghost');
   buy.title=tr('Вартість: 1 кредит','Cost: 1 credit');buy.innerHTML='<span>'+tr('Купити знімок','Buy imagery')+'</span><span class="deep-cost" aria-hidden="true">1</span>';
@@ -503,7 +537,11 @@ export function startDeepstrike(){
   if(marking){const hint=document.createElement('p');hint.className='deep-hint';hint.textContent=tr('Торкніться карти, щоб позначити район.','Tap the map to mark a district.');acts.append(hint)}
   if(autoOn)autoTimer=setTimeout(()=>{
    if(document.hidden||document.querySelector('dialog:modal')){render();return}
-   if(launchTotal){launch.click();return}
+   if(launchTotal){
+    if(cost<=s.credits)launch.click();
+    else{autoOn=false;render()}
+    return;
+   }
    const cards=[...panel.querySelectorAll('button[aria-pressed="false"]:enabled')].filter(b=>b.classList.contains('target-card'));
    if(cards.length){cards[Math.floor(Math.random()*cards.length)].click();return}
    const next=s.stock.findIndex((count,i)=>count>0&&!fleet[i].surveyOnly&&i!==active);
