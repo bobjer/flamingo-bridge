@@ -622,7 +622,7 @@ waveElapsed=0;untilSpawn=0;
    const station=stations[Math.floor(Math.random()*stations.length)];
    const actor=spawn(f.ambush??(rng()<.5?'loaf':'neptune'));
    const bread=actor.k==='loaf',point=station.m.position;
-   actor.m.position.set(point.x,bread?4.2:.35,point.z+(point.z<0?-1:1)*(bread?5:6));
+   actor.m.position.set(point.x,4.2,point.z+(point.z<0?-1:1)*(bread?5:6));
    if(bread)actor.target=station;else actor.prey=station;
   }
  }
@@ -631,11 +631,11 @@ waveElapsed=0;untilSpawn=0;
 function toggle(){if(phase==='live'){paused=!paused;ui()}}
 $('resume-game').onclick=toggle;
 $('pause').onclick=toggle;$('start').onclick=()=>{if(phase==='over')confirmNewGame();else if(phase==='buy'){for(const s of scouts)world.scene.remove(s.m);scouts.length=0;phase='live';nextWave()}else toggle()};$('plus').onclick=()=>world.zoom(.83);$('minus').onclick=()=>world.zoom(1.2);
-const FLIERS=new Set(['drone','bird','flamingo','loaf']);
+const FLIERS=new Set(['drone','bird','flamingo','loaf','neptune']);
 function spawn(k,deckX=null){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x=Math.cos(a)*r,z=Math.sin(a)*r,y=.35;if(k==='neptune'){z=Math.max(11,Math.abs(z));x*=.48}
  if(FLIERS.has(k))y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
  if(deckX!==null){x=deckX;z=5+Math.random()*2;y=5}
- const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.6);const stats={drone:[3,2.7],loaf:[3,2.2],baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,1.05]}[k];const candidates=gameTargets(k);
+ const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.6);const stats={drone:[3,2.7],loaf:[3,2.2],baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,4.2]}[k];const candidates=gameTargets(k);
  const target=Math.random()<(k==='baby'?.82:k==='loaf'?.75:.65)?candidates[Math.floor(Math.random()*candidates.length)]:null;
  const ships=units.filter(u=>u.k==='cruiser'&&u.m.position.z*z>0),prey=k==='neptune'&&ships.length&&Math.random()<.6?ships[Math.floor(Math.random()*ships.length)]:null;
  const enemy={m,k,y,deckX,target,prey,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:Math.max(1,Math.round((stats[0]+Math.floor((wave-1)/4))*(.75+.25*intensity()))),speed:stats[1]*(1+wave*.018),angle:a};
@@ -674,20 +674,6 @@ function wageSigns(){
 }
 function gameTargets(kind){
  return units.filter(u=>(u.k==='cruiser'&&(kind==='baby'||kind==='bird'))||((u.k==='sam'||u.k==='pantsir')&&(kind==='bird'||kind==='loaf')));
-}
-// Neptune's trident: the swing angle that puts the centre prong at a height, and where that prong lands.
-function neptuneAngle(targetY,baseY){
- const c=Math.max(-1,Math.min(1,((targetY-baseY)/2.6-1.56)/2.06));
- return -Math.acos(c);
-}
-function neptuneTip(e,angle=e.m.userData.trident.rotation.z){
- const v=new T.Vector3(.3-2.06*Math.sin(angle),1.56+2.06*Math.cos(angle),.86);
- e.m.updateMatrixWorld(true);
- return e.m.localToWorld(v);
-}
-function neptuneReach(e,angle){
- const lx=.3-2.06*Math.sin(angle),lz=.86,th=e.m.rotation.y,s=e.m.scale.x;
- return new T.Vector3(s*(lx*Math.cos(th)+lz*Math.sin(th)),0,s*(-lx*Math.sin(th)+lz*Math.cos(th)));
 }
 function destination(e,offline){
  if(offline){
@@ -916,55 +902,7 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
    if(time<e.glitch){p.x+=Math.sin(time*8+e.angle)*dt*4;p.z+=Math.cos(time*5+e.angle)*dt*3;e.m.rotation.z=Math.sin(time*11);e.m.rotation.y+=dt*7;continue}
    e.glitch=0;e.m.rotation.z=0;if(e.pop){fx.burst(p);e.hp=0}
   }
-  if(e.k==='neptune'&&e.prey&&!units.includes(e.prey))e.prey=units.find(u=>u.k==='cruiser'&&Math.sign(u.m.position.z)===Math.sign(p.z))??null;
-  if(e.k==='neptune'&&e.prey&&e.hp>0&&!crashed.has(e)&&!retreat){
-   const q=e.prey.m.position,dx=q.x-p.x,dz=q.z-p.z,d=Math.hypot(dx,dz);
-   e.m.rotation.y=Math.atan2(-dz,dx);
-   if(d>7.5){p.x+=dx/d*dt*e.speed*1.7;p.z+=dz/d*dt*e.speed*1.7;p.y=.35+Math.sin(time*2+e.angle)*.08;e.swing=0;e.m.userData.trident.rotation.z=0;e.m.rotation.z=0;continue}
-   // Choreographed strike: slow wind-up over the head, a violent swing that drives the prongs into the target, recovery.
-   const shore=e.prey.k!=='cruiser',aimY=shore?q.y+.7:1.0;
-   const strikeAngle=neptuneAngle(aimY,p.y);
-   const reach=neptuneReach(e,strikeAngle);
-   const stand=new T.Vector3(q.x-reach.x,p.y,q.z-reach.z),gap=Math.hypot(stand.x-p.x,stand.z-p.z);
-   if(gap>.3&&!(e.swing>0)){const step=Math.min(gap,dt*e.speed*1.2);p.x+=(stand.x-p.x)/gap*step;p.z+=(stand.z-p.z)/gap*step;p.y=.35+Math.sin(time*2+e.angle)*.08;e.m.userData.trident.rotation.z=0;e.m.rotation.z=0;continue}
-   const WIND=1.1,SWING=.24,HOLD=.35,CYCLE=2.9,before=e.swing??0;e.swing=(before+dt)%CYCLE;
-   if(before===0||e.swing<before){const mid=q.clone().setY(aimY+.6);world.cinematic(mid,2,{bomb:true,subject:e.m,radius:11,height:3.4})}
-   const tr3=e.m.userData.trident,sw=e.swing;
-   if(sw<WIND){const k=sw/WIND,ease=k*k*(3-2*k);tr3.rotation.z=.85*ease;e.m.rotation.z=.1*ease}
-   else if(sw<WIND+SWING){const k=(sw-WIND)/SWING;tr3.rotation.z=.85+(strikeAngle-.85)*k*k;e.m.rotation.z=.1-.1*k}
-   else if(sw<WIND+SWING+HOLD){tr3.rotation.z=strikeAngle+Math.sin((sw-WIND-SWING)*40)*.015;e.m.rotation.z=0}
-   else{const k=Math.min(1,(sw-WIND-SWING-HOLD)/1),s=k*k*(3-2*k);tr3.rotation.z=strikeAngle*(1-s);e.m.rotation.z=0}
-   if(before<WIND+SWING&&sw>=WIND+SWING){
-    const u=e.prey,hit=neptuneTip(e),cr=!shore&&u.k==='cruiser';if(!cr)u.hull=Math.max(0,u.hull-2);
-    world.cinematicBoom(hit,{subject:e.m});fx.explosion(hit,1.9);fx.sparks?.(hit,1,24);if(shore)fx.dust(hit,1.5);else{fx.splash(q,2.4);fx.splash(hit.clone().setY(0),1.4);}
-    if(shore){
-     if(u.hull===0){fx.breakup(u.m,new T.Vector3(0,1,0));removeUnit(u)}
-     writeMessage(()=>getSpecs()[u.k][0]+tr(' · удар тризубом',' · trident strike'));
-     e.prey=null;
-    }else if(cr)hitCruiser(u,2,hit,true);
-    else if(u.hull<=0){removeUnit(u);writeMessage(()=>tr("Нептун розколов крейсер тризубом.","Neptune split the cruiser with his trident."))}
-    else writeMessage(()=>tr("Нептун ударив по крейсеру · міцність ","Neptune struck the cruiser · hull ")+u.hull);
-    ui();
-   }
-   continue;
-  }
-  if(e.k==='neptune'&&e.hp>0&&!crashed.has(e)&&!retreat&&p.z<=4.4){
-   p.z=4.4;e.m.rotation.y=Math.PI/2;e.m.rotation.z=0;
-   const deckAngle=neptuneAngle(3.3,p.y),before=e.swing??0;e.swing=(before+dt)%2.9;
-   const sw=e.swing,tr3=e.m.userData.trident;
-   if(before===0||sw<before){const at=neptuneTip(e,deckAngle);world.cinematic(at.clone().setY(3.8),2,{bomb:true,subject:e.m,radius:11,height:3.6})}
-   if(sw<1.1){const k=sw/1.1;tr3.rotation.z=.85*k*k*(3-2*k)}
-   else if(sw<1.34){const k=(sw-1.1)/.24;tr3.rotation.z=.85+(deckAngle-.85)*k*k}
-   else if(sw<1.7)tr3.rotation.z=deckAngle;
-   else{const k=Math.min(1,sw-1.7),s2=k*k*(3-2*k);tr3.rotation.z=deckAngle*(1-s2)}
-   if(before<1.34&&sw>=1.34){
-    const hit=neptuneTip(e);world.cinematicBoom(hit,{subject:e.m});
-    const loss=damageDeck(9,hit);
-    writeMessage(()=>tr("Нептун ударив тризубом по полотну: −","Neptune struck the deck: −")+loss+'%');ui();
-   }
-   continue;
-  }
-  if(e.k==='neptune'){e.swing=0;e.m.userData.trident.rotation.z=0}
+  if(e.k==='neptune' && e.prey){e.target=units.includes(e.prey)?e.prey:null;e.prey=null}
   const aim=e.deckX!=null?{x:e.deckX,y:3.23,z:e.rail?-6:0}:destination(e,offline),dest=retreat?e.exitPoint:aim;
   const dx=(dest?.x??0)-p.x,dz=(dest?.z??0)-p.z,d=Math.hypot(dx,dz);
   const actual=e.target?.m.position;
@@ -1013,6 +951,7 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
      if(u.k!=='cruiser'){fx.breakup(u.m,new T.Vector3((Math.random()-.5)*2,2.5,(Math.random()-.5)*2));u.hull=1}
      for(let k=0;k<3;k++)setTimeout(()=>fx.explosion(hit.clone().add(new T.Vector3((Math.random()-.5)*3,.8+Math.random()*2,(Math.random()-.5)*3)),.8+Math.random()*.6),900+k*700);
     }
+    if(e.k==='neptune')fx.explosion(p,1.9);
     if(e.k==='baby'&&units.includes(u)){const blast=p.clone().setY(.9);world.cinematicBoom(blast,{subject:e.m});fx.explosion(blast,1.8);fx.splash(p,1.8)}
     if(u.k==='cruiser'&&units.includes(u))hitCruiser(u,e.k==='loaf'?2:1,p.clone().setY(.9),e.k==='loaf'||e.k==='baby');
     else{if(units.includes(u)&&--u.hull<=0)removeUnit(u);
@@ -1034,12 +973,14 @@ u.ammo--;arcadeHud();supplyHud();const flight=fx.launch(u.m,target,damage);if(ta
    }else if(e.k==='flamingo'&&!e.striker){
     fx.feathers(p,0xff86ac);
    }else if(e.k==='flamingo'){hits=Math.min(3,hits+1);if(hits>=3)world.cinematic(new T.Vector3(0,3.5,0),3,{force:true,duration:11,panorama:true,radius:80,height:25,sweep:.32});else world.cinematic(p.clone(),1.5);world.setHits(hits);damageDeck(12,p);hype+=25;casualties(new T.Vector3())}
-   else{const loss=damageDeck(e.k==='neptune'?23:6,p);if(loss)casualties(e.m.position)}
+   else{if(e.k==='neptune')fx.explosion(p,1.9);const loss=damageDeck(e.k==='neptune'?9:6,p);if(loss)casualties(e.m.position)}
    world.scene.remove(e.m);enemies.splice(i,1);ui();continue;
   }
+  const beforeY=p.y;
   e.m.rotation.y=Math.atan2(-dz,dx);const travel=Math.min(d,dt*e.speed);p.x+=dx/d*travel;p.z+=dz/d*travel;
-  p.y=(e.k==='loaf'||e.deckX!=null)&&!retreat?T.MathUtils.lerp(e.target?e.target.m.position.y+.6:3.27,e.y,T.MathUtils.clamp((d-1.3)/7,0,1)):(dest&&e.k==='bird'?T.MathUtils.lerp(dest.y+.65,e.y,Math.min(1,d/7)):e.y)+Math.sin(time*3+e.angle)*.18;
+  p.y=(e.k==='loaf'||e.k==='neptune'||e.deckX!=null)&&!retreat?T.MathUtils.lerp(e.target?e.target.m.position.y+.6:3.27,e.y,T.MathUtils.clamp((d-1.3)/7,0,1)):(dest&&e.k==='bird'?T.MathUtils.lerp(dest.y+.65,e.y,Math.min(1,d/7)):e.y)+Math.sin(time*3+e.angle)*.18;
   if(e.deckX==null&&FLIERS.has(e.k)&&(e.target||retreat))p.y=Math.max(p.y,world.bridgeClearance(p.x,p.z)); // never fly through the decks, lamps or arch
+  if(e.k==='neptune'&&travel>0)e.m.rotation.set(0,Math.atan2(-dz,dx),Math.atan2(p.y-beforeY,travel),'YZX');
   flap(e.m,time+e.angle)}
  for(let i=effects.length-1;i>=0;i--){const e=effects[i];e.m.position.lerp(e.to,Math.min(1,dt/e.life));e.life-=dt;if(e.life<=0){world.scene.remove(e.m);effects.splice(i,1)}}
  if(hits<3&&waveElapsed>=17&&(!enemies.length||waveElapsed>=37)){
