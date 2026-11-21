@@ -10,7 +10,12 @@ await mkdir('dist/server',{recursive:true});
 await writeFile('dist/server/index.js',(await readFile('records-worker.js','utf8'))+
  '\nconst assets='+JSON.stringify(assets)+';\n'+
  `export default {async fetch(request,env){
- const path=new URL(request.url).pathname;
+ const url=new URL(request.url);
+ if(url.hostname==='flamingo-bridge-vhs.rustyperch5.chatgpt.site'){
+  url.hostname='flamingo-bridge.rustyperch5.chatgpt.site';
+  return Response.redirect(url.href,308);
+ }
+ const path=url.pathname;
  if(path==='/api/ranked-wave')return rankedWave(request,env.DB);
  if(path==='/api/records')return records(request,env.DB);
  if(path==='/api/coalition-records')return coalitionRecords(request,env.DB);
