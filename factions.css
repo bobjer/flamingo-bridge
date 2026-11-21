@@ -473,3 +473,7 @@ button.c-sponsor:hover{border-color:var(--accent)}
 /* keep the flyover visible beside/behind the final card */
 .c-card[data-victory]{top:auto;bottom:calc(7% + 10px);translate:-50% 0;max-height:min(58%,520px);background:rgba(8,12,17,.78);backdrop-filter:blur(6px)}
 .c-card .c-actions .c-flyover{grid-column:1/-1}
+.replay-export{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px}
+.replay-export a{color:var(--accent);padding:7px 12px}
+.replay-export[hidden],.replay-export [hidden]{display:none}
+.replay-screen .export-preview{position:absolute;inset:0;z-index:5;background:#030609}

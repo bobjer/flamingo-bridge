@@ -1,3 +1,4 @@
+import {replayExport} from './replay-export.js';
 import {signalAt,broadcastOverlay,drawBroadcast} from './broadcast-events.js';
 import {tr} from './language.js';
 
@@ -12,6 +13,7 @@ export function replayViewer(host, getStage, restoreReport) {
  const play = controls.querySelector('button'), seek = controls.querySelector('input'), clock = controls.querySelector('output');
  const placeholder = document.createComment('live camera');
  let film = null, from = 0, length = 0, position = 0, running = false, fresh = false, trigger;
+ const exporter=replayExport(dialog,screen,controls,()=>{if(film){position=0;running=true;reset();labels()}});
  function reset() {
    const stage = getStage();
    stage.resetWave(); stage.setBroadcast(film.subjects,film.aa,film.archStart);
@@ -32,6 +34,7 @@ export function replayViewer(host, getStage, restoreReport) {
    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dialog.close();
  } };
  dialog.onclose = () => {
+   exporter.reset();
    const video = screen.querySelector('video'); if (video) video.pause();
    if (film) { placeholder.replaceWith(host) }
    restoreReport(!!film);
@@ -43,6 +46,7 @@ export function replayViewer(host, getStage, restoreReport) {
    show(button, title, script, legacy) {
      if (dialog.open) return;
      trigger = button; film = script;
+     screen.classList.remove("night-replay");
      screen.classList.toggle('witness-window', !!film?.reverse && film.wave % 2 === 0);
      dialog.querySelector('strong').textContent = title;
      dialog.querySelector('[data-close]').textContent = tr('Закрити','Close');
@@ -59,10 +63,12 @@ export function replayViewer(host, getStage, restoreReport) {
      } else {
        film = null; controls.hidden = true; screen.textContent = tr('Для 3D-повтору потрібен WebGL.','3D replay needs WebGL.');
      }
+     exporter.open(film?getStage()?.glCanvas:screen.querySelector('video'));
      dialog.showModal();
    },
    tick(dt) {
-     if (!film || (!running && !fresh)) return;
+     if (!film) {exporter.frame();return}
+     if (!running && !fresh) return;
      if (running) position = Math.min(length,position+dt*1000);
      const elapsed = from+position, stage = getStage();
      const cam = film.whole ? (film.cuts?.findLast(c=>c.time<=elapsed)?.camera ?? 3) : film.camera ?? film.marker;
@@ -71,6 +77,7 @@ export function replayViewer(host, getStage, restoreReport) {
      stage.step({dt:fresh?0:dt,elapsed,real:elapsed/1000,report:film,cam:Math.min(3,cam),orbital:film.orbital,reverse:film.reverse,satelliteSubject:film.satelliteSubject});
      stage.render((film.lightStart ?? 0) + elapsed / 1000);
      screen.classList.toggle('night-replay',stage.world.daylight() < .2);
+     exporter.frame(position>=length);
      fresh=false; seek.value=position;
      if(position>=length) running=false;
      labels();
