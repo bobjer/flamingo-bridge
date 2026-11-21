@@ -84,10 +84,10 @@ const surveySectors=[
    });
   }
 const lostTrackFraction=.68;
-function surveyLossMarks(flights){
+function surveyLossMarks(flights,wave){
  return mapFlights(flights.filter(f=>f.survey)).filter(f=>f.lost).map(f=>{
   const {x,y}=travel(f.path,lostTrackFraction);
-  return {x,y,number:f.number};
+  return {x,y,number:f.number,wave};
  });
 }
 const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -133,7 +133,8 @@ export function startDeepstrike(){
  const assigned=type=>[...selected.values()].reduce((n,row)=>n+(row[type]??0),0)+Object.values(surveys).reduce((n,row)=>n+(row[type]??0),0);
  const available=type=>s.stock[type]-assigned(type);
  const migrateLosses=s.surveyLossMarks===undefined;
- if(migrateLosses)s.surveyLossMarks=surveyLossMarks(s.lastTracks??[]);
+ if(migrateLosses)s.surveyLossMarks=surveyLossMarks(s.lastTracks??[],s.wave-1);
+ for(const mark of s.surveyLossMarks)mark.wave??=s.wave-1;
  const save=()=>write(key,{...s,plan:{targets:[...selected],surveys,sector,layers:visible,unit:active,city}});
  if(migrateLosses||legacy||retired.length||JSON.stringify([...selected])!==JSON.stringify(s.plan?.targets??[]))save();
  const root=document.createElement('main');root.className='deep-board';document.body.append(root);
@@ -228,8 +229,12 @@ export function startDeepstrike(){
    else{s.credits+=12;invoice.payout+=12}
   }
   deliverProduction(s,Math.random,invoice);
-  s.surveyLossMarks=surveyLossMarks(s.flights);
-  s.lastTracks=s.flights;s.wave++;s.started=0;s.flights=[];s.diplomacy=beginDiplomacy(s.wave,s.diplomacy.embargoThrough);s.partner=partnerTurn(s.partner,s.wave);intelligence();save();
+  const freshMarks=surveyLossMarks(s.flights,s.wave);
+  s.lastTracks=s.flights;s.wave++;s.started=0;s.flights=[];s.diplomacy=beginDiplomacy(s.wave,s.diplomacy.embargoThrough);s.partner=partnerTurn(s.partner,s.wave);
+  const reviewAvailable=!s.partner.blocked&&Math.random()<.5;
+  if(reviewAvailable)s.surveyLossMarks=s.surveyLossMarks.filter(()=>Math.random()>=.35);
+  s.surveyLossMarks.push(...freshMarks);
+  intelligence();save();
  }
  function reportContents(panel){
    let text='',kind='none';
@@ -551,6 +556,7 @@ export function startDeepstrike(){
     }
     let symbol;
     if(!done)symbol='<g transform="rotate('+angle+')"><path d="M-7 0H0" stroke="url(#wake)" stroke-width=".7"/><path d="'+(flightIcons[f.type]??flightIcons[0])+'" fill="white" stroke="#25343a" stroke-width=".15"/></g>';
+    else if(past&&f.survey&&f.lost)symbol='';
     else if(f.lost)symbol=(past?'':'<circle class="trk-ring" r="'+(1.4+k*3.6)+'" opacity="'+(.85*(1-k))+'"/>')+'<path class="trk-x" d="M-1.5-1.5L1.5 1.5M1.5-1.5L-1.5 1.5"'+(past?' transform="scale(.7)"':'')+'/>';
     else if(f.survey)symbol='<g class="trk-ok"'+(past?' transform="scale(.8)"':'')+'>'+(past?'':'<circle class="trk-wave ok" r="'+(1.5+k*3)+'" opacity="'+(.9*(1-k))+'"/>')+'<circle r="1.35"/><path d="M-.7 0L-.2.6L.75-.6"/></g>';
     else symbol='<g'+(past?' transform="scale(.6)"':'')+'>'+(past?'':'<circle class="trk-wave" r="'+(1.5+k*4)+'" opacity="'+(.9*(1-k))+'"/>'+[0,1,2,3,4,5,6,7].map(a=>'<path class="trk-ray" d="M0-1.9V-'+(2.8+k*1.1)+'" transform="rotate('+(a*45+(a%2?0:11))+')"/>').join(''))+'<circle r="2.1" fill="#ff802740"/><path d="M0 1.5C-2 1-1.6-.4-.6-1.3L-.45-.45Q.4-1 .15-2.4C2 .1 1.6 1.2 0 1.5" fill="#ff972e"/><circle cy=".6" r=".55" fill="#ffe39a"/></g>';
@@ -569,7 +575,7 @@ export function startDeepstrike(){
    for(const mark of [...s.surveyLossMarks].sort((a,b)=>a.y-b.y)){
     const labelY=Math.max(mark.y,previousY+2.2);
     previousY=labelY;
-    const label=tr('Зв’язок втрачено · хв. ','Signal lost · W')+(s.wave-1)+' · #'+mark.number;
+    const label=tr('Зв’язок втрачено · хв. ','Signal lost · W')+mark.wave+' · #'+mark.number;
     map.insertAdjacentHTML('beforeend','<g class="survey-loss" pointer-events="none"><title>'+label+'</title><path class="trk-x" d="M'+(mark.x-1)+' '+(mark.y-1)+'l2 2m-2 0l2 -2"/><path d="M'+mark.x+' '+mark.y+'L'+(mark.x+2)+' '+labelY+'" stroke="#ff897c" stroke-width=".18"/><text class="atlas-city" x="'+(mark.x+2.2)+'" y="'+labelY+'" style="text-anchor:start">'+label+'</text></g>');
    }
   }
