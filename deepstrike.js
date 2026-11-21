@@ -7,7 +7,7 @@ import {tr} from './language.js';
 import {changeSide,read,write} from './factions.js';
 import './deepstrike.css';
 import {advanceConditions} from './site-condition.js';
-import {appendReport,conditionText} from './deep-reports.js';
+import {appendReport,appendSummary,appendEmpty,appendRepairs,conditionText} from './deep-reports.js';
 import {cities,points,district,boardPath,travel} from './deep-atlas.js';
 
 const key='pop-deepstrike-v1';
@@ -18,6 +18,7 @@ const names=[
 ];
 const layers=[0,1,2,0,0,2,0,0,2,0,1,2];
 const sources=[['Власна розвідка','Field intelligence'],['Партнери','Partners'],['Супутник','Satellite']];
+const layerNames=[['Підприємства','Industry'],['Енергетика','Energy'],['Розвідка','Intelligence']];
 // Ranges and delivery intervals are board-game units.
 const fleet=[
  {name:['Шурхіт','Rustle'],baseChance:24,weakTo:'net',limit:77,cycle:1},
@@ -51,19 +52,36 @@ function inHome([x,y]){
  return inside;
 }
 const playable=points.map(point=>!inHome(point));
+// Marker glyphs per layer: industry square, energy diamond + bolt, intelligence / AD triangle-ring.
+const glyph=l=>l===0?'<rect class="mk" x="-1.6" y="-1.6" width="3.2" height="3.2" rx=".3"/>':
+ l===1?'<path class="mk" d="M0-2.3 2.3 0 0 2.3-2.3 0Z"/><path class="mk-in" d="M.45-1.2-.9.2H0L-.45 1.2 .9-.2H0Z"/>':
+ '<path class="mk" d="M0-2.2 2.1 1.6H-2.1Z"/><circle class="mk-in" r=".6" cy=".35"/>';
+const glyphSvg=l=>'<svg class="deep-glyph mk-'+l+'" aria-hidden="true" viewBox="-3 -3 6 6">'+glyph(l)+'</svg>';
 const surveySectors=[
  {label:['Лука','Meadow'],point:[12,55]},
  {label:['Гай','Grove'],point:[15,69]},
  {label:['Схил','Hillside'],point:[11,80]}
 ];
+const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 const bridgeReach=Math.hypot((43.5+50)/2-7,(89.7+90.7)/2-48);
 const initial=()=>({wave:1,credits:2,intel:{},reports:[],flights:[],started:0,marks:[]});
 export function startDeepstrike(){
- const s=read(key)||initial(), selected=new Map((s.plan?.targets??[]).filter(([i])=>playable[i])),visible=s.plan?.layers??[true,true,true];
+ const s=read(key)||initial(),visible=s.plan?.layers??[true,true,true];
+ // Plan targets are site -> {type:count}. Older saves stored [site,type] pairs (or a type list).
+ const selected=new Map();
+ for(const [site,value] of s.plan?.targets??[]){
+  if(!playable[site])continue;
+  const row=selected.get(+site)??{};
+  const add=(type,n=1)=>{if(fleet[type]&&!fleet[type].surveyOnly&&n>0)row[type]=(row[type]??0)+n};
+  if(typeof value==='number')add(value);
+  else if(Array.isArray(value))value.forEach(type=>add(type));
+  else if(value)for(const [type,n] of Object.entries(value))add(+type,Math.floor(+n)||0);
+  if(Object.keys(row).length)selected.set(+site,row);
+ }
  const surveys=s.plan?.surveys??{};
- for(const [key,row] of Object.entries(surveys)){for(const type of Object.keys(row))if(!fleet[type]?.surveyOnly)delete row[type];if(!Object.keys(row).length)delete surveys[key]}
+ for(const [sectorKey,row] of Object.entries(surveys)){for(const type of Object.keys(row))if(!fleet[type]?.surveyOnly)delete row[type];if(!Object.keys(row).length)delete surveys[sectorKey]}
  let sector=s.plan?.sector??0;
- let closeReport,autoTimer,autoOn=false;
+ let closeReport,autoTimer,autoOn=false,refocus=-1,refocusCard=-1,refocusStep=null,legendOpen=false;
  let marking=false, active=s.plan?.unit??0, timer, city=s.plan?.city??-1;
  s.conditions??={};
  s.stock??=[];
@@ -75,12 +93,31 @@ export function startDeepstrike(){
   s.flights=s.flights.filter(f=>f.survey||playable[f.i]);
   if(!s.flights.length)s.started=0;
  }
- const available=type=>s.stock[type]-[...selected.values()].filter(id=>id===type).length-Object.values(surveys).reduce((sum,row)=>sum+(row[type]??0),0);
+ const sumRow=row=>Object.values(row).reduce((a,b)=>a+b,0);
+ const droneCount=()=>[...selected.values()].reduce((a,row)=>a+sumRow(row),0);
+ const assigned=type=>[...selected.values()].reduce((n,row)=>n+(row[type]??0),0)+Object.values(surveys).reduce((n,row)=>n+(row[type]??0),0);
+ const available=type=>s.stock[type]-assigned(type);
  const save=()=>write(key,{...s,plan:{targets:[...selected],surveys,sector,layers:visible,unit:active,city}});
- if(retired.length||selected.size!==(s.plan?.targets?.length??0))save();
+ if(retired.length||JSON.stringify([...selected])!==JSON.stringify(s.plan?.targets??[]))save();
  const root=document.createElement('main');root.className='deep-board';document.body.append(root);
  const radius=(type=active)=>Math.min(fleet[type].limit,bridgeReach+(fleet[type].limit-69)*.8+(s.wave-1)*5);
  const distance=i=>Math.hypot(points[i][0]-7,points[i][1]-48);
+ const inRange=(i,type)=>distance(i)<=radius(type);
+ // One shared route per site; a mixed group avoids the curved Starbound arc.
+ const sitePath=(i,row,flags)=>boardPath(i,Object.keys(row).map(Number).find(type=>type!==4)??4,flags);
+ function change(i,type,delta){
+  if(!playable[i]||fleet[type].surveyOnly)return false;
+  const row=selected.get(i)??{};
+  if(delta>0){
+   if(!inRange(i,type)||available(type)<1)return false;
+   row[type]=(row[type]??0)+1;s.lastTracks=[];
+  }else{
+   if(!row[type])return false;
+   if(!--row[type])delete row[type];
+  }
+  if(Object.keys(row).length)selected.set(i,row);else selected.delete(i);
+  save();return true;
+ }
  const flagged=()=>new Set([...s.marks.map(district),...Object.keys(s.intel).filter(i=>(+i===5||+i===8)&&playable[i]&&s.wave-s.intel[i].wave<3).map(i=>district(points[i]))]);
  function intelligence(buy=false){
   const feeds=buy?[2]:s.partner?.blocked?[0]:[0,1];
@@ -100,9 +137,26 @@ export function startDeepstrike(){
    const lost=surveyFlights[index].losses?.filter(Boolean).length??0;
    group.lost=lost;s.stock[group.type]+=group.count-lost;
   });
-  s.reports=s.flights.filter(f=>!f.survey&&Math.random()<.75).map(f=>({i:f.i,source:Math.random()<.5?0:1,hit:!f.lost&&Math.random()<.8}));
+  // One report per site; every surviving drone of a group rolls its own hit.
+  const groups=new Map();
+  for(const f of s.flights)if(!f.survey)groups.set(f.i,[...(groups.get(f.i)??[]),f]);
+  const landed=new Map();
+  s.reports=[...groups].filter(()=>Math.random()<.75).map(([i,flights])=>{
+   const hits=flights.filter(f=>!f.lost&&Math.random()<.8).length;
+   landed.set(i,hits);
+   return {i,source:Math.random()<.5?0:1,hit:hits>0};
+  });
   for(const report of s.reports)if(report.i===0&&report.hit){report.fire=Math.random()<.75;if(report.fire)report.fireSeed=crypto.getRandomValues(new Uint32Array(1))[0]}
   s.repairs=advanceConditions(s.conditions,s.reports,s.wave);
+  // advanceConditions applies one impact per report; add one more roll per extra drone that landed.
+  for(const report of s.reports){
+   const hits=landed.get(report.i)??0;
+   if(!report.hit||hits<2||report.damage===undefined)continue;
+   let damage=report.damage;
+   for(let n=1;n<hits;n++)damage=Math.min(100,damage+10+Math.floor(Math.random()*76));
+   s.conditions[report.i].damage=damage;
+   Object.assign(report,{damage,impact:damage-report.previous,hits});
+  }
   fleet.forEach((item,id)=>{
    if(s.wave%item.cycle===0&&(!item.partner||Math.random()<deliveryChance(item,s.wave,s.diplomacy)))s.stock[id]+=item.batch??1;
   });
@@ -117,124 +171,182 @@ export function startDeepstrike(){
   const flying=!!s.started;
   const phase=flying?tr('У польоті','In flight'):tr('Планування','Planning');
   const autoLabel=autoOn?tr('Грати самому','Take over'):tr('Автогра','Autoplay');
+  const legend='<details class="deep-legend"'+(legendOpen?' open':'')+'><summary>'+tr('Легенда','Legend')+'</summary><ul>'+
+   [0,1,2].map(l=>'<li>'+glyphSvg(l)+tr(...layerNames[l])+'</li>').join('')+
+   '<li><i class="lg lg-base"></i>'+tr('База запуску','Launch base')+'</li><li><i class="lg lg-range"></i>'+tr('Радіус дальності','Range ring')+'</li><li><i class="lg lg-alert"></i>'+tr('Імовірна ППО','Suspected air defence')+'</li><li><i class="lg lg-sel"></i>'+tr('Обрана ціль','Selected target')+'</li><li><i class="lg lg-survey"></i>'+tr('Сектор розвідки','Survey sector')+'</li></ul></details>';
   root.innerHTML=coalitionHeader('<button class="c-sides c-auto" data-auto aria-pressed="'+autoOn+'">'+autoLabel+'</button><span class="chip"><i class="dot"></i>'+phase+'</span><button class="c-sides" data-exit>'+tr('Сторони','Factions')+'</button>')+
-   '<section class="c-main deep-layout"><aside class="col c-left"><section class="panel br"><div class="label">'+tr('Поточна фаза','Current phase')+'</div><div class="phase-row"><b class="big">'+String(s.wave).padStart(2,'0')+'</b><div><h1>'+tr('Діпстрайк','Deepstrike')+'</h1><div class="c-phase">'+phase+'</div></div></div><div class="stat">'+tr('Кредити','Credits')+'<b>'+s.credits+'</b></div></section><section class="panel br" data-supply></section></aside>'+
-   '<section class="c-play panel br"><div class="label">'+tr('Карта секторів','Sector map')+'</div><div class="deep-layers c-toggles"></div><svg viewBox="0 0 100 100" aria-label="'+tr('Карта секторів','Sector map')+'"></svg></section>'+
+   '<section class="c-main deep-layout"><aside class="col c-left"><section class="panel br deep-phase"><div class="label">'+tr('Поточна фаза','Current phase')+'</div><div class="phase-row"><b class="big">'+String(s.wave).padStart(2,'0')+'</b><div><h1>'+tr('Діпстрайк','Deepstrike')+'</h1><div class="c-phase"><span class="deep-phase-chip" data-flying="'+flying+'">'+phase+'</span></div></div></div><div class="deep-credits"><span>'+tr('Кредити','Credits')+'</span><b>'+s.credits+'</b></div></section><section class="panel br" data-supply></section></aside>'+
+   '<section class="c-play panel br"><div class="label">'+tr('Карта секторів','Sector map')+'</div><div class="deep-layers c-toggles"></div><svg viewBox="0 0 100 100" aria-label="'+tr('Карта секторів','Sector map')+'"></svg>'+legend+'</section>'+
    '<aside class="col c-right"><section class="panel br"><div class="label">'+tr('План хвилі','Wave plan')+'</div><div class="c-cards" data-plan></div></section></aside></section>';
+  root.querySelector('.deep-legend').ontoggle=e=>{legendOpen=e.currentTarget.open};
   root.querySelector('[data-exit]').onclick=()=>{autoOn=false;clearTimeout(autoTimer);changeSide()};
   root.querySelector('[data-language]').onclick=()=>document.querySelector('.lang').click();
   root.querySelector('[data-auto]').onclick=()=>{autoOn=!autoOn;render()};
   const controls=root.querySelector('.deep-layers'),panel=root.querySelector('[data-plan]'),supply=root.querySelector('[data-supply]');
   const embargo=s.wave<=s.diplomacy.embargoThrough;
   if(embargo||s.diplomacy.talks){
-   const notice=document.createElement('div');notice.className='c-phase';
+   const notice=document.createElement('div');notice.className='c-phase deep-notice';
    notice.textContent=embargo?tr('Трамп обмежив поставки до кінця хвилі ','Trump restricted deliveries through wave ')+s.diplomacy.embargoThrough:
     tr('Триває «пісділ». Атака на нафтокомбінат може зупинити партнерські поставки.','Peace talks underway. A wave targeting the oil works may trigger supply restrictions.');
    supply.before(notice);
   }
-  function button(parent,label,action,disabled=false,pressed){
-   const el=document.createElement('button');el.textContent=label;el.disabled=disabled;el.onclick=action;if(pressed!==undefined)el.setAttribute('aria-pressed',pressed);el.className=parent===panel?'c-sponsor':'c-sides';parent.append(el);return el;
+  function button(parent,label,action,disabled=false,pressed,cls){
+   const el=document.createElement('button');el.textContent=label;el.disabled=disabled;el.onclick=action;if(pressed!==undefined)el.setAttribute('aria-pressed',pressed);el.className=cls??(parent===panel?'c-sponsor':'c-sides');parent.append(el);return el;
   }
-  [['Підприємства','Industry'],['Енергетика','Energy'],['Розвідка','Intelligence']].forEach((name,i)=>button(controls,tr(...name),()=>{visible[i]=!visible[i];render()},false,visible[i]));
+  layerNames.forEach((name,i)=>{const b=button(controls,tr(...name),()=>{visible[i]=!visible[i];render()},false,visible[i]);b.innerHTML=glyphSvg(i)+'<span>'+tr(...name)+'</span>'});
   if(!flying){
    supply.innerHTML='<div class="label">'+tr('Арсенал · ігрові поділки','Arsenal · board units')+'</div><div class="c-list"></div>';
    const list=supply.lastElementChild;
    const picker=document.createElement('label'),select=document.createElement('select');
-   picker.className='side-level';picker.textContent=tr('Сектор розвідки','Survey sector');
+   picker.className='deep-picker';picker.textContent=tr('Сектор розвідки','Survey sector');
    surveySectors.forEach((entry,i)=>select.add(new Option(tr(...entry.label),String(i))));
    select.value=String(sector);select.onchange=()=>{sector=Number(select.value);save();render()};
    picker.append(select);list.before(picker);
    fleet.forEach((unit,id)=>{
-    const card=document.createElement('button');
+    const card=document.createElement('button'),cur=Math.round(radius(id)),defense=defenses[unit.weakTo]??{};
     card.type='button';card.className='c-buy deep-unit';card.dataset.unit=id;
     card.setAttribute('aria-pressed',String(id===active));
     card.innerHTML='<span class="c-badge"><svg aria-hidden="true" viewBox="-3.5 -3 7 6"><path fill="currentColor" d="'+flightIcons[id]+'"/></svg></span>'+
-     '<span class="c-name"><b>'+tr(...unit.name)+'</b><small>'+tr('Дальність','Range')+' '+Math.round(radius(id))+' / '+unit.limit+'</small></span>'+
-     '<span class="deep-count" aria-label="'+tr('Доступно','Available')+' '+available(id)+'">×'+available(id)+'</span>'+
-     (unit.surveyOnly?'<small class="c-hint">'+tr('Розвідка · ризик перехоплення','Survey · interception chance')+' '+Math.round(unit.surveyLoss*100)+'%'+'</small>':
-     '<small class="c-hint">'+tr(...defenses[unit.weakTo].profile)+' · '+tr('Шанс перехоплення','Intercept chance')+' '+unit.baseChance+'%</small>'+
-     '<small class="c-hint">'+tr('Проти ППО','Against')+' «'+tr(...defenses[unit.weakTo].name)+'» · '+interceptionChance(unit,unit.weakTo)+'%</small>')+
-     '<small class="c-hint">'+(unit.partner?tr('Шанс поставки','Delivery chance')+' '+Math.round(deliveryChance(unit,s.wave,s.diplomacy)*100)+'%':tr('Виробництво','Production'))+' +'+(unit.batch??1)+' / '+unit.cycle+' '+tr('хв. гри','game waves')+'</small>';
+     '<span class="c-name"><b>'+tr(...unit.name)+'</b><span class="deep-range"><span class="deep-bar" aria-hidden="true"><i style="width:'+Math.round(cur/unit.limit*100)+'%"></i></span><small>'+tr('Дальність','Range')+' '+cur+' / '+unit.limit+'</small></span></span>'+
+     '<span class="deep-count" aria-label="'+tr('Доступно','Available')+' '+available(id)+'" data-empty="'+(available(id)<1)+'">×'+available(id)+'</span>'+
+     (unit.surveyOnly?'<span class="deep-chips"><small class="deep-chip survey" title="'+tr('Розвідка · ризик перехоплення','Survey · interception chance')+' '+Math.round(unit.surveyLoss*100)+'%">'+tr('Розвідка · ризик перехоплення','Survey · interception chance')+' <b>'+Math.round(unit.surveyLoss*100)+'%</b></small></span>':
+     '<span class="deep-chips"><small class="deep-chip" title="'+tr(...defense.profile)+' · '+tr('Шанс перехоплення','Intercept chance')+' '+unit.baseChance+'%">'+tr('Перехоплення','Intercept')+' <b>'+unit.baseChance+'%</b></small>'+
+     '<small class="deep-chip weak" title="'+tr('Проти ППО','Against')+' «'+tr(...defense.name)+'» · '+interceptionChance(unit,unit.weakTo)+'%">'+tr('Слабкий проти','Weak to')+' «'+tr(...defense.name)+'» <b>'+interceptionChance(unit,unit.weakTo)+'%</b></small></span>')+
+     '<small class="deep-prod">'+(unit.partner?tr('Шанс поставки','Delivery chance')+' '+Math.round(deliveryChance(unit,s.wave,s.diplomacy)*100)+'%':tr('Виробництво','Production'))+' +'+(unit.batch??1)+' / '+unit.cycle+' '+tr('хв. гри','game waves')+'</small>';
     card.onclick=()=>{active=id;render();root.querySelector('[data-unit="'+id+'"]').focus({preventScroll:true})};
-    const group=document.createElement('div'),stepper=document.createElement('div');
-    stepper.className='deep-survey-stepper';
-    const assigned=surveys[sector]?.[id]??0;
-    function adjust(delta){
-     const row=surveys[sector]??={};
-     row[id]=assigned+delta;
-     if(!row[id])delete row[id];
-     if(!Object.keys(row).length)delete surveys[sector];
-     if(delta>0)s.lastTracks=[];
-     save();render();
+    const group=document.createElement('div');group.className='deep-unit-group';group.append(card);
+    if(unit.surveyOnly){
+     const stepper=document.createElement('div'),count=surveys[sector]?.[id]??0;
+     stepper.className='deep-survey-stepper';
+     const adjust=delta=>{
+      const row=surveys[sector]??={};
+      row[id]=count+delta;
+      if(!row[id])delete row[id];
+      if(!Object.keys(row).length)delete surveys[sector];
+      if(delta>0)s.lastTracks=[];
+      save();render();
+     };
+     const minus=button(stepper,'−',()=>adjust(-1),count===0,undefined,'c-sides deep-step');
+     minus.setAttribute('aria-label',tr('Зняти з розвідки','Remove from survey')+' · '+tr(...unit.name));
+     const label=document.createElement('span');label.textContent=tr('Розвідка','Survey')+' ×'+count;stepper.append(label);
+     const plus=button(stepper,'+',()=>adjust(1),available(id)<=0,undefined,'c-sides deep-step');
+     plus.setAttribute('aria-label',tr('Додати до розвідки','Add to survey')+' · '+tr(...unit.name));
+     const buy=button(group,tr('Купити 5 · 1 кредит','Buy 5 · 1 credit'),()=>{
+      if(s.credits<1)return;
+      s.credits--;s.stock[id]+=5;save();render();
+     },s.credits<1,undefined,'c-sides deep-ghost deep-buy5');
+     group.insertBefore(stepper,buy);
     }
-    const minus=button(stepper,'−',()=>adjust(-1),assigned===0);
-    minus.setAttribute('aria-label',tr('Зняти з розвідки','Remove from survey')+' · '+tr(...unit.name));
-    stepper.append(document.createTextNode(tr('Розвідка','Survey')+' ×'+assigned));
-    const plus=button(stepper,'+',()=>adjust(1),available(id)<=0);
-    plus.setAttribute('aria-label',tr('Додати до розвідки','Add to survey')+' · '+tr(...unit.name));
-    group.append(card);
-    if(unit.surveyOnly)group.append(stepper);
-    if(unit.surveyOnly)button(group,tr('Купити 5 · 1 кредит','Buy 5 · 1 credit'),()=>{
-     if(s.credits<1)return;
-     s.credits--;s.stock[id]+=5;save();render();
-    },s.credits<1);
     list.append(group);
    });
   }
   supply.hidden=flying;
+  let visibleTotal=0;const sum=document.createElement('div'),list2=document.createElement('div');sum.className='deep-sum';list2.className='deep-targets';
+  if(!flying)panel.append(sum,list2);
   const zoom=document.createElement('select');zoom.setAttribute('aria-label',tr('Масштаб карти','Map scale'));
   zoom.add(new Option(tr('Усі області','All regions'),'-1'));
   cities.forEach((name,i)=>playable[i]&&zoom.add(new Option(tr(...name),String(i))));
   zoom.value=String(city);zoom.onchange=()=>{city=Number(zoom.value);render()};controls.append(zoom);
   const map=root.querySelector('.c-play > svg');
   if(city>=0){const [x,y]=points[city];map.setAttribute('viewBox',[Math.min(62,Math.max(0,x-19)),Math.min(62,Math.max(0,y-19)),38,38].join(' '))}
-  const flags=flagged();
-  map.innerHTML='<defs><linearGradient id="wake" gradientUnits="userSpaceOnUse" x1="-7" x2="0"><stop stop-color="white" stop-opacity="0"/><stop offset="1" stop-color="white" stop-opacity=".8"/></linearGradient><pattern id="sector-grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="#405550" stroke-width=".3"/></pattern></defs><rect width="100" height="100" fill="url(#sector-grid)" opacity=".3"/><circle cx="7" cy="48" r="'+radius()+'" fill="#69d49b12" stroke="#80c8b7" stroke-width=".4"/>';
+  const flags=flagged(),R=radius();
+  const reasonOf=i=>flying?'':fleet[active].surveyOnly?tr('Лише розвідка','Survey only'):!inRange(i,active)?tr('Поза дальністю','Out of range'):available(active)<1?tr('Немає запасу','No stock'):'';
+  map.classList.toggle('marking',marking);
   const outer='26,39 29,40 31,43 32,49 34,55 39,59 42,62 40,68 38,72 39,76 38,80 40,84 43,88';
   const coast='0,88 8,87 14,88 19,90 26,87 30,89 35,92 40,92 44,90 43,88 48,87 50,90 52,93 62,94 70,91 83,94 92,90 100,91';
   const reverse=line=>line.split(' ').reverse().join(' ');
+  const occ=outer+' 44,90 40,92 35,92 30,89 '+reverse(inner);
   const sea=tr('Море','Sea'),bridge=tr('Міст','Bridge');
-  map.insertAdjacentHTML('afterbegin','<rect class="atlas-land land-2" width="100" height="100"/>'+
-   '<polygon class="atlas-land land-1" points="'+outer+' 44,90 40,92 35,92 30,89 '+reverse(inner)+'"/>'+
-   '<polygon class="atlas-land land-0" points="'+homeOutline+'"/>'+
-   '<polygon fill="#203d4d" points="'+coast+' 100,100 0,100"/>');
-  map.insertAdjacentHTML('beforeend','<path class="atlas-river" d="M48 1 Q46 15 49 24 T46 45 Q39 55 43 65 T40 86"/>');
+  const ticks=[0,20,40,60,80].map(v=>'<path class="ds-tick-line" d="M0 '+v+'H1.1M'+v+' 100V98.9"/><text class="ds-tick" x="1.5" y="'+(v+(v?.7:2.4))+'">'+Math.round(54-v*.125)+tr('°пн','°N')+'</text><text class="ds-tick" x="'+(v+.8)+'" y="98.2" '+(v?'':'dx="2.5"')+'>'+Math.round(20+v*.2)+tr('°сх','°E')+'</text>').join('');
+  const wave=y=>'<path class="ds-wave" d="M0 '+y+' q1.5-.7 3 0'+' t3 0'.repeat(33)+'"/>';
+  map.innerHTML='<defs><linearGradient id="wake" gradientUnits="userSpaceOnUse" x1="-7" x2="0"><stop stop-color="white" stop-opacity="0"/><stop offset="1" stop-color="white" stop-opacity=".8"/></linearGradient>'+
+   '<pattern id="sector-grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="#6f8f95" stroke-width=".14"/></pattern>'+
+   '<linearGradient id="ds-sea" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#27506a"/><stop offset="1" stop-color="#0b1c29"/></linearGradient>'+
+   '<linearGradient id="ds-home" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2f4d4a"/><stop offset="1" stop-color="#1f3533"/></linearGradient>'+
+   '<linearGradient id="ds-occ" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#5a4c33"/><stop offset="1" stop-color="#3d3325"/></linearGradient>'+
+   '<linearGradient id="ds-foe" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#51393f"/><stop offset="1" stop-color="#34252b"/></linearGradient>'+
+   '<pattern id="ds-hatch-occ" width="1.7" height="1.7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0V1.7" stroke="#e4c98f" stroke-opacity=".2" stroke-width=".45"/></pattern>'+
+   '<pattern id="ds-hatch-alert" width="1.5" height="1.5" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><path d="M0 0V1.5" stroke="#ff6b5e" stroke-opacity=".6" stroke-width=".55"/></pattern>'+
+   '<radialGradient id="ds-range"><stop stop-color="#7fcfa6" stop-opacity=".02"/><stop offset=".7" stop-color="#7fcfa6" stop-opacity=".06"/><stop offset="1" stop-color="#7fcfa6" stop-opacity=".2"/></radialGradient>'+
+   '<clipPath id="ds-clip-home"><polygon points="'+homeOutline+'"/></clipPath><clipPath id="ds-clip-occ"><polygon points="'+occ+'"/></clipPath></defs>'+
+   '<rect class="atlas-land land-2" width="100" height="100"/>'+
+   '<polygon class="atlas-land land-1" points="'+occ+'"/><polygon fill="url(#ds-hatch-occ)" points="'+occ+'" pointer-events="none"/><polygon class="ds-shade" clip-path="url(#ds-clip-occ)" points="'+occ+'"/>'+
+   '<polygon class="atlas-land land-0" points="'+homeOutline+'"/><polygon class="ds-shade" clip-path="url(#ds-clip-home)" points="'+homeOutline+'"/>'+
+   '<polygon fill="url(#ds-sea)" points="'+coast+' 100,100 0,100"/>'+wave(97.6)+wave(99.5)+
+   '<rect width="100" height="100" fill="url(#sector-grid)" opacity=".55" pointer-events="none"/>'+ticks+
+   '<circle class="ds-range" cx="7" cy="48" r="'+R+'" fill="url(#ds-range)"/>'+
+   '<text class="ds-range-label" x="12" y="57.6">'+tr('дальність ','range ')+Math.round(R)+'</text>'+
+   '<path class="atlas-river-bank" d="M48 1 Q46 15 49 24 T46 45 Q39 55 43 65 T40 86"/><path class="atlas-river" d="M48 1 Q46 15 49 24 T46 45 Q39 55 43 65 T40 86"/>';
   const xEdges=[0,22,41,63,100],yEdges=[0,40,61,100];
   for(const id of flags){
    const col=id%4,row=Math.floor(id/4);
-   map.insertAdjacentHTML('beforeend','<rect class="atlas-alert" x="'+xEdges[col]+'" y="'+yEdges[row]+'" width="'+(xEdges[col+1]-xEdges[col])+'" height="'+(yEdges[row+1]-yEdges[row])+'"/>');
+   map.insertAdjacentHTML('beforeend','<rect class="atlas-alert" x="'+xEdges[col]+'" y="'+yEdges[row]+'" width="'+(xEdges[col+1]-xEdges[col])+'" height="'+(yEdges[row+1]-yEdges[row])+'"/><g class="ds-warn" transform="translate('+(xEdges[col]+4.5)+' '+(yEdges[row]+5)+')"><title>'+tr('Імовірна ППО','Suspected air defence')+'</title><path d="M0-2.7 2.7 1.9H-2.7Z"/><path class="ds-warn-i" d="M0-.9V.5"/><circle cy="1.2" r=".2"/></g>');
   }
   for(const line of [north,inner,outer])map.insertAdjacentHTML('beforeend','<polyline class="atlas-border" points="'+line+'"/>');
-  map.insertAdjacentHTML('beforeend','<polyline fill="none" stroke="#70919a" stroke-width=".45" points="'+coast+'"/>'+
-   '<g pointer-events="none"><path d="M43.5 89.7L50 90.7" stroke="#232c30" stroke-width="1.9"/><path d="M43.5 89.7L50 90.7" stroke="#e9d6a7" stroke-width=".85"/><text x="46" y="95">'+bridge+'</text></g>');
-  for(const [name,x,y] of [['Ненька',10,62],['Ордло',31,67],['Мордор',78,13],[sea,12,96]])map.insertAdjacentHTML('beforeend','<text class="atlas-territory" transform="rotate('+(name==='Ордло'?82:0)+' '+x+' '+y+')" x="'+x+'" y="'+y+'">'+name+'</text>');
+  map.insertAdjacentHTML('beforeend','<polyline class="ds-coast" points="'+coast+'"/>'+
+   '<g pointer-events="none"><path d="M43.5 89.7L50 90.7" stroke="#232c30" stroke-width="1.9"/><path d="M43.5 89.7L50 90.7" stroke="#e9d6a7" stroke-width=".85"/><text class="atlas-city" x="46" y="95">'+bridge+'</text></g>');
+  for(const [name,x,y] of [['Ненька',10,62],['Ордло',31,67],['Мордор',78,13],[sea,12,96]])map.insertAdjacentHTML('beforeend','<text class="atlas-territory'+(name===sea?' sea':'')+'" transform="rotate('+(name==='Ордло'?82:0)+' '+x+' '+y+')" x="'+x+'" y="'+y+'">'+name+'</text>');
+  map.insertAdjacentHTML('beforeend','<g class="ds-base" pointer-events="none"><title>'+tr('База запуску','Launch base')+'</title><circle cx="7" cy="48" r="2.7"/><path d="M7 44.6V51.4M3.6 48H10.4"/><path class="ds-base-star" d="M7 46.1 8.3 48 7 49.9 5.7 48Z"/><text class="atlas-city" x="7" y="54.2">'+tr('База','Base')+'</text></g>');
   const seen=s.partner?.seen;
   if(visible[2]&&seen){
    const [x,y]=patrolSectors[seen.sector];
    const label=tr('ППО · хв. ','AD · wave ')+seen.wave;
-   map.insertAdjacentHTML('beforeend','<g class="partner-sighting" pointer-events="none" opacity="'+(seen.wave===s.wave?1:.55)+'"><title>'+tr('Останнє спостереження партнерів','Last partner sighting')+'</title><circle cx="'+x+'" cy="'+y+'" r="2.4" fill="none" stroke="#f0b46d" stroke-width=".45" stroke-dasharray=".7 .45"/><text x="'+x+'" y="'+(y+4.7)+'">'+label+'</text></g>');
+   map.insertAdjacentHTML('beforeend','<g class="partner-sighting" pointer-events="none" opacity="'+(seen.wave===s.wave?1:.55)+'"><title>'+tr('Останнє спостереження партнерів','Last partner sighting')+'</title><circle cx="'+x+'" cy="'+y+'" r="2.4" fill="none" stroke="#f0b46d" stroke-width=".45" stroke-dasharray=".7 .45"/><text class="atlas-city" x="'+x+'" y="'+(y+4.7)+'">'+label+'</text></g>');
   }
   if(!flying){
-   const [x,y]=surveySectors[sector].point;
-   map.insertAdjacentHTML('beforeend','<g pointer-events="none"><circle cx="'+x+'" cy="'+y+'" r="2.5" fill="none" stroke="#91d8ae" stroke-width=".35" stroke-dasharray=".7 .5"/><text x="'+x+'" y="'+(y+4.8)+'">'+tr(...surveySectors[sector].label)+'</text></g>');
+   surveySectors.forEach((entry,index)=>{
+    const [x,y]=entry.point,count=sumRow(surveys[index]??{});
+    if(index!==sector&&!count)return;
+    map.insertAdjacentHTML('beforeend','<g class="ds-sector'+(index===sector?' cur':'')+'" data-sector="'+index+'" pointer-events="none"><title>'+tr('Сектор розвідки','Survey sector')+' · '+tr(...entry.label)+'</title><circle cx="'+x+'" cy="'+y+'" r="2.5"/><circle class="ds-sector-dot" cx="'+x+'" cy="'+y+'" r=".45"/><text x="'+x+'" y="'+(y+4.8)+'">'+tr(...entry.label)+(count?' ×'+count:'')+'</text></g>');
+   });
+   let n=0;
+   for(const [i,row] of selected){
+    const path=sitePath(i,row,flags),[ex,ey]=points[i];n++;
+    map.insertAdjacentHTML('beforeend','<polyline class="atlas-plan" points="'+path.map(p=>p.join(',')).join(' ')+'"/>'+
+     [.22,.45,.68].map(f=>{const c=travel(path,f);return '<path class="ds-chev" transform="translate('+c.x+' '+c.y+') rotate('+c.angle+')" d="M-.7-.7L.2 0L-.7.7"/>'}).join('')+
+     '<g class="ds-num" transform="translate('+(ex-3.2)+' '+(ey-3.2)+')" pointer-events="none"><circle r="1.55"/><text y=".65">'+n+'</text></g>');
+   }
   }
-  if(!flying)for(const [i,type] of selected){
-   map.insertAdjacentHTML('beforeend','<polyline class="atlas-plan" points="'+boardPath(i,type,flags).map(p=>p.join(',')).join(' ')+'"/>');
-  }
-  points.forEach(([x,y],i)=>playable[i]&&map.insertAdjacentHTML('beforeend','<text class="atlas-city" x="'+x+'" y="'+(y-3.6)+'">'+tr(...cities[i])+'</text>'));
+  points.forEach(([x,y],i)=>playable[i]&&map.insertAdjacentHTML('beforeend','<text class="atlas-city" x="'+x+'" y="'+(y-3.9)+'">'+tr(...cities[i])+'</text>'));
+  const srcLetter=[tr('В','F'),tr('П','P'),tr('С','S')];
   points.forEach(([x,y],i)=>{
    if(!playable[i]||!visible[layers[i]]||(layers[i]===2&&!s.intel[i]))return;
-   const label=tr(...names[i]),intel=s.intel[i],status=conditionText(s.conditions[i]?.damage,!!s.conditions[i]);
-   map.insertAdjacentHTML('beforeend','<g data-site="'+i+'"><title>'+status+'</title><circle cx="'+x+'" cy="'+y+'" r="2" fill="'+(selected.has(i)?'#ffc75c':'#8ececc')+'"/><text x="'+x+'" y="'+(y+5)+'">'+label+'</text></g>');
-   if(!flying)button(panel,tr(...cities[i])+' · '+label+' · '+status+(selected.has(i)?' · '+tr(...fleet[selected.get(i)].name):'')+(intel?' · '+tr(...sources[intel.source])+' W'+intel.wave:''), ()=>toggle(i),!selected.has(i)&&(fleet[active].surveyOnly||distance(i)>radius()||available(active)<1),selected.has(i)).classList.add('target-card');
+   const label=tr(...names[i]),intel=s.intel[i],status=conditionText(s.conditions[i]?.damage,!!s.conditions[i]),sel=selected.has(i),why=reasonOf(i),row=selected.get(i),count=row?sumRow(row):0,w=Math.max(7,label.length*1.2+2.2);
+   const state=s.conditions[i]?.damage===100?'out':s.conditions[i]?.damage?'dmg':s.conditions[i]?'fixed':'ok';
+   map.insertAdjacentHTML('beforeend','<g class="site mk-'+layers[i]+(sel?' sel':'')+(why&&!sel?' dim':'')+'" data-site="'+i+'" tabindex="0" role="button" aria-pressed="'+sel+'" aria-label="'+tr(...cities[i])+' · '+label+' · '+status+(sel?' · '+tr('Дронів','Drones')+' '+count:'')+(why?' · '+why:'')+'"><title>'+status+(why?' · '+why:'')+'</title><g transform="translate('+x+' '+y+')">'+
+    '<circle class="hit" r="4.4"/>'+(sel?'<circle class="pulse" r="2.9"/>':'')+'<circle class="ring" r="2.9"/><circle class="site-focus" r="3.9"/>'+glyph(layers[i])+
+    '<rect class="plate" data-state="'+state+'" x="'+(-w/2)+'" y="3.6" width="'+w+'" height="3.1" rx=".5"/><text class="site-label" y="5.85">'+label+'</text>'+
+    (intel?'<g class="intel" transform="translate(2.7 -2.7)"><circle r="1.3"/><text y=".55">'+srcLetter[intel.source]+'</text><title>'+tr(...sources[intel.source])+' W'+intel.wave+'</title></g>':'')+
+    (sel?'<g class="unit" transform="translate(4.9 -.2)"><circle r="1.9"/><path transform="scale(.5)" d="'+flightIcons[+Object.keys(row)[0]]+'"/><g class="unit-n" transform="translate(1.5 -1.5)"><circle r="1.25"/><text y=".55">'+count+'</text></g></g>':'')+'</g></g>');
+   if(!flying){
+    const wrap=document.createElement('div');wrap.className='deep-row';wrap.dataset.row=i;list2.append(wrap);
+    const card=button(wrap,tr(...cities[i])+' · '+label+' · '+status+(sel?' · '+count+' '+tr('дронів','drones'):'')+(intel?' · '+tr(...sources[intel.source])+' W'+intel.wave:'')+(why?' · '+why:''), ()=>{refocusCard=i;toggle(i)},!!why,sel,'c-sponsor target-card deep-target');
+    card.title=why||status;card.dataset.card=i;visibleTotal++;
+    card.innerHTML='<span class="deep-t-main"><b>'+tr(...cities[i])+'</b><small>'+label+'</small></span><span class="deep-t-meta">'+
+     (why?'<span class="deep-tag">'+why+'</span>':'')+'<span class="deep-status" data-state="'+state+'">'+status+'</span>'+
+     (intel?'<span class="deep-intel" title="'+tr(...sources[intel.source])+' W'+intel.wave+'">'+srcLetter[intel.source]+' W'+intel.wave+'</span>':'')+
+     (sel?'<span class="deep-t-count" title="'+tr('Дронів','Drones')+'">×'+count+'</span>':'')+'</span>';
+    if(sel){
+     const bar=document.createElement('div');bar.className='deep-asg';wrap.dataset.sel='true';wrap.append(bar);
+     for(const [typeKey,n] of Object.entries(row)){
+      const type=+typeKey,chip=document.createElement('span'),unit=fleet[type];
+      chip.className='deep-asg-chip';
+      chip.innerHTML='<svg class="deep-asg-ico" aria-hidden="true" viewBox="-3.5 -3 7 6"><path fill="currentColor" d="'+flightIcons[type]+'"/></svg><b>'+tr(...unit.name)+'</b>';
+      const minus=button(chip,'−',()=>{refocusStep=i+':'+type+':-';change(i,type,-1);render()},false,undefined,'deep-step');
+      minus.dataset.step=i+':'+type+':-';minus.setAttribute('aria-label',tr('Зняти дрон','Remove drone')+' · '+tr(...unit.name)+' · '+tr(...cities[i]));
+      const num=document.createElement('span');num.className='deep-asg-n';num.textContent='×'+n;chip.append(num);
+      const plus=button(chip,'+',()=>{refocusStep=i+':'+type+':+';change(i,type,1);render()},!inRange(i,type)||available(type)<1,undefined,'deep-step');
+      plus.dataset.step=i+':'+type+':+';plus.setAttribute('aria-label',tr('Додати дрон','Add drone')+' · '+tr(...unit.name)+' · '+tr(...cities[i]));
+      bar.append(chip);
+     }
+     const clear=button(bar,tr('Зняти всі','Clear'),()=>{refocusCard=i;selected.delete(i);save();render()},false,undefined,'deep-clear');
+     clear.setAttribute('aria-label',tr('Прибрати всі дрони з цілі','Remove all drones from target')+' · '+tr(...cities[i]));
+    }
+   }
   });
   function toggle(i){
    if(flying||!playable[i])return;
-   if(selected.has(i))selected.delete(i);
-   else if(!fleet[active].surveyOnly&&distance(i)<=radius()&&available(active)>0){
-    selected.set(i,active);
-    s.lastTracks=[];save();
-   }
+   change(i,active,1);
    render();
   }
   s.marks.forEach(([x,y])=>map.insertAdjacentHTML('beforeend','<text class="deep-mark" x="'+x+'" y="'+y+'">?</text>'));
@@ -243,6 +355,24 @@ export function startDeepstrike(){
    if(marking){const p=new DOMPoint(e.clientX,e.clientY).matrixTransform(map.getScreenCTM().inverse());const id=district([p.x,p.y]);if(s.marks.some(q=>district(q)===id))s.marks=s.marks.filter(q=>district(q)!==id);else s.marks.push([p.x,p.y]);save();marking=false;render();return}
    const site=e.target.closest('[data-site]');if(site)toggle(+site.dataset.site);
   };
+  map.onkeydown=e=>{
+   const site=e.target.closest?.('[data-site]');
+   if(!site)return;
+   if(e.key==='Backspace'||e.key==='Delete'){
+    e.preventDefault();refocus=+site.dataset.site;if(marking||flying)return;
+    const row=selected.get(refocus),last=row&&Object.keys(row).pop();
+    if(last!==undefined){change(refocus,+last,-1);render()}
+    return;
+   }
+   if(e.key!=='Enter'&&e.key!==' ')return;
+   e.preventDefault();refocus=+site.dataset.site;if(marking||flying)return;toggle(refocus);
+  };
+  if(refocus>=0){map.querySelector('[data-site="'+refocus+'"]')?.focus({preventScroll:true});refocus=-1}
+  if(refocusStep){
+   const el=root.querySelector('[data-step="'+refocusStep+'"]')??root.querySelector('[data-step="'+refocusStep.slice(0,-1)+(refocusStep.endsWith('-')?'+':'-')+'"]')??root.querySelector('[data-card="'+refocusStep.split(':')[0]+'"]');
+   el?.focus({preventScroll:true});refocusStep=null;
+  }
+  if(refocusCard>=0){root.querySelector('[data-card="'+refocusCard+'"]')?.focus({preventScroll:true});refocusCard=-1}
   // Spread survey markers across the sector on screen, including mixed-type groups.
   function mapFlights(flights){
    const offsets=new Map(),totals=new Map();
@@ -262,69 +392,118 @@ export function startDeepstrike(){
    });
   }
   function drawTracks(overlay,flights,elapsed){
-   const markers=[];
+   const past=elapsed===Infinity,calm=reduced();
    for(const f of flights){
     const t=Math.min(1,elapsed/f.duration);
     const path=f.path??[[7,48],points[f.i]];
     const {x:px,y:py,angle,segment}=travel(path,t*(f.lost?.68:1));
-    const flown=[...path.slice(0,segment+1),[px,py]];
-    const coords=flown.map(p=>p.join(',')).join(' ');
-    overlay.insertAdjacentHTML('beforeend','<g fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline stroke="#341521" stroke-width="1.15" points="'+coords+'"/><polyline class="atlas-track" stroke="#ff3947" stroke-width=".65" points="'+coords+'"/></g>');
-    if(elapsed!==Infinity&&f.surprise&&t>=.4){
-     const [x,y]=f.surprise;
-     overlay.insertAdjacentHTML('beforeend','<circle cx="'+x+'" cy="'+y+'" r="3.5" fill="#db564738" stroke="#eb7962" stroke-width=".4"/><text x="'+x+'" y="'+(y+1)+'">!</text>');
+    const flown=[...path.slice(0,segment+1),[px,py]].map(p=>p.join(',')).join(' ');
+    const done=t===1,k=past?1:Math.min(1,Math.max(0,(elapsed-f.duration)/1200)),tone=done?(f.lost?'#ff6b5e':f.survey?'#7fcfa6':'#ffb347'):f.survey?'#bfeed3':'#ece4bd';
+    let h='<g class="trk'+(past?' past':'')+'">'+(past?'':'<polyline class="trk-plan" points="'+path.map(p=>p.join(',')).join(' ')+'"/><polyline class="trk-glow" stroke="'+tone+'" points="'+flown+'"/>')+'<polyline class="trk-line atlas-track" stroke="'+tone+'" points="'+flown+'"/>';
+    if(!past&&f.surprise&&t>=.4){
+     const [x,y]=f.surprise,pulse=calm?0:Math.abs(Math.sin(elapsed/230));
+     h+='<g class="trk-warn"><circle cx="'+x+'" cy="'+y+'" r="'+(3.1+pulse*.9)+'" fill="#db564730" stroke="#eb7962" stroke-width=".4" stroke-opacity="'+(.95-pulse*.4)+'"/><circle cx="'+x+'" cy="'+y+'" r="'+(1.8+pulse*.4)+'" fill="none" stroke="#eb7962" stroke-width=".25" stroke-dasharray=".6 .5"/><text x="'+x+'" y="'+(y+1)+'">!</text></g>';
     }
-    const symbol=t===1?(f.lost?'<text class="deep-cross">×</text>':f.survey?'<text>✓</text>':
-     '<g class="atlas-flame"><circle r="2.1" fill="#ff802740"/><path d="M0 1.5C-2 1-1.6-.4-.6-1.3L-.45-.45Q.4-1 .15-2.4C2 .1 1.6 1.2 0 1.5" fill="#ff972e"/><circle cy=".6" r=".55" fill="#ffe39a"/></g>'):
-     '<g transform="rotate('+angle+')"><path d="M-7 0H0" stroke="url(#wake)" stroke-width=".7"/><path d="'+(flightIcons[f.type]??flightIcons[0])+'" fill="white" stroke="#25343a" stroke-width=".15"/></g>';
-    markers.push('<g '+(f.survey?'data-survey-unit="'+f.number+'" ':'')+'transform="translate('+px+' '+py+')"><title>'+tr(...fleet[f.type??0].name)+(f.survey?' #'+f.number:'')+'</title>'+symbol+'</g>');
+    let symbol;
+    if(!done)symbol='<g transform="rotate('+angle+')"><path d="M-7 0H0" stroke="url(#wake)" stroke-width=".7"/><path d="'+(flightIcons[f.type]??flightIcons[0])+'" fill="white" stroke="#25343a" stroke-width=".15"/></g>';
+    else if(f.lost)symbol=(past?'':'<circle class="trk-ring" r="'+(1.4+k*3.6)+'" opacity="'+(.85*(1-k))+'"/>')+'<path class="trk-x" d="M-1.5-1.5L1.5 1.5M1.5-1.5L-1.5 1.5"'+(past?' transform="scale(.7)"':'')+'/>';
+    else if(f.survey)symbol='<g class="trk-ok"'+(past?' transform="scale(.8)"':'')+'>'+(past?'':'<circle class="trk-wave ok" r="'+(1.5+k*3)+'" opacity="'+(.9*(1-k))+'"/>')+'<circle r="1.35"/><path d="M-.7 0L-.2.6L.75-.6"/></g>';
+    else symbol='<g'+(past?' transform="scale(.6)"':'')+'>'+(past?'':'<circle class="trk-wave" r="'+(1.5+k*4)+'" opacity="'+(.9*(1-k))+'"/>'+[0,1,2,3,4,5,6,7].map(a=>'<path class="trk-ray" d="M0-1.9V-'+(2.8+k*1.1)+'" transform="rotate('+(a*45+(a%2?0:11))+')"/>').join(''))+'<circle r="2.1" fill="#ff802740"/><path d="M0 1.5C-2 1-1.6-.4-.6-1.3L-.45-.45Q.4-1 .15-2.4C2 .1 1.6 1.2 0 1.5" fill="#ff972e"/><circle cy=".6" r=".55" fill="#ffe39a"/></g>';
+    if(past&&done)symbol+=f.lost||f.survey?'':'<g class="trk-tick" transform="translate(2.4 -2.4)"><circle r="1.2"/><path d="M-.6 0L-.15.5L.65-.5"/></g>';
+    h+='<g '+(f.survey?'data-survey-unit="'+f.number+'" ':'')+'transform="translate('+px+' '+py+')"><title>'+tr(...fleet[f.type??0].name)+(f.survey?' #'+f.number:'')+'</title>'+symbol+'</g></g>';
+    overlay.insertAdjacentHTML('beforeend',h);
    }
-   overlay.insertAdjacentHTML('beforeend',markers.join(''));
-
   }
   if(!flying&&s.lastTracks?.length){
    const history=document.createElementNS('http://www.w3.org/2000/svg','g');
    history.setAttribute('pointer-events','none');map.append(history);
    drawTracks(history,mapFlights(s.lastTracks),Infinity);
   }
+  const surveyTotal=Object.values(surveys).reduce((n,row)=>n+sumRow(row),0),drones=droneCount(),launchTotal=drones+surveyTotal;
+  const fillSum=()=>{
+   sum.innerHTML='<span class="deep-sum-n"><b>'+drones+'</b><small>'+tr('дронів обрано','drones selected')+' · '+selected.size+' / '+visibleTotal+' '+tr('цілей','targets')+'</small></span><span class="deep-credits"><span>'+tr('Кредити','Credits')+'</span><b>'+s.credits+'</b></span>';
+   if(!visibleTotal)list2.innerHTML='<p class="dr-empty"><span>'+tr('Немає видимих цілей. Увімкніть шари або купіть знімок.','No visible targets. Enable layers or buy imagery.')+'</span></p>';
+  };
   if(flying){
-   panel.textContent=tr('Хвиля в польоті','Wave in flight');
+   // HUD rows group the drones sent to one site (survey groups get a row each).
+   const entries=[],bySite=new Map();
+   for(const f of s.flights){
+    if(f.survey){entries.push({flights:[f],drones:f.count,survey:true,types:[[f.type,f.count]],place:tr('Розвідка','Survey')+' · '+tr(...surveySectors[f.sector].label)});continue}
+    let e=bySite.get(f.i);
+    if(!e){e={flights:[],drones:0,counts:{},place:tr(...cities[f.i])+' · '+tr(...names[f.i])};bySite.set(f.i,e);entries.push(e)}
+    e.flights.push(f);e.drones++;e.counts[f.type??0]=(e.counts[f.type??0]??0)+1;
+   }
+   for(const e of entries)e.types??=Object.entries(e.counts).map(([type,n])=>[+type,n]);
+   const hud=document.createElement('div');hud.className='deep-hud';
+   hud.innerHTML='<div class="deep-sec">'+tr('Хвиля в польоті','Wave in flight')+' <b>'+entries.reduce((n,e)=>n+e.drones,0)+'</b></div>';
+   const rows=entries.map(e=>{
+    const row=document.createElement('div');row.className='deep-flight';
+    const title=e.types.map(([type,n])=>tr(...fleet[type].name)+(n>1||e.types.length>1?' ×'+n:'')).join(', ');
+    row.innerHTML='<span class="c-badge"><svg aria-hidden="true" viewBox="-3.5 -3 7 6"><path fill="currentColor" d="'+(flightIcons[e.types[0][0]]??flightIcons[0])+'"/></svg></span><span class="c-name"><b>'+title+'</b><small>'+e.place+'</small></span><span class="deep-f-stat"></span><span class="deep-bar" aria-hidden="true"><i></i></span>';
+    hud.append(row);return {row,bar:row.querySelector('i'),stat:row.querySelector('.deep-f-stat')};
+   });
+   panel.append(hud);
+   const paint=elapsed=>entries.forEach((e,n)=>{
+    const end=Math.max(...e.flights.map(f=>f.duration)),t=Math.min(1,elapsed/end),r=rows[n];
+    const alive=e.survey?e.drones-(e.flights[0].losses?.filter(Boolean).length??0):e.flights.filter(f=>!f.lost).length;
+    const st=t<1?'go':alive?'hit':'lost';
+    r.row.dataset.state=st;r.bar.style.width=(t*100)+'%';
+    r.stat.textContent=st==='go'?tr('Летить','En route'):st==='lost'?tr('Перехоплено','Intercepted'):
+     e.survey?tr('Повернулися','Returned')+' '+alive+'/'+e.drones:tr('Влучання','Impact')+(e.drones>1?' '+alive+'/'+e.drones:'');
+   });
    const overlay=document.createElementNS('http://www.w3.org/2000/svg','g');map.append(overlay);
    const tracks=mapFlights(s.flights);
    function animate(){
     const elapsed=Date.now()-s.started;
     if(s.flights.every(f=>elapsed>=f.duration+1200)){render();return}
     overlay.replaceChildren();
+    paint(elapsed);
     drawTracks(overlay,tracks,elapsed);
     timer=setTimeout(animate,80);
    }
    animate();return;
   }
-  button(panel,tr('Купити знімок · 1','Buy imagery · 1'),()=>{s.credits--;intelligence(true);save();render()},s.credits<1);
-  button(panel,tr('Позначити ймовірну загрозу','Mark suspected threat'),()=>{marking=!marking;render()},false,marking);
-  const groups=Object.entries(surveys).flatMap(([sector,row])=>Object.entries(row).map(([type,count])=>({sector:Number(sector),type:Number(type),count})));
-  const total=selected.size+groups.reduce((sum,g)=>sum+g.count,0);
-  const launch=button(panel,tr('Запустити хвилю','Launch wave')+' ('+total+')',()=>{
+  fillSum();
+  const acts=document.createElement('div');acts.className='deep-actions';panel.append(acts);
+  const ghosts=document.createElement('div');ghosts.className='deep-ghosts';
+  const groups=Object.entries(surveys).flatMap(([sectorKey,row])=>Object.entries(row).map(([type,count])=>({sector:Number(sectorKey),type:Number(type),count})));
+  const launch=button(acts,tr('Запустити хвилю','Launch wave')+' ('+launchTotal+')',()=>{
    recordLaunch(s.diplomacy,s.wave,selected);
-   for(const type of selected.values())s.stock[type]--;
-   s.flights=[...selected].map(([i,type])=>{
-    const path=boardPath(i,type,flags);
+   s.flights=[];
+   for(const [i,row] of selected){
+    const types=Object.entries(row).flatMap(([type,n])=>Array(n).fill(+type));
+    const path=sitePath(i,row,flags);
+    // The group shares one path, surprise and pace; lanes keep a tight formation and each drone rolls its own interception.
     const surprise=Math.random()<.27?path[1]:null;
-    return {i,type,path,surprise,duration:Math.round(2500+travel(path,1).total*(65+Math.random()*90)),lost:rollInterception(fleet[type],!!surprise||(s.partner&&district(points[i])===district(patrolSectors[s.partner.sector])))};
-   });
+    const encounter=!!surprise||(s.partner&&district(points[i])===district(patrolSectors[s.partner.sector]));
+    const base=2500+travel(path,1).total*(65+Math.random()*90);
+    const [ox,oy]=path[0],[ex,ey]=path[path.length-1],length=Math.hypot(ex-ox,ey-oy)||1;
+    types.forEach((type,k)=>{
+     s.stock[type]--;
+     const lane=(k-(types.length-1)/2)*.6,dx=-(ey-oy)/length*lane,dy=(ex-ox)/length*lane;
+     s.flights.push({i,type,path:path.map(([x,y])=>[x+dx,y+dy]),surprise,duration:Math.round(base*(1+(Math.random()-.5)*.05)),lost:rollInterception(fleet[type],encounter)});
+    });
+   }
    for(const group of groups){
     s.stock[group.type]-=group.count;
     const risk=fleet[group.type].surveyLoss??0;
     const losses=Array.from({length:group.count},()=>risk>0&&Math.random()<risk);
     s.flights.push({...group,survey:true,losses,path:[[7,48],surveySectors[group.sector].point],duration:4500});
    }
-   for(const key of Object.keys(surveys))delete surveys[key];
+   for(const sectorKey of Object.keys(surveys))delete surveys[sectorKey];
    selected.clear();marking=false;s.started=Date.now();save();render();
-  },!total);
-  launch.className='c-start';
+  },!launchTotal);
+  launch.className='c-start deep-launch';
+  launch.innerHTML='<span>'+tr('Запустити хвилю','Launch wave')+'</span><span class="deep-pill">'+launchTotal+'</span>';
+  acts.append(ghosts);
+  const buy=button(ghosts,tr('Купити знімок · 1','Buy imagery · 1'),()=>{s.credits--;intelligence(true);save();render()},s.credits<1,undefined,'c-sides deep-ghost');
+  buy.title=tr('Вартість: 1 кредит','Cost: 1 credit');buy.innerHTML='<span>'+tr('Купити знімок','Buy imagery')+'</span><span class="deep-cost" aria-hidden="true">1</span>';
+  buy.setAttribute('aria-label',tr('Купити знімок · 1','Buy imagery · 1'));
+  button(ghosts,tr('Позначити ймовірну загрозу','Mark suspected threat'),()=>{marking=!marking;render()},false,marking,'c-sides deep-ghost');
+  if(marking){const hint=document.createElement('p');hint.className='deep-hint';hint.textContent=tr('Торкніться карти, щоб позначити район.','Tap the map to mark a district.');acts.append(hint)}
   if(autoOn)autoTimer=setTimeout(()=>{
    if(document.hidden||document.querySelector('dialog:modal')){render();return}
-   if(total){launch.click();return}
+   if(launchTotal){launch.click();return}
    const cards=[...panel.querySelectorAll('button[aria-pressed="false"]:enabled')].filter(b=>b.classList.contains('target-card'));
    if(cards.length){cards[Math.floor(Math.random()*cards.length)].click();return}
    const next=s.stock.findIndex((count,i)=>count>0&&!fleet[i].surveyOnly&&i!==active);
@@ -332,18 +511,17 @@ export function startDeepstrike(){
    render();
   },1800);
   if(s.wave>1){
-   const heading=document.createElement('h3');heading.textContent=tr('Зведення минулої хвилі','Previous wave reports');panel.append(heading);
-   for(const g of s.surveyReports??[]){const line=document.createElement('p');line.textContent=tr('Розвідка','Survey')+' · '+tr(...surveySectors[g.sector].label)+' · '+tr(...fleet[g.type].name)+' ×'+g.count+' · '+tr('Повернулися','Returned')+' '+(g.count-(g.lost??0))+'/'+g.count;panel.append(line)}
+   let text='',kind='none';
    if(s.partner){
-    const bulletin=document.createElement('p');
-    if(s.partner.blocked)bulletin.textContent=tr('Трамп заблокував партнерську розвідку на цю хвилю.','Trump blocked partner intelligence for this wave.');
-    else if(seen?.wave===s.wave)bulletin.textContent=tr('Партнери помітили ППО. Сектор позначено на шарі розвідки.','Partners spotted air defence. The sector is marked on the intelligence layer.');
-    else bulletin.textContent=tr('Партнери не надіслали нових спостережень.','No new sightings from partners.');
-    panel.append(bulletin);
+    if(s.partner.blocked){kind='blocked';text=tr('Трамп заблокував партнерську розвідку на цю хвилю.','Trump blocked partner intelligence for this wave.')}
+    else if(seen?.wave===s.wave){kind='spotted';text=tr('Партнери помітили ППО. Сектор позначено на шарі розвідки.','Partners spotted air defence. The sector is marked on the intelligence layer.')}
+    else text=tr('Партнери не надіслали нових спостережень.','No new sightings from partners.');
    }
+   const surveyLines=(s.surveyReports??[]).map(g=>tr('Розвідка','Survey')+' · '+tr(...surveySectors[g.sector].label)+' · '+tr(...fleet[g.type].name)+' ×'+g.count+' · '+tr('Повернулися','Returned')+' '+(g.count-(g.lost??0))+'/'+g.count);
+   appendSummary(panel,{reports:s.reports,repairs:s.repairs,bulletin:text,kind,surveys:surveyLines});
    for(const report of s.reports)closeReport=appendReport(panel,report,s.wave-1,tr(...cities[report.i])+' · '+tr(...names[report.i]))??closeReport;
-   for(const repair of s.repairs??[]){const line=document.createElement('p');line.textContent=tr(...cities[repair.i])+' · '+tr(...names[repair.i])+' · '+tr('Ремонт','Repairs')+' · '+repair.previous+'% → '+conditionText(repair.damage,true);panel.append(line)}
-   if(!s.reports.length&&!s.repairs?.length&&!s.surveyReports?.length)panel.append(document.createTextNode(tr('Повідомлень немає','No reports received')));
+   appendRepairs(panel,s.repairs,r=>tr(...cities[r.i])+' · '+tr(...names[r.i]));
+   if(!s.reports.length&&!s.repairs?.length&&!surveyLines.length)appendEmpty(panel);
   }
  }
  document.addEventListener('siege-language',render);

@@ -88,6 +88,7 @@ const icons={
  bulletin:icon('<path d="M3 6.5v3l7 3V3.5z"/><path d="M12.5 6.5v3M5 10l.8 3"/>'),
  doc:icon('<path d="M4 2.5h5.5L12 5v8.5H4z"/><path d="M6 8h4M6 10.5h4"/>'),
  fire:icon('<path d="M8 2.5c.5 2.5 3.5 3.8 3.5 7a3.5 3.5 0 0 1-7 0c0-1.5.8-2.5 1.6-3.2.1 1 .6 1.5 1 1.7C7 6.5 7.2 4.5 8 2.5z"/>'),
+ scout:icon('<circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1"/><path d="M8 1.5V4M8 12v2.5M1.5 8H4M12 8h2.5"/>'),
  wrench:icon('<path d="M10.5 2.5a3 3 0 0 0-2.8 3.9L2.8 11.3a1.3 1.3 0 0 0 1.9 1.9l4.9-4.9a3 3 0 0 0 3.9-2.8l-1.8 1.8-1.7-.4-.4-1.7z"/>')
 };
 export function conditionText(damage,known=false){
@@ -99,10 +100,11 @@ export function conditionText(damage,known=false){
 function segments(before,after){
  return '<span class="dr-seg" aria-hidden="true">'+Array.from({length:10},(_,k)=>'<i class="'+(k*10<after?'on':'')+(k*10<before?' was':'')+'"></i>').join('')+'</span>';
 }
-export function appendSummary(panel,{reports,repairs,bulletin,kind}){
+export function appendSummary(panel,{reports,repairs,bulletin,kind,surveys}){
  const confirmed=reports.filter(r=>r.hit).length,card=document.createElement('section');card.className='dr-summary';
  card.innerHTML='<div class="dr-sum-head">'+icons.doc+'<b>'+tr('Зведення минулої хвилі','Previous wave reports')+'</b></div>'+
   '<div class="dr-counts"><span class="dr-count good"><b>'+confirmed+'</b>'+tr('підтверджено','confirmed')+'</span><span class="dr-count"><b>'+(reports.length-confirmed)+'</b>'+tr('без підтвердження','unconfirmed')+'</span><span class="dr-count warn"><b>'+(repairs?.length??0)+'</b>'+tr('ремонти','repairs')+'</span></div>'+
+  (surveys?.length?'<ul class="dr-surveys" aria-label="'+tr('Розвідка','Survey')+'">'+surveys.map(line=>'<li>'+icons.scout+'<span>'+esc(line)+'</span></li>').join('')+'</ul>':'')+
   (bulletin?'<p class="dr-bulletin" data-kind="'+kind+'">'+icons.bulletin+'<span>'+esc(bulletin)+'</span></p>':'');
  panel.append(card);
 }
@@ -127,7 +129,7 @@ export function appendReport(panel,r,wave,place){
  const head=document.createElement('header');head.className='dr-head';
  head.innerHTML='<span class="dr-source" data-source="'+(sat?'sat':'news')+'">'+(sat?icons.sat:icons.news)+(sat?tr('Супутник','Satellite'):tr('Новини','News'))+'</span>'+
   '<span class="dr-wave">'+tr('Хв. ','W')+wave+'</span>'+
-  '<span class="dr-stamp" data-stamp="'+(r.hit?'hit':sat?'miss':'unknown')+'">'+(r.hit?tr('ПІДТВЕРДЖЕНО ВЛУЧАННЯ','CONFIRMED HIT'):tr('БЕЗ ПІДТВЕРДЖЕННЯ','UNCONFIRMED'))+'</span>';
+  '<span class="dr-stamp" data-stamp="'+(r.hit?'hit':sat?'miss':'unknown')+'">'+(r.hit?tr('ПІДТВЕРДЖЕНО ВЛУЧАННЯ','CONFIRMED HIT')+(r.hits>1?' ×'+r.hits:''):tr('БЕЗ ПІДТВЕРДЖЕННЯ','UNCONFIRMED'))+'</span>';
  article.append(head);
  const title=document.createElement('strong');title.className='dr-place';title.textContent=place;article.append(title);
  if(r.damage!==undefined){
