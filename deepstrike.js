@@ -222,6 +222,8 @@ export function startDeepstrike(){
   const over=s.won||s.trust===0||s.credits<minimumLaunch(s.stock);
   root.innerHTML='<section class="c-card deep-wave-card" data-tone="report" role="dialog" aria-labelledby="deep-report-title"><div class="c-kicker">'+tr('ЗВІТ ДОНОРУ · ХВИЛЯ ','DONOR REPORT · WAVE ')+wave+'</div><h2 id="deep-report-title" tabindex="-1">'+tr('Підсумок хвилі','Wave report')+'</h2></section>';
   const card=root.firstElementChild,invoice=s.invoice;
+  const title=card.querySelector('h2');
+  root.scrollTop=0;title.focus({preventScroll:true});
   if(invoice){
    const line=document.createElement('p');
    line.textContent=(invoice.deal?tr('Угоду підписано · ','Deal accepted · '):'')+tr('Витрати ','Spent ')+invoice.cost+' · '+tr('Виплата ','Payout ')+invoice.payout+(invoice.embargoFee?' · '+tr('Ембарго −','Embargo −')+invoice.embargoFee:'')+' · '+tr('Баланс ','Balance ')+s.credits+' · '+tr('Довіра ','Trust ')+s.trust+'%';
@@ -233,7 +235,6 @@ export function startDeepstrike(){
   if(invoice?.contract!=null)note(sponsorName(invoice.contract)+' · '+(invoice.qualified?tr('Контракт виконано','Contract fulfilled'):tr('Умови не виконано','Terms unmet')));
   const delivery=invoice?.delivery;
   if(delivery)note(tr('Поставка','Delivery')+' · '+tr(...fleet[delivery.type].name)+' ×'+delivery.delivered+' · '+tr('Втрати','Lost')+' '+delivery.lost+' · '+tr('Залишилося','Remaining')+' '+delivery.remaining);
-  reportContents(card);
   if(invoice?.offer&&!invoice.choice){
    const order=invoice.offer;
    const choose=choice=>{
@@ -246,6 +247,7 @@ export function startDeepstrike(){
    for(const [label,choice] of [[tr('Отримати 12 кредитів','Take 12 credits'),'cash'],[tr('Підписати замовлення','Sign production order')+' · '+tr(...fleet[order.type].name)+' ×'+order.remaining+' / '+order.turns+tr(' хвиль',' waves'),'order']]){
     const b=document.createElement('button');b.textContent=label;b.onclick=()=>choose(choice);card.append(b)
    }
+   reportContents(card);
    if(autoOn)autoTimer=setTimeout(()=>choose(s.credits>=40?'order':'cash'),1800);
    return;
   }
@@ -255,8 +257,8 @@ export function startDeepstrike(){
    const missing=document.createElement('p');missing.textContent=tr('Немає незалежного звіту: ','No independent report: ')+[...unreported].map(i=>tr(...cities[i])).join(', ');card.append(missing);
   }
   const next=document.createElement('button');next.textContent=over?tr('Підсумок кампанії','Campaign result'):tr('Наступна хвиля →','Next wave →');
-  next.onclick=()=>{s.reportPending=false;save();render()};card.append(next);
-  root.scrollTop=0;card.querySelector('h2').focus({preventScroll:true});
+  next.onclick=()=>{s.reportPending=false;save();render()};title.after(next);
+  reportContents(card);
   if(autoOn)autoTimer=setTimeout(()=>{if(!document.hidden&&root.contains(next))next.click();else{autoOn=false;render()}},8000);
  }
  function render(){
