@@ -369,6 +369,7 @@ export function startCoalition() {
    '<dl class="c-stats c-stats-over">' + tile(tr('Перегляди','Views'), fmtViews(s.views)) + tile(tr('Хвиль','Waves'), s.wave) + tile(tr('Комбо','Combo'), '×' + s.bestCombo) + '</dl>' +
    '<p class="c-line">' + wavesWord(s.wave) + tr('. ', '. ') + tr(fmtViews(s.views) + ' переглядів. 0 змін. ', fmtViews(s.views) + ' views. 0 changes. ') + ending(s) + '</p>' +
    (s.assisted ? '<p class="c-note">' + tr('Забіг з автогрою','Run with autoplay') + '</p>' : '') +
+   '<p class="coffee-note">' + tr('Посміялися чи просто залипли ще на одну хвилю?', 'Had a laugh or stayed for one more wave?') + ' <a href="https://buymeacoffee.com/bobjer" target="_blank" rel="noopener noreferrer">' + tr('Пригостіть мене кавою ☕', 'Buy me a coffee ☕') + '</a></p>' +
    levelField(preferredLevel(), true) + '<div class="c-actions"><button type="button" class="c-ghost" data-action="share">' + tr('Поділитися','Share') + '</button><button type="button" data-action="fresh">' + tr('Ще раз','Play again') + '</button></div>' +
    '<small class="c-share-status" role="status">' + sharing + '</small></section>';
  }
