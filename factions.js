@@ -3,7 +3,7 @@ import './factions.css';
 
 const sideKey = 'pop-side-v1';
 export const read = key => {try{return JSON.parse(localStorage.getItem(key))}catch{return null}};
-export const write = (key,value) => {try{localStorage.setItem(key,JSON.stringify(value))}catch{}};
+export const write = (key,value) => {try{localStorage.setItem(key,JSON.stringify(value));return true}catch{return false}};
 export const preferredLevel = () => read('pop-level-v1') ?? 'normal';
 export const rememberLevel = value => write('pop-level-v1',value);
 export function levelField(value, next = false) {
@@ -13,7 +13,7 @@ export function levelField(value, next = false) {
  const label = next ? tr('Складність нової гри','New game difficulty') : tr('Складність','Difficulty');
  return '<label class="side-level">' + label + select.outerHTML + '</label>';
 }
-const flag = '<svg viewBox="0 0 100 100" aria-hidden="true"><path fill="currentColor" d="m50 5 36 16v27c0 23-17 37-36 46-19-9-36-23-36-46V21z"/><path fill="#27251c" d="m50 21 6 13 15 2-11 10 3 15-13-7-13 7 3-15-11-10 15-2zM31 65l19 9 19-9v5l-19 10-19-10z"/></svg>';
+const paperclip = '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="2" y="2" width="44" height="44" rx="11" fill="#29251e"/><path d="m18 28 12-12a3 3 0 0 1 4 4L19 35a6 6 0 0 1-8-9l17-17a8 8 0 0 1 12 11L22 38" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>';
 export const languageButton = () => '<button type="button" data-language>'+tr('English','Українська')+'</button>';
 export async function changeSide(){
   if(document.querySelector('.faction-picker:modal')) return;
@@ -43,7 +43,7 @@ async function pickSide(restart){
   const render=()=>{
     dialog.innerHTML='<div class="faction-head"><span>POP SEASON</span>'+languageButton()+'</div><h1 id="faction-title">'+tr('Оберіть сторону','Choose your side')+'</h1>'+(restart?'<p class="restart-warning">'+tr('Увесь прогрес збережених партій обох сторін буде втрачено. Нова гра почнеться з першої хвилі.','All saved progress for both factions will be lost. The new game starts at wave one.')+'</p>':'')+levelField(level,true)+'<div class="faction-options">'+
       '<button data-side="coalition"><img src="/coalition-koala.svg" alt=""><small>'+tr('НАСТУП','OFFENCE')+'</small><strong>'+tr('Коаліція охочих','Coalition of the Willing')+'</strong><span>'+tr('Зберіть зграю, виконайте контракт і переконайте спонсорів оплатити наступну хвилю.','Build a flock, deliver the contract and convince the sponsors to fund another wave.')+'</span></button>'+
-      '<button data-side="bridge">'+flag+'<small>'+tr('ОБОРОНА','DEFENCE')+'</small><strong>'+tr('Гарнізон скрєп','Garrison of Iron Values')+'</strong><span>'+tr('Тримайте міст, латайте полотно й освоюйте бюджет.','Hold the bridge, patch the road and burn through the budget.')+'</span></button></div>';
+      '<button data-side="bridge">'+paperclip+'<small>'+tr('ОБОРОНА','DEFENCE')+'</small><strong>'+tr('Гарнізон','Garrison')+'</strong><span>'+tr('Тримайте міст, латайте полотно й освоюйте бюджет.','Hold the bridge, patch the road and burn through the budget.')+'</span></button></div>';
     if (restart) {
       const body=document.createElement('div'); body.className='faction-body'; body.append(...dialog.children);dialog.append(body);
       dialog.insertAdjacentHTML('beforeend','<footer class="restart-actions"><button type="button" data-cancel>'+tr('Скасувати','Cancel')+'</button><button type="button" data-confirm>'+tr('Почати спочатку','Start over')+'</button></footer>');

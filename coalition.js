@@ -1,3 +1,4 @@
+import {watchRelease} from './release-notice.js';
 import {createCoach} from './coach.js';
 import {coalitionHelp} from './coach-help.js';
 import {tr} from './language.js';
@@ -38,7 +39,7 @@ export function startCoalition() {
  const root = document.createElement('section');
  root.className = 'coalition'; document.body.classList.add('playing-coalition'); document.body.append(root);
  const music = createMusic(); music.arm();
- const save = () => { s.elapsed = elapsed; write(saveKey, s) };
+ const save = () => { s.elapsed = elapsed; return write(saveKey, s) };
  window.addEventListener('pagehide', save);
  const zones = () => cameraSubjects(s).map(subjectName);
  const orbitalName = () => tr('СУПУТНИК','SATELLITE');
@@ -637,5 +638,12 @@ export function startCoalition() {
   console.error('Coalition 3D view failed', error); stage = null;
   window.dispatchEvent(new Event('game-ready'));
  }
+ watchRelease(() => {
+  autoOn = false;
+  pause();
+  if (!save()) { refreshAuto(); return false }
+  location.reload();
+  return true;
+ }, () => true);
  requestAnimationFrame(view);
 }
