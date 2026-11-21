@@ -1,3 +1,4 @@
+import {productionOffer,deliverProduction} from './coalition-rules.js';
 import {launchPrices,openingFunds,openingTrust,dealAdvance,dealTrustCost,minimumLaunch,waveCost,settleWave} from './deep-economy.js';
 import {coalitionHeader} from './coalition-header.js';
 import {beginDiplomacy,recordLaunch,deliveryChance} from './deep-supply.js';
@@ -168,6 +169,17 @@ export function startDeepstrike(){
   s.trust=result.trust;s.credits+=result.payout-result.embargoFee;
   s.reportPending=true;
   s.invoice={...result,wave:s.wave,cost:s.launchCost??0};s.launchCost=0;
+  const contract=s.contractSource??0;
+  const qualified=!deal&&s.reports.some(r=>r.hit&&r.source===contract);
+  const invoice=s.invoice;
+  invoice.contract=contract;
+  invoice.qualified=qualified;
+  if(qualified){
+   const offer=productionOffer(s,4);
+   if(offer)invoice.offer=offer;
+   else{s.credits+=12;invoice.payout+=12}
+  }
+  deliverProduction(s,Math.random,invoice);
   s.lastTracks=s.flights;s.wave++;s.started=0;s.flights=[];s.diplomacy=beginDiplomacy(s.wave,s.diplomacy.embargoThrough);s.partner=partnerTurn(s.partner,s.wave);intelligence();save();
  }
  function reportContents(panel){
@@ -183,6 +195,7 @@ export function startDeepstrike(){
    appendRepairs(panel,s.repairs,r=>tr(...cities[r.i])+' · '+tr(...names[r.i]));
    if(!s.reports.length&&!s.repairs?.length&&!surveyLines.length)appendEmpty(panel);
   }
+ const sponsorName=id=>id===1?tr('Супутникове агентство','Satellite agency'):tr('Редакція новин','News desk');
  function showWaveReport(){
   const wave=s.invoice?.wave??s.wave-1;
   const over=s.trust===0||s.credits<minimumLaunch(s.stock);
@@ -193,7 +206,26 @@ export function startDeepstrike(){
    line.textContent=(invoice.deal?tr('Угоду підписано · ','Deal accepted · '):'')+tr('Витрати ','Spent ')+invoice.cost+' · '+tr('Виплата ','Payout ')+invoice.payout+(invoice.embargoFee?' · '+tr('Ембарго −','Embargo −')+invoice.embargoFee:'')+' · '+tr('Баланс ','Balance ')+s.credits+' · '+tr('Довіра ','Trust ')+s.trust+'%';
    card.append(line);
   }
+  const note=text=>{const p=document.createElement('p');p.textContent=text;card.append(p)};
+  if(invoice?.contract!=null)note(sponsorName(invoice.contract)+' · '+(invoice.qualified?tr('Контракт виконано','Contract fulfilled'):tr('Умови не виконано','Terms unmet')));
+  const delivery=invoice?.delivery;
+  if(delivery)note(tr('Поставка','Delivery')+' · '+tr(...fleet[delivery.type].name)+' ×'+delivery.delivered+' · '+tr('Втрати','Lost')+' '+delivery.lost+' · '+tr('Залишилося','Remaining')+' '+delivery.remaining);
   reportContents(card);
+  if(invoice?.offer&&!invoice.choice){
+   const order=invoice.offer;
+   const choose=choice=>{
+    if(invoice.choice)return;
+    invoice.choice=choice;
+    if(choice==='cash'){s.credits+=12;invoice.payout+=12}
+    else{s.lastOrderWave=wave;s.production={...order,turnsLeft:order.turns};deliverProduction(s,Math.random,invoice)}
+    save();render();
+   };
+   for(const [label,choice] of [[tr('Отримати 12 кредитів','Take 12 credits'),'cash'],[tr('Підписати замовлення','Sign production order')+' · '+tr(...fleet[order.type].name)+' ×'+order.remaining+' / '+order.turns+tr(' хвиль',' waves'),'order']]){
+    const b=document.createElement('button');b.textContent=label;b.onclick=()=>choose(choice);card.append(b)
+   }
+   if(autoOn)autoTimer=setTimeout(()=>choose(s.credits>=40?'order':'cash'),1800);
+   return;
+  }
   const unreported=new Set((s.lastTracks??[]).filter(f=>!f.survey).map(f=>f.i));
   for(const r of s.reports)unreported.delete(r.i);
   if(unreported.size){
@@ -245,6 +277,11 @@ export function startDeepstrike(){
    panel.textContent=s.trust===0?tr('Спонсори закрили програму.','Sponsors withdrew funding.'):tr('Бюджету не вистачає на наступну хвилю.','The budget cannot fund another wave.');
    button(panel,tr('Нова кампанія','New campaign'),()=>{if(write(key,null))location.reload()});
    return;
+  }
+  if(!flying){
+   const heading=document.createElement('div');heading.className='label';heading.textContent=tr('Контракт спонсора · оберіть підтвердження','Sponsor contract · choose the evidence');treasury.append(heading);
+   for(const id of [0,1])button(treasury,sponsorName(id)+' · +12',()=>{s.contractSource=id;save();render()},false,(s.contractSource??0)===id,'c-sides');
+   if(s.production){const p=document.createElement('p');p.textContent=tr('У виробництві','In production')+' · '+tr(...fleet[s.production.type].name)+' ×'+s.production.remaining;treasury.append(p)}
   }
   const embargo=s.wave<=s.diplomacy.embargoThrough;
   if(embargo||s.diplomacy.talks){
@@ -579,7 +616,9 @@ export function startDeepstrike(){
     return;
    }
    const cards=[...panel.querySelectorAll('button[aria-pressed="false"]:enabled')].filter(b=>b.classList.contains('target-card'));
-   if(cards.length){cards[Math.floor(Math.random()*cards.length)].click();return}
+   if(cards.length&&s.credits>=5+launchPrices[active]){cards[Math.floor(Math.random()*cards.length)].click();return}
+   if(!s.stock[6]&&s.credits>=7){s.stock[6]+=5;s.credits--}
+   if(s.stock[6]>0&&s.credits>=6){(surveys[sector]??={})[6]=1;save();render();return}
    const next=s.stock.findIndex((count,i)=>count>0&&!fleet[i].surveyOnly&&i!==active);
    if(next>=0){active=next;visible.fill(true)}else autoOn=false;
    render();

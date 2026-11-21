@@ -191,14 +191,8 @@ export function launch(s, random = Math.random) {
     report.cameraLoss = {camera:Math.floor(random()*3), at:Math.round(CFG.lead+1100+random()*Math.max(0,end-CFG.lead-1100))};
   }
   // Keep offering the first contract from wave 16 until a payable shot earns it.
-  const firstOrderChance = s.wave >= 16 ? 1 : Math.min(.65, .25 + .03 * (s.wave - 1));
-  const orderChance = s.lastOrderWave ? .17 : firstOrderChance;
-  if (!s.production && random() < orderChance) {
-    const turns = 5 + Math.floor(random() * 6);
-    const type = Math.floor(random() * costs.length);
-    const batch = 2 + Math.floor(random() * (type === 0 ? 4 : 2));
-    report.orderOffer = {country: Math.floor(random() * 3), type, turns, remaining: turns * batch};
-  }
+  const order = productionOffer(s, costs.length, random);
+  if (order) report.orderOffer = order;
   report.cuts = [{time:0,camera:s.cam === 4 ? 3 : s.cam}];
   s.report = report; s.captures = []; s.live = { resolved: [], pressMs: 0, stamps: 0 };
   s.stock = emptyStock(); s.bought = emptyStock();
@@ -324,16 +318,27 @@ function drawChance(s, result, random) {
 }
 
 // Each instalment supplies the following wave, including after a signed deal.
-function deliverProduction(s, random) {
+export function productionOffer(s, typeCount, random = Math.random) {
+  const firstOrderChance = s.wave >= 16 ? 1 : Math.min(.65, .25 + .03 * (s.wave - 1));
+  const orderChance = s.lastOrderWave ? .17 : firstOrderChance;
+  if (!s.production && random() < orderChance) {
+    const turns = 5 + Math.floor(random() * 6);
+    const type = Math.floor(random() * typeCount);
+    const batch = 2 + Math.floor(random() * (type === 0 ? 4 : 2));
+    return {country: Math.floor(random() * 3), type, turns, remaining: turns * batch};
+  }
+}
+
+export function deliverProduction(s, random, report = s.report) {
   const order = s.production;
   if (!order) return;
   const planned = Math.ceil(order.remaining / order.turnsLeft);
   const lost = planned > 1 && random() < .35 ? 1 : 0;
-  const delivered = Math.min(planned - lost, CFG.cap - s.stock[order.type]);
+  const delivered = Math.min(planned - lost, Math.max(0, CFG.cap - s.stock[order.type]));
   s.stock[order.type] += delivered;
   order.remaining -= delivered + lost;
   order.turnsLeft = Math.max(1, order.turnsLeft - 1);
-  s.report.delivery = {type: order.type, delivered, lost, remaining: order.remaining};
+  report.delivery = {type: order.type, delivered, lost, remaining: order.remaining};
   if (!order.remaining) delete s.production;
 }
 
