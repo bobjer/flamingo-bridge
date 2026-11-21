@@ -136,9 +136,8 @@ export function appendReport(panel,r,wave,place){
   const line=document.createElement('div');line.className='dr-damage';
   line.innerHTML='<small>'+r.previous+'% → '+esc(conditionText(r.damage,true))+'</small>'+segments(r.previous,r.damage);article.append(line);
  }
- let photo;
  if(sat){
-  const frame=r.i===0?document.createElement('canvas'):comparison(r.i,wave,r.hit);photo=frame;
+  const frame=comparison(r.i,wave,r.hit);
   const figure=document.createElement('figure');figure.className='dr-frame';
   const button=document.createElement('button');
   button.className='deep-photo';button.setAttribute('aria-label',tr('Збільшити порівняльний знімок','Enlarge comparison image'));button.append(frame);figure.append(button);
@@ -149,16 +148,15 @@ export function appendReport(panel,r,wave,place){
    const copy=document.createElement('canvas');copy.width=frame.width;copy.height=frame.height;copy.getContext('2d').drawImage(frame,0,0);dialog.append(close,copy);document.body.append(dialog);dialog.onclose=()=>dialog.remove();dialog.showModal();
   };
  }
- if(r.i===0&&(r.fire||sat)){
-  const clips=document.createElement('div');
-  if(r.fire){
-  const label=document.createElement('p');label.className='dr-clip-label';label.innerHTML=icons.fire+'<span>'+tr('Пожежа · відео місцевих · ігрова реконструкція','Fire · eyewitness clips · game reconstruction')+'</span>';article.append(label);
-  clips.className='deep-clips';article.append(clips);
-  }else article.append(clips);
-  let dispose;
-  import('./fire-replay.js').then(({mountFireReplay})=>{
-   if(clips.isConnected)dispose=mountFireReplay(clips,r.fireSeed??(wave*2654435761>>>0),{frame:photo,hit:r.hit,burning:!!r.fire,showClips:!!r.fire,allViews:!!r.demo,impact:r.impact});
-  });
-  return ()=>dispose?.();
+ if(r.hit||sat){
+  const label=document.createElement('p');label.className='dr-clip-label';
+  label.innerHTML=icons.fire+'<span>'+(r.hit?tr('Повтор удару · 3D-реконструкція гри','Strike replay · 3D game reconstruction'):tr('Повтор перехоплення · 3D-реконструкція гри','Interception replay · 3D game reconstruction'))+'</span>';
+  const clip=document.createElement('div');clip.className='dr-clip';article.append(label,clip);
+  let dispose,gone=false;
+  import('./deep-replay.js').then(({mountStrikeReplay})=>{
+   if(gone||!clip.isConnected)return;
+   dispose=mountStrikeReplay(clip,{site:r.i,seed:r.fireSeed??((wave*2654435761+r.i*40503)>>>0),hit:!!r.hit,hits:r.hits??1,impact:r.impact,wave,placeLabel:place});
+  }).catch(()=>{});
+  return ()=>{gone=true;dispose?.()};
  }
 }
