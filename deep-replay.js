@@ -60,9 +60,10 @@ export function mountStrikeReplay(host,{site=0,seed=1,hit=true,hits=1,impact,wav
  const place=placeLabel;
 
  const root=document.createElement('div');root.className='dr-replay';
- root.innerHTML='<div class="dr-screen"><canvas width="'+W+'" height="'+H+'"></canvas></div>'+
-  '<div class="dr-ctrl"><button type="button" class="dr-btn dr-play"></button><div class="dr-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div></div>'+
+ root.innerHTML=
   '<div class="dr-export"><button type="button" class="dr-btn" data-share></button><a class="dr-btn" download hidden></a></div>'+
+  '<div class="dr-screen"><canvas width="'+W+'" height="'+H+'"></canvas></div>'+
+  '<div class="dr-ctrl"><button type="button" class="dr-btn dr-play"></button><div class="dr-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div></div>'+
   '<video class="dr-preview" controls playsinline hidden></video>'+
   '<div class="dr-share"><button type="button" class="dr-btn" data-copy></button><a class="dr-btn" target="_blank" rel="noopener noreferrer">X</a><a class="dr-btn" target="_blank" rel="noopener noreferrer">Telegram</a><a class="dr-btn" target="_blank" rel="noopener noreferrer">Facebook</a></div>'+
   '<small class="dr-status" role="status"></small>';

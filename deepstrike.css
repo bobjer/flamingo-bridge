@@ -349,3 +349,14 @@
 .dr-preview[hidden]{display:none}
 .dr-status{min-height:1em;font:500 11px/1.35 var(--mono);color:var(--soft)}
 @media(max-width:420px){.dr-export .dr-btn,.dr-share .dr-btn{flex-basis:calc(50% - 6px);padding:0 8px}}
+
+.deep-board:has(>.deep-wave-card){overflow-y:auto;scrollbar-gutter:stable;scrollbar-color:var(--soft) var(--bg)}
+.deep-board>.deep-wave-card{overflow:visible;overscroll-behavior:auto}
+.deep-wave-card .dr-screen{width:min(100%,72dvh);justify-self:center}
+@media(min-width:960px){
+ .deep-board>.deep-wave-card{width:min(1080px,calc(100% - 40px))}
+ .deep-wave-card .deep-report:has(.dr-clip){display:grid;grid-template-columns:minmax(210px,1fr) minmax(0,1.7fr);column-gap:20px;align-items:start}
+ .deep-wave-card .deep-report:has(.dr-clip)>*{grid-column:1}
+ .deep-wave-card .deep-report:has(.dr-clip)>.dr-clip-label{grid-column:2;grid-row:1}
+ .deep-wave-card .deep-report:has(.dr-clip)>.dr-clip{grid-column:2;grid-row:2 / span 5;min-width:0}
+}
