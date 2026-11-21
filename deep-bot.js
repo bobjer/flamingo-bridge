@@ -7,6 +7,18 @@ const cheapestStrike=Math.min(...launchPrices.slice(0,surveyType));
 const surveyOnlyBudget=3;
 const stockpileReserve=2*(overhead+embargoFee)+surveyOnlyBudget+cheapestStrike;
 
+export function planRecoveryStrike({credits,targets,embargo}){
+ if(credits<7||credits>=overhead+cheapestStrike)return null;
+ let cheapest=null;
+ for(const {id,types} of targets){
+  const type=types[0];
+  if(type!==undefined&&(!cheapest||launchPrices[type]<launchPrices[cheapest.type]))cheapest={id,type};
+ }
+ if(!cheapest)return null;
+ const advance=overhead+launchPrices[cheapest.type]+(embargo?embargoFee:0)-credits;
+ return {...cheapest,advance};
+}
+
 export function planDeepWave({credits,trust,stock,targets,sectorCount,firstSector,canStockpile,embargo=false}){
  const remaining=[...stock];
  const strikes=new Map();

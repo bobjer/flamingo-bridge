@@ -1,6 +1,6 @@
 import {productionOffer,deliverProduction} from './coalition-rules.js';
 import {launchPrices,openingFunds,openingTrust,dealAdvance,dealTrustCost,minimumLaunch,waveCost,settleWave} from './deep-economy.js';
-import {planDeepWave} from './deep-bot.js';
+import {planDeepWave,planRecoveryStrike} from './deep-bot.js';
 import {coalitionHeader} from './coalition-header.js';
 import {beginDiplomacy,recordLaunch,deliveryChance} from './deep-supply.js';
 import {partnerTurn,patrolSectors} from './deep-partners.js';
@@ -141,6 +141,12 @@ export function startDeepstrike(){
  const droneCount=()=>[...selected.values()].reduce((a,row)=>a+sumRow(row),0);
  const assigned=type=>[...selected.values()].reduce((n,row)=>n+(row[type]??0),0)+Object.values(surveys).reduce((n,row)=>n+(row[type]??0),0);
  const available=type=>s.stock[type]-assigned(type);
+ const planCost=()=>waveCost(fleet.map((_,id)=>assigned(id)));
+ function repairForAutoplay(cost){
+  const strikeCost=minimumLaunch(s.stock.slice(0,-1));
+  const reserve=cost||(strikeCost<=s.credits?strikeCost:minimumLaunch(s.stock));
+  return Math.min(25,Math.max(0,s.credits-reserve)*5);
+ }
  const repairPrice=amount=>Math.ceil(amount/5);
  function repairBase(amount){
   s.base.damage-=amount;
@@ -155,6 +161,17 @@ export function startDeepstrike(){
  const radius=(type=active)=>Math.min(fleet[type].limit,bridgeReach+(fleet[type].limit-69)*.8+(s.wave-1)*5);
  const distance=i=>Math.hypot(points[i][0]-7,points[i][1]-48);
  const inRange=(i,type)=>distance(i)<=radius(type);
+ const autoTargets=()=>points.flatMap((_,id)=>{
+  const damage=s.conditions[id]?.damage??0;
+  const types=fleet.flatMap((unit,type)=>!unit.surveyOnly&&s.stock[type]>0&&inRange(id,type)?[type]:[])
+   .sort((a,b)=>launchPrices[a]-launchPrices[b]);
+  if(!playable[id]||damage===100||!types.length)return [];
+  const objective=objectives.includes(id);
+  return [{id,types,objective,groupSize:objective&&damage<75?3:2}];
+ }).sort((a,b)=>Number(b.objective)-Number(a.objective)||a.types.length-b.types.length);
+ const recoveryStrike=targets=>s.recoveryAdvance?null:
+  planRecoveryStrike({credits:s.credits,targets,embargo:s.wave<=s.diplomacy.embargoThrough});
+ const campaignOver=()=>s.won||s.trust===0||(s.credits<minimumLaunch(s.stock)&&!recoveryStrike(autoTargets()));
  // One shared route per site; a mixed group avoids the curved Starbound arc.
  const knownZones=()=>activeZones(s.trace);
  const sitePath=(i,row,flags)=>boardPath(i,Object.keys(row).map(Number).find(type=>type!==4)??4,flags,knownZones());
@@ -290,7 +307,7 @@ export function startDeepstrike(){
  const sponsorName=id=>id===1?tr('Супутникове агентство','Satellite agency'):tr('Редакція новин','News desk');
  function showWaveReport(){
   const wave=s.invoice?.wave??s.wave-1;
-  const over=s.won||s.trust===0||s.credits<minimumLaunch(s.stock);
+  const over=campaignOver();
   root.innerHTML='<section class="c-card deep-wave-card" data-tone="report" role="dialog" aria-labelledby="deep-report-title"><div class="c-kicker">'+tr('ЗВІТ ДОНОРУ · ХВИЛЯ ','DONOR REPORT · WAVE ')+wave+'</div><h2 id="deep-report-title" tabindex="-1">'+tr('Підсумок хвилі','Wave report')+'</h2></section>';
   const card=root.firstElementChild,invoice=s.invoice;
   const title=card.querySelector('h2');
@@ -301,6 +318,7 @@ export function startDeepstrike(){
    card.append(line);
   }
   const note=text=>{const p=document.createElement('p');p.textContent=text;card.append(p)};
+  if(s.recoveryAdvance?.wave===wave)note(tr('Аварійний аванс спонсора +','Emergency sponsor advance +')+s.recoveryAdvance.amount);
   if(s.won)note(tr('Перемога! Промисловість та енергетика зупинені.','Victory! All factories and energy sites are offline.'));
   if(invoice?.incident){const e=invoice.incident;note(tr('Удар по базі','Base struck')+' · '+tr('Пошкодження','Damage')+' '+s.base.damage+'% · '+tr('Втрачено зі складу','Stock lost')+' '+e.lost+' ('+e.loss+'%)')}
   if(invoice?.contract!=null)note(sponsorName(invoice.contract)+' · '+(invoice.qualified?tr('Контракт виконано','Contract fulfilled'):tr('Умови не виконано','Terms unmet')));
@@ -375,7 +393,7 @@ export function startDeepstrike(){
    line.textContent=tr('Хвиля ','Wave ')+r.wave+' · '+tr('Витрати ','Spent ')+r.cost+' · '+(r.deal?tr('Аванс ','Advance '):tr('Виплата ','Payout '))+r.payout+(r.embargoFee?' · '+tr('Ембарго −','Embargo −')+r.embargoFee:'')+' · '+tr('Довіра ','Trust ')+(r.trustChange>0?'+':'')+r.trustChange;
    treasury.append(line);
   }
-  if(!flying&&(s.won||s.trust===0||s.credits<minimumLaunch(s.stock))){
+  if(!flying&&campaignOver()){
    autoOn=false;root.querySelector('[data-auto]').disabled=true;
    root.querySelector('.deep-phase-chip').textContent=s.won?tr('Перемога','Victory'):tr('Гру завершено','Game over');
    panel.textContent=s.won?tr('Перемога! Усі заводи та енергетичні об’єкти одночасно зупинені.','Victory! All factories and energy sites are offline together.'):s.trust===0?tr('Спонсори закрили програму.','Sponsors withdrew funding.'):tr('Бюджету не вистачає на наступну хвилю.','The budget cannot fund another wave.');
@@ -383,6 +401,24 @@ export function startDeepstrike(){
    return;
   }
   if(!flying){
+   const guide=document.createElement('details'),guideTitle=document.createElement('summary');
+   guideTitle.textContent=tr('Як планує автогра','How autoplay plans');
+   guide.append(guideTitle);
+   for(const tip of [
+    tr('«Заповнити план як автогра» підставляє розклад бортів. Перевірте або змініть його перед запуском.',
+       'Fill plan like autoplay assigns aircraft. Review or edit the plan before launching.'),
+    tr('Для перемоги одночасно зупиніть усі об’єкти зі списку «До перемоги». Спершу обирайте доступні цілі зі списку. Розподіліть дешевші борти між кількома цілями, тоді підсильте групи.',
+       'To win, take all sites in the victory list offline together. Prioritize reachable sites from that list. Spread cheaper aircraft across several targets, then reinforce the groups.'),
+    tr('Якщо є лише 1–5 ударних бортів, після прибуткової хвилі можна один раз відправити лише розвідку й дочекатися поставки. Автогра робить це за довіри від 60% і залишку від 97 кредитів. Після розвідки знову завдайте удару, щоб отримати виплату за підтвердження.',
+       'If only 1–5 strike aircraft are ready, use one survey wave after a profitable wave to wait for deliveries. Autoplay does this from 60% trust and 97 credits. Strike again after the survey wave to earn confirmation payouts.'),
+    tr('Після оплати розвідки й чинного ембарго залиште 13 кредитів на дешевий удар. За 7–12 кредитів можна один раз за кампанію взяти аварійний аванс і одразу запустити найдешевший доступний ударний борт.',
+       'After paying for survey and an active embargo, leave 13 credits for a cheap strike. At 7–12 credits, you can take a one-time emergency advance to launch the cheapest reachable strike aircraft immediately.'),
+    tr('Від 75% пошкодження відремонтуйте базу перед звичайним вильотом, якщо вистачає коштів. За дефіциту беріть гроші за контракт, а за запасу від 65 кредитів автогра обирає виробництво. Після звіту натисніть «Наступна хвиля».',
+       'From 75% damage, repair the base before a regular launch if you can afford it. Take contract cash when funds are tight. From 65 credits, autoplay chooses production. After the report, select Next wave.')
+   ]){
+    const line=document.createElement('p');line.textContent=tip;guide.append(line);
+   }
+   treasury.append(guide);
    const status=document.createElement('p');
    status.textContent=tr('До перемоги · зупинено ','Victory objective · offline ')+offline()+'/'+objectives.length+' · '+objectives.map(i=>tr(...names[i])+' '+(s.conditions[i]?.damage??0)+'%').join(', ');
    treasury.append(status);
@@ -392,8 +428,12 @@ export function startDeepstrike(){
    treasury.append(info);
    const hint=document.createElement('small');hint.textContent=tr('Переїзд скидає бонус і захищає склад на одну хвилю. Удар можливий, поки працює ворожий аеродром або пускова. У парну хвилю переїзду місцеву поставку пропущено. При 100% пошкодження місцеве виробництво зупиняється.','Moving resets the bonus and protects stock for one wave. A working enemy airfield or launcher is required for a counterstrike. Moving on an even wave skips local supply. At 100% damage local production stops.');treasury.append(hint);
    button(treasury,tr('Перемістити базу','Move base'),()=>{base.station=3-base.station;base.established=false;base.moved=true;save();render()},base.moved);
-   const repair=Math.min(25,base.damage),fee=repairPrice(repair);
-   if(repair)button(treasury,tr('Ремонт','Repair')+' '+repair+'% · '+fee+tr(' кр.',' cr.'),()=>{repairBase(repair);save();render()},fee>s.credits);
+   const repair=Math.min(25,base.damage);
+   const repairButton=(amount,label)=>button(treasury,label+' '+amount+'% · '+repairPrice(amount)+tr(' кр.',' cr.'),
+    ()=>{repairBase(amount);save();render()},repairPrice(amount)>s.credits);
+   if(repair)repairButton(repair,tr('Ремонт','Repair'));
+   const budgetedRepair=base.damage>=75?repairForAutoplay(planCost()):0;
+   if(budgetedRepair>0&&budgetedRepair<repair)repairButton(budgetedRepair,tr('Ремонт зі збереженням резерву','Repair while keeping launch reserve'));
    const heading=document.createElement('div');heading.className='label';heading.textContent=tr('Контракт спонсора · оберіть підтвердження','Sponsor contract · choose the evidence');treasury.append(heading);
    for(const id of [0,1])button(treasury,sponsorName(id)+' · +12',()=>{s.contractSource=id;save();render()},false,(s.contractSource??0)===id,'c-sides');
    if(s.production){const p=document.createElement('p');p.textContent=tr('У виробництві','In production')+' · '+tr(...fleet[s.production.type].name)+' ×'+s.production.remaining;treasury.append(p)}
@@ -704,7 +744,6 @@ export function startDeepstrike(){
   }
   const acts=document.createElement('div');acts.className='deep-actions';panel.append(acts);
   const ghosts=document.createElement('div');ghosts.className='deep-ghosts';
-  const planCost=()=>waveCost(fleet.map((_,id)=>assigned(id)));
   const cost=planCost();
   function launchWave(){
    const cost=planCost();
@@ -737,9 +776,43 @@ export function startDeepstrike(){
    for(const sectorKey of Object.keys(surveys))delete surveys[sectorKey];
    selected.clear();marking=false;s.started=Date.now();save();render();
   }
+  function launchRecovery({id,type,advance}){
+   s.credits+=advance;
+   s.recoveryAdvance={wave:s.wave,amount:advance};
+   selected.set(id,{[type]:1});
+   launchWave();
+  }
+  function botPlan(targets){
+   const firstSector=((s.lastAutoSurvey??-1)+1)%surveySectors.length;
+   const previousFlights=s.lastTracks??[];
+   const previousSurveyOnly=previousFlights.length>0&&previousFlights.every(f=>f.survey);
+   const invoice=s.invoice;
+   const previousWaveProfitable=invoice?.wave===s.wave-1&&invoice.payout>invoice.cost+invoice.embargoFee;
+   const canStockpile=previousWaveProfitable&&!previousSurveyOnly&&s.base.damage<100&&(!s.base.moved||s.wave%2!==0);
+   return {firstSector,...planDeepWave({credits:s.credits,trust:s.trust,stock:s.stock,targets,
+    sectorCount:surveySectors.length,firstSector,canStockpile,embargo})};
+  }
+  function applyBotPlan(plan){
+   for(const [id,row] of plan.strikes)selected.set(id,row);
+   Object.assign(surveys,plan.surveys);
+   if(Object.keys(plan.surveys).length)s.lastAutoSurvey=plan.firstSector;
+  }
   const launch=button(acts,tr('Запустити хвилю','Launch wave')+' ('+launchTotal+')',launchWave,!launchTotal||s.credits<cost);
   launch.className='c-start deep-launch';
   launch.innerHTML='<span>'+tr('Запустити хвилю','Launch wave')+'</span><span class="deep-pill">'+launchTotal+' · '+cost+' '+tr('кр.','cr.')+'</span>';
+  if(!launchTotal&&!autoOn){
+   const targets=autoTargets();
+   const recovery=recoveryStrike(targets);
+   if(recovery){
+    const label=tr('Аварійний аванс +','Emergency advance +')+recovery.advance+' · '+tr('Запустити','Launch')+' '+tr(...fleet[recovery.type].name)+' → '+tr(...cities[recovery.id]);
+    button(acts,label,()=>launchRecovery(recovery),false,undefined,'c-sides');
+   }else{
+    const plan=botPlan(targets);
+    if(plan.strikes.size||Object.keys(plan.surveys).length){
+     button(acts,tr('Заповнити план як автогра','Fill plan like autoplay'),()=>{applyBotPlan(plan);save();render()},false,undefined,'c-sides');
+    }
+   }
+  }
   if(s.diplomacy.talks)button(acts,tr('Прийняти умови Трампа','Accept Trump’s deal')+' · +'+dealAdvance+' / −'+dealTrustCost+'% · '+tr('пропустити хвилю','skip wave'),()=>{
    selected.clear();for(const k of Object.keys(surveys))delete surveys[k];
    finish(true);render();
@@ -752,36 +825,19 @@ export function startDeepstrike(){
   if(marking){const hint=document.createElement('p');hint.className='deep-hint';hint.textContent=tr('Торкніться карти, щоб позначити район.','Tap the map to mark a district.');acts.append(hint)}
   if(autoOn)autoTimer=setTimeout(()=>{
    if(document.hidden||document.querySelector('dialog:modal')){render();return}
+   const targets=launchTotal?[]:autoTargets();
+   const recovery=recoveryStrike(targets);
+   if(recovery){launchRecovery(recovery);return}
    if(s.base.damage>=75){
-    const strikeCost=minimumLaunch(s.stock.slice(0,-1));
-    const reserve=cost||(strikeCost<=s.credits?strikeCost:minimumLaunch(s.stock));
-    const repair=Math.min(25,Math.max(0,s.credits-reserve)*5);
+    const repair=repairForAutoplay(cost);
     if(repair){repairBase(repair);save()}
    }
    if(launchTotal){
     if(!launch.disabled&&fleet.every((_,id)=>available(id)>=0)){launchWave();return}
     autoOn=false;render();return;
    }
-   const targets=points.flatMap((_,id)=>{
-    const damage=s.conditions[id]?.damage??0;
-    const types=fleet.flatMap((unit,type)=>!unit.surveyOnly&&s.stock[type]>0&&inRange(id,type)?[type]:[])
-     .sort((a,b)=>launchPrices[a]-launchPrices[b]);
-    if(!playable[id]||damage===100||!types.length)return [];
-    const objective=objectives.includes(id);
-    return [{id,types,objective,groupSize:objective&&damage<75?3:2}];
-   }).sort((a,b)=>Number(b.objective)-Number(a.objective)||a.types.length-b.types.length);
-   const firstSector=((s.lastAutoSurvey??-1)+1)%surveySectors.length;
-   const previousFlights=s.lastTracks??[];
-   const previousSurveyOnly=previousFlights.length>0&&previousFlights.every(f=>f.survey);
-   const invoice=s.invoice;
-   const previousWaveProfitable=invoice?.wave===s.wave-1&&invoice.payout>invoice.cost+invoice.embargoFee;
-   const canStockpile=previousWaveProfitable&&!previousSurveyOnly&&s.base.damage<100&&(!s.base.moved||s.wave%2!==0);
-   const plan=planDeepWave({credits:s.credits,trust:s.trust,stock:s.stock,targets,
-    sectorCount:surveySectors.length,firstSector,canStockpile,embargo});
-   for(const [id,row] of plan.strikes)selected.set(id,row);
-   Object.assign(surveys,plan.surveys);
-   if(Object.keys(plan.surveys).length)s.lastAutoSurvey=firstSector;
-   if(plan.strikes.size||Object.keys(plan.surveys).length){launchWave();return}
+   const plan=botPlan(targets);
+   if(plan.strikes.size||Object.keys(plan.surveys).length){applyBotPlan(plan);launchWave();return}
    autoOn=false;render();
   },1800);
   if(s.wave>1)button(panel,tr('Відкрити звіт минулої хвилі','Open previous wave report'),()=>{s.reportPending=true;save();render()});
