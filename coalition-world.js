@@ -199,11 +199,6 @@ export function createStage(host) {
     const extra = f.extra || previous > 0 && (story === 'cruiser' || story === 'sam' || previous % 2 === 1);
     const kind = extra ? neighbours[story].kind : story;
     const target = extra ? neighbours[story].point : shots[f.marker].point, side = hash(i + 5) < .5 ? -1 : 1, hit = f.success || f.intercepted;
-    if (f.type === 3 && !f.noScene) {
-      const end = target.clone();
-      return { kind, S: V(end.x + side*12, -4, end.z+5), C: V(end.x+side*5, 0, end.z+2),
-        E: end, sea: true, mesh: null, phase: 'pending', shots: 0, tI: f.start+.73*(f.impact-f.start) };
-    }
     return { kind, S: V(target.x + side * (110 + hash(i * 1.7 + 3) * 50), 15 + hash(i + 2) * 15, 30 + hash(i * 3.1 + f.marker) * 40),
       C: V(target.x + side * (40 + hash(i + 9) * 15), 0, -70 + hash(i + 4) * 10),
       E: hit ? target.clone() : V(target.x - side * (8 + hash(i) * 4), .15, 8 + hash(i + 7) * 4), hit,
@@ -212,7 +207,6 @@ export function createStage(host) {
   const pt = (R, u, out = V()) => {
     const k = 1 - u, a = k * k, b = 2 * u * k, c = u * u;
     out.set(a * R.S.x + b * R.C.x + c * R.E.x, 0, a * R.S.z + b * R.C.z + c * R.E.z);
-    if (R.sea) { out.y = R.S.y*k*k + R.E.y*(1-k*k) + Math.sin(Math.PI*u)*.65; return out }
     out.y = R.E.y + (R.S.y - R.E.y) * Math.pow(k, R.hit ? 1.3 : .6) + 2 * Math.sin(Math.PI * u);
     out.x += R.weave * Math.sin(u * 7 + R.ph) * k * k;
     return out;
@@ -277,7 +271,6 @@ export function createStage(host) {
       } else if (!scars.some(s => s.point?.distanceTo(p)<1)) scars.push({point:p.clone()});
       world.setDeckHoles(scars);
     }
-    if (R.sea && !silent) fx.splash(p,2.5);
     if (!silent) {
       const p = R.E.clone(), k = BOOM[f.type];
       fx.explosion(p, k); fx.sparks(p, k * .8, 28, 0xfff0c0); fx.dust(p, k * .6);
@@ -320,8 +313,7 @@ export function createStage(host) {
           m.removeFromParent(); R.mesh = null; R.phase = 'done'; continue;
         }
         pt(R, u, m.position);
-        if(R.sea) m.rotation.set(0, Math.atan2(R.S.z-R.E.z, R.E.x-R.S.x), -.14*Math.sin(Math.PI*u));
-        else orient(m, R, u, elapsed / 1000);
+        orient(m, R, u, elapsed / 1000);
         airborne.push({ m, f, i, hp:1 });
       }
       if (R.phase === 'wreck') {
