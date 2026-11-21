@@ -328,3 +328,5 @@
 .deep-clear:hover{border-color:var(--bad);color:#ff8a7d}
 .site .unit-n circle{fill:var(--fg);stroke:#1d1103;stroke-width:.2}
 .deep-layout .site .unit-n text{font:700 1.5px var(--mono);fill:#1d1103}
+.deep-board>.deep-wave-card{position:relative;inset:auto;translate:none;width:min(720px,calc(100% - 24px));margin:clamp(12px,4vh,40px) auto;max-height:none;text-align:left}
+.deep-wave-card>.deep-report{width:100%}
