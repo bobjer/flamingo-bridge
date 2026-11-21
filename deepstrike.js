@@ -65,6 +65,31 @@ const surveySectors=[
  {label:['Гай','Grove'],point:[51,55]},
  {label:['Схил','Hillside'],point:[49,71]}
 ];
+  // Spread survey markers across the sector on screen, including mixed-type groups.
+  function mapFlights(flights){
+   const offsets=new Map(),totals=new Map();
+   for(const f of flights)if(f.survey)totals.set(f.sector,(totals.get(f.sector)??0)+f.count);
+   return flights.flatMap(f=>{
+    if(!f.survey)return [f];
+    const start=offsets.get(f.sector)??0,total=totals.get(f.sector);
+    offsets.set(f.sector,start+f.count);
+    const [origin]=f.path,end=surveySectors[f.sector].point,dx=end[0]-origin[0],dy=end[1]-origin[1],length=Math.hypot(dx,dy);
+    return Array.from({length:f.count},(_,index)=>{
+     const lane=(start+index-(total-1)/2)*Math.min(2.7,15/total);
+     const offset=[-dy/length*lane,dx/length*lane];
+     const path=[origin,[origin[0]+dx*.36+offset[0],origin[1]+dy*.36+offset[1]],
+      [end[0]+offset[0],end[1]+offset[1]]];
+     return {...f,path,number:start+index+1,lost:f.losses?.[index]??false};
+    });
+   });
+  }
+const lostTrackFraction=.68;
+function surveyLossMarks(flights){
+ return mapFlights(flights.filter(f=>f.survey)).filter(f=>f.lost).map(f=>{
+  const {x,y}=travel(f.path,lostTrackFraction);
+  return {x,y,number:f.number};
+ });
+}
 const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 const bridgeReach=Math.hypot((43.5+50)/2-7,(89.7+90.7)/2-48);
 const initial=()=>({wave:1,credits:openingFunds,trust:openingTrust,intel:{},reports:[],flights:[],started:0,marks:[]});
@@ -107,8 +132,10 @@ export function startDeepstrike(){
  const droneCount=()=>[...selected.values()].reduce((a,row)=>a+sumRow(row),0);
  const assigned=type=>[...selected.values()].reduce((n,row)=>n+(row[type]??0),0)+Object.values(surveys).reduce((n,row)=>n+(row[type]??0),0);
  const available=type=>s.stock[type]-assigned(type);
+ const migrateLosses=s.surveyLossMarks===undefined;
+ if(migrateLosses)s.surveyLossMarks=surveyLossMarks(s.lastTracks??[]);
  const save=()=>write(key,{...s,plan:{targets:[...selected],surveys,sector,layers:visible,unit:active,city}});
- if(legacy||retired.length||JSON.stringify([...selected])!==JSON.stringify(s.plan?.targets??[]))save();
+ if(migrateLosses||legacy||retired.length||JSON.stringify([...selected])!==JSON.stringify(s.plan?.targets??[]))save();
  const root=document.createElement('main');root.className='deep-board';document.body.append(root);
  const radius=(type=active)=>Math.min(fleet[type].limit,bridgeReach+(fleet[type].limit-69)*.8+(s.wave-1)*5);
  const distance=i=>Math.hypot(points[i][0]-7,points[i][1]-48);
@@ -201,6 +228,7 @@ export function startDeepstrike(){
    else{s.credits+=12;invoice.payout+=12}
   }
   deliverProduction(s,Math.random,invoice);
+  s.surveyLossMarks=surveyLossMarks(s.flights);
   s.lastTracks=s.flights;s.wave++;s.started=0;s.flights=[];s.diplomacy=beginDiplomacy(s.wave,s.diplomacy.embargoThrough);s.partner=partnerTurn(s.partner,s.wave);intelligence();save();
  }
  function reportContents(panel){
@@ -508,30 +536,12 @@ export function startDeepstrike(){
    el?.focus({preventScroll:true});refocusStep=null;
   }
   if(refocusCard>=0){root.querySelector('[data-card="'+refocusCard+'"]')?.focus({preventScroll:true});refocusCard=-1}
-  // Spread survey markers across the sector on screen, including mixed-type groups.
-  function mapFlights(flights){
-   const offsets=new Map(),totals=new Map();
-   for(const f of flights)if(f.survey)totals.set(f.sector,(totals.get(f.sector)??0)+f.count);
-   return flights.flatMap(f=>{
-    if(!f.survey)return [f];
-    const start=offsets.get(f.sector)??0,total=totals.get(f.sector);
-    offsets.set(f.sector,start+f.count);
-    const [origin]=f.path,end=surveySectors[f.sector].point,dx=end[0]-origin[0],dy=end[1]-origin[1],length=Math.hypot(dx,dy);
-    return Array.from({length:f.count},(_,index)=>{
-     const lane=(start+index-(total-1)/2)*Math.min(2.7,15/total);
-     const offset=[-dy/length*lane,dx/length*lane];
-     const path=[origin,[origin[0]+dx*.36+offset[0],origin[1]+dy*.36+offset[1]],
-      [end[0]+offset[0],end[1]+offset[1]]];
-     return {...f,path,number:start+index+1,lost:f.losses?.[index]??false};
-    });
-   });
-  }
   function drawTracks(overlay,flights,elapsed){
    const past=elapsed===Infinity,calm=reduced();
    for(const f of flights){
     const t=Math.min(1,elapsed/f.duration);
     const path=f.path??[[7,48],points[f.i]];
-    const {x:px,y:py,angle,segment}=travel(path,t*(f.lost?.68:1));
+    const {x:px,y:py,angle,segment}=travel(path,t*(f.lost?lostTrackFraction:1));
     const flown=[...path.slice(0,segment+1),[px,py]].map(p=>p.join(',')).join(' ');
     const done=t===1,k=past?1:Math.min(1,Math.max(0,(elapsed-f.duration)/1200)),tone=done?(f.lost?'#ff6b5e':f.survey?'#7fcfa6':'#ffb347'):f.survey?'#bfeed3':'#ece4bd';
     let h='<g class="trk'+(past?' past':'')+'">'+(past?'':'<polyline class="trk-plan" points="'+path.map(p=>p.join(',')).join(' ')+'"/><polyline class="trk-glow" stroke="'+tone+'" points="'+flown+'"/>')+'<polyline class="trk-line atlas-track" stroke="'+tone+'" points="'+flown+'"/>';
@@ -553,6 +563,15 @@ export function startDeepstrike(){
    const history=document.createElementNS('http://www.w3.org/2000/svg','g');
    history.setAttribute('pointer-events','none');map.append(history);
    drawTracks(history,mapFlights(s.lastTracks),Infinity);
+  }
+  if(!flying){
+   let previousY=-Infinity;
+   for(const mark of [...s.surveyLossMarks].sort((a,b)=>a.y-b.y)){
+    const labelY=Math.max(mark.y,previousY+2.2);
+    previousY=labelY;
+    const label=tr('Зв’язок втрачено · хв. ','Signal lost · W')+(s.wave-1)+' · #'+mark.number;
+    map.insertAdjacentHTML('beforeend','<g class="survey-loss" pointer-events="none"><title>'+label+'</title><path class="trk-x" d="M'+(mark.x-1)+' '+(mark.y-1)+'l2 2m-2 0l2 -2"/><path d="M'+mark.x+' '+mark.y+'L'+(mark.x+2)+' '+labelY+'" stroke="#ff897c" stroke-width=".18"/><text class="atlas-city" x="'+(mark.x+2.2)+'" y="'+labelY+'" style="text-anchor:start">'+label+'</text></g>');
+   }
   }
   const surveyTotal=Object.values(surveys).reduce((n,row)=>n+sumRow(row),0),drones=droneCount(),launchTotal=drones+surveyTotal;
   const fillSum=()=>{
