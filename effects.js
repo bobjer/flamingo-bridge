@@ -140,18 +140,60 @@ function layer(scene,map,{additive=false,capacity=1800,lit=false,order=5}={}){
 }
 
 // ---------- old geometry pieces (rocket, crumbs) ----------
-const hull=new T.CylinderGeometry(.14,.16,.95,10);
-const cone=new T.ConeGeometry(.17,.4,10);
 const spark=new T.IcosahedronGeometry(1,0);
-const white=new T.MeshStandardMaterial({color:0xf2efe6,roughness:.35,metalness:.4});
-const orange=new T.MeshStandardMaterial({color:0xd8551d,roughness:.5});
-const flame=new T.MeshBasicMaterial({color:0xffe9a0,transparent:true,opacity:.85,blending:T.AdditiveBlending,depthWrite:false});
 const crumbMaterial=new T.MeshStandardMaterial({color:0xe9ad65,roughness:.95});
 const up=new T.Vector3(0,1,0);
 const colorCache=new Map();
 const C=(hex,mult=1)=>{const key=hex+'*'+mult;let c=colorCache.get(key);if(!c){c=new T.Color(hex).multiplyScalar(mult);colorCache.set(key,c)}return c};
 const v3=(x,y,z)=>new T.Vector3(x,y,z);
 const around=(s=1)=>v3((rnd()-.5)*2*s,(rnd()-.5)*2*s,(rnd()-.5)*2*s);
+
+// ---------- missile (shared geometry/materials, built once; +Y = nose) ----------
+// Profiles may be given in either y-order; LatheGeometry faces outward only when y ascends.
+const lathe=(pts)=>new T.LatheGeometry((pts[0][1]>pts[pts.length-1][1]?[...pts].reverse():pts).map(([r,y])=>new T.Vector2(r,y)),24);
+const ogive=(R,y0,y1,n=10)=>{ // tangent ogive, ascending y, tip at y1
+ const L=y1-y0,rho=(R*R+L*L)/(2*R),pts=[];
+ for(let i=0;i<=n;i++){const x=L*i/n;pts.push([Math.max(0,Math.sqrt(rho*rho-(L-x)*(L-x))+R-rho),y1-x])}
+ return pts.reverse();
+};
+const mStd=(color,roughness,metalness=0)=>new T.MeshStandardMaterial({color,roughness,metalness});
+const finShape=(pts,depth)=>{const s=new T.Shape();pts.forEach(([x,y],i)=>i?s.lineTo(x,y):s.moveTo(x,y));
+ const g=new T.ExtrudeGeometry(s,{depth,bevelEnabled:false});g.translate(0,0,-depth/2);return g};
+const bodyParts=[
+ [lathe(ogive(.13,.44,.98)),mStd(0xe2481f,.35,.25)],
+ [lathe([[.1325,.40],[.1325,.44]]),mStd(0x1d2026,.5,.3)],
+ [lathe([[.1325,.37],[.1325,.40]]),mStd(0xb8321a,.45,.2)],
+ [lathe([[.13,.37],[.13,-.05]]),mStd(0xf4f1ea,.4,.2)],
+ [lathe([[.1315,-.18],[.1315,-.05]]),mStd(0x23272f,.5,.3)],
+ [lathe([[.1315,-.20],[.1315,-.18]]),mStd(0xe2481f,.45,.2)],
+ [lathe([[.13,-.62],[.13,-.05]]),mStd(0xf4f1ea,.4,.2)],
+ [lathe([[.10,-.72],[.13,-.62]]),mStd(0x3a3e46,.35,.7)]
+];
+const tailFinGeo=finShape([[.12,-.28],[.46,-.62],[.46,-.80],[.12,-.74]],.018);
+const canardGeo=finShape([[.12,.36],[.31,.30],[.31,.25],[.12,.24]],.014);
+const finMat=mStd(0xc23a1a,.5),canardMat=mStd(0xe2481f,.5);
+const nozzleGeo=new T.CylinderGeometry(.095,.115,.12,24,1,true),nozzleMat=new T.MeshStandardMaterial({color:0x2a2d33,roughness:.4,metalness:.8,side:T.DoubleSide});
+const nozzleCoreGeo=new T.CircleGeometry(.09,16).rotateX(Math.PI/2),nozzleCoreMat=new T.MeshBasicMaterial({color:0xffc870,side:T.DoubleSide,fog:false});
+const plumeLayers=[[0xfff4d0,.07,1,.95],[0xffb040,.115,1.5,.55],[0xff5a1a,.17,2,.28]].map(([color,r,h,opacity])=>[
+ new T.ConeGeometry(r,h,16,1,true).rotateX(Math.PI).translate(0,-h/2,0),
+ new T.MeshBasicMaterial({color,transparent:true,opacity,blending:T.AdditiveBlending,depthWrite:false,side:T.DoubleSide,fog:false})]);
+const bloomMat=new T.SpriteMaterial({map:glowTex,color:0xffb868,opacity:.9,transparent:true,blending:T.AdditiveBlending,depthWrite:false,fog:false});
+function buildRocket(){
+ const g=new T.Group(),spin=new T.Group(),flame=new T.Group();
+ for(const [geo,mat] of bodyParts)spin.add(new T.Mesh(geo,mat));
+ for(let k=0;k<4;k++){
+  const fin=new T.Mesh(tailFinGeo,finMat);fin.rotation.y=k*Math.PI/2;spin.add(fin);
+  const can=new T.Mesh(canardGeo,canardMat);can.rotation.y=Math.PI/4+k*Math.PI/2;spin.add(can);
+ }
+ const nozzle=new T.Mesh(nozzleGeo,nozzleMat);nozzle.position.y=-.78;spin.add(nozzle);
+ const core=new T.Mesh(nozzleCoreGeo,nozzleCoreMat);core.position.y=-.8;spin.add(core);
+ g.add(spin);
+ for(const [geo,mat] of plumeLayers)flame.add(new T.Mesh(geo,mat));
+ flame.position.y=-.84;g.add(flame);
+ const bloom=new T.Sprite(bloomMat);bloom.position.y=-.86;bloom.scale.setScalar(1.5);g.add(bloom);
+ g.userData={spin,flame,bloom};
+ return g;
+}
 
 export function fireworks(scene){
  const flights=[],bursts=[],decals=[],flashes=[];
@@ -329,11 +371,7 @@ export function fireworks(scene){
  }
  function launch(source,target,damage){return launchAt(source.localToWorld(source.name==='cruiser'?new T.Vector3(1.86,.93,0):new T.Vector3(...source.userData.launchPoint)),target,damage)}
  function launchAt(origin,target,damage){
-  const rocket=new T.Group();
-  for(const [geometry,mat,y] of [[hull,white,0],[cone,orange,.64],[cone,flame,-.73]]){
-   const piece=new T.Mesh(geometry,mat);piece.position.y=y;
-   if(y<0){piece.rotation.z=Math.PI;piece.scale.y=1.8}rocket.add(piece);
-  }
+  const rocket=buildRocket();
   rocket.position.copy(origin);scene.add(rocket);
   // launch blast
   glow.emit({pos:origin.clone(),v:v3(0,0,0),life:.18,s0:2.4,s1:3.2,c0:C(0xffd29a,4),alpha:1,fadeIn:.01,fadePow:1});
@@ -346,12 +384,15 @@ export function fireworks(scene){
    const f=flights[i];f.age+=dt;const t=Math.min(1,f.age/f.duration);
    const pos=f.origin.clone().lerp(f.target.m.position,t);pos.y+=3*Math.sin(Math.PI*t);
    f.rocket.quaternion.setFromUnitVectors(up,pos.clone().sub(f.rocket.position).normalize());f.rocket.position.copy(pos);
-   f.rocket.children[2].scale.set(.8+rnd()*.5,1.4+rnd()*.9,.8+rnd()*.5);
-   tail.set(0,-.75,0).applyQuaternion(f.rocket.quaternion).add(pos);
+   const ud=f.rocket.userData;ud.flame.scale.set(.85+rnd()*.35,1.3+rnd()*.8,.85+rnd()*.35);ud.bloom.scale.setScalar(1.25+rnd()*.5);ud.spin.rotation.y+=dt*5;
+   if(f.filmContact)f.rocket.scale.addScalar((1.45-f.rocket.scale.x)*Math.min(1,dt*6));
+   const sc=f.rocket.scale.x;
+   tail.set(0,-.9*sc,0).applyQuaternion(f.rocket.quaternion).add(pos);
    f.trail-=dt;
    if(f.trail<=0){f.trail=.018;
     smoke.emit({pos:tail.clone(),v:around(.25),drag:1.4,gravity:-.25,life:1.1+rnd()*.7,s0:.22,s1:.95+rnd()*.5,grow:2.5,c0:C(0xf4efe8,1.25),c1:C(0xb9b6b0),alpha:.5,fadeIn:.04,fadePow:1.7});
     glow.emit({pos:tail.clone(),v:v3(0,0,0),life:.09,s0:.75,s1:.3,c0:C(0xffc070,4),alpha:1,fadeIn:.01,fadePow:1});
+    fire.emit({pos:tail.clone(),v:around(.25),drag:2,life:.2+rnd()*.12,s0:.5*sc,s1:.14,c0:C(0xffd890,3),c1:C(0xff4a10),alpha:.8,fadeIn:.02});
    }
    if(t===1){
     if(f.filmContact&&!f.contactShown){f.atContact=true;continue}

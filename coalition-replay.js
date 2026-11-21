@@ -14,7 +14,7 @@ export function replayViewer(host, getStage, restoreReport) {
  let film = null, from = 0, length = 0, position = 0, running = false, fresh = false, trigger;
  function reset() {
    const stage = getStage();
-   stage.resetWave(); stage.setBroadcast(film.subjects,film.aa);
+   stage.resetWave(); stage.setBroadcast(film.subjects,film.aa,film.archStart);
    fresh = true;
  }
  function labels() {
@@ -43,6 +43,7 @@ export function replayViewer(host, getStage, restoreReport) {
    show(button, title, script, legacy) {
      if (dialog.open) return;
      trigger = button; film = script;
+     screen.classList.toggle('witness-window', !!film?.reverse && film.wave % 2 === 0);
      dialog.querySelector('strong').textContent = title;
      dialog.querySelector('[data-close]').textContent = tr('Закрити','Close');
      controls.hidden = !film;
