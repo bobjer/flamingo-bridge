@@ -61,9 +61,9 @@ const glyph=l=>l===0?'<rect class="mk" x="-1.6" y="-1.6" width="3.2" height="3.2
  '<path class="mk" d="M0-2.2 2.1 1.6H-2.1Z"/><circle class="mk-in" r=".6" cy=".35"/>';
 const glyphSvg=l=>'<svg class="deep-glyph mk-'+l+'" aria-hidden="true" viewBox="-3 -3 6 6">'+glyph(l)+'</svg>';
 const surveySectors=[
- {label:['Лука','Meadow'],point:[12,55]},
- {label:['Гай','Grove'],point:[15,69]},
- {label:['Схил','Hillside'],point:[11,80]}
+ {label:['Лука','Meadow'],point:[33,27]},
+ {label:['Гай','Grove'],point:[51,55]},
+ {label:['Схил','Hillside'],point:[49,71]}
 ];
 const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 const bridgeReach=Math.hypot((43.5+50)/2-7,(89.7+90.7)/2-48);
@@ -516,7 +516,7 @@ export function startDeepstrike(){
     if(!f.survey)return [f];
     const start=offsets.get(f.sector)??0,total=totals.get(f.sector);
     offsets.set(f.sector,start+f.count);
-    const [origin,end]=f.path,dx=end[0]-origin[0],dy=end[1]-origin[1],length=Math.hypot(dx,dy);
+    const [origin]=f.path,end=surveySectors[f.sector].point,dx=end[0]-origin[0],dy=end[1]-origin[1],length=Math.hypot(dx,dy);
     return Array.from({length:f.count},(_,index)=>{
      const lane=(start+index-(total-1)/2)*Math.min(2.7,15/total);
      const offset=[-dy/length*lane,dx/length*lane];
@@ -653,7 +653,12 @@ export function startDeepstrike(){
    const cards=[...panel.querySelectorAll('button[aria-pressed="false"]:enabled')].filter(b=>b.classList.contains('target-card'));
    if(cards.length&&s.credits>=5+launchPrices[active]){cards[Math.floor(Math.random()*cards.length)].click();return}
    if(!s.stock[6]&&s.credits>=7){s.stock[6]+=5;s.credits--}
-   if(s.stock[6]>0&&s.credits>=6){(surveys[sector]??={})[6]=1;save();render();return}
+   if(s.stock[6]>0&&s.credits>=6){
+    sector=((s.lastAutoSurvey??-1)+1)%surveySectors.length;
+    s.lastAutoSurvey=sector;
+    (surveys[sector]??={})[6]=1;
+    save();render();return;
+   }
    const next=s.stock.findIndex((count,i)=>count>0&&!fleet[i].surveyOnly&&i!==active);
    if(next>=0){active=next;visible.fill(true)}else autoOn=false;
    render();
