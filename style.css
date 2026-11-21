@@ -486,7 +486,7 @@ body[data-phase=buy] .m-dock-btn[data-tab=arsenal]{color:var(--fg)}
 @media(prefers-reduced-motion:reduce){#game-drawer[open]{animation:none}.m-wave::before{animation:none}}
 
 /* ---- Update toast: same glass language as the HUD ---- */
-#release-notice:not([hidden]){position:fixed;z-index:50;top:calc(env(safe-area-inset-top,0px) + 12px);left:50%;translate:-50% 0;box-sizing:border-box;width:max-content;max-width:calc(100vw - 24px);
+#release-notice:not([hidden]){position:fixed;z-index:10001;top:calc(env(safe-area-inset-top,0px) + 12px);left:50%;translate:-50% 0;box-sizing:border-box;width:max-content;max-width:calc(100vw - 24px);
  display:flex;align-items:center;gap:10px;padding:8px 8px 8px 14px;border-radius:16px;color:var(--fg);
  background:rgba(9,14,20,.82);border:1px solid rgba(255,154,31,.35);box-shadow:0 12px 36px rgba(0,0,0,.45);
  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);animation:toast-in .45s cubic-bezier(.2,.9,.3,1.2) both}

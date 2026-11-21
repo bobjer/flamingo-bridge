@@ -1,5 +1,6 @@
+import {coalitionHeader} from './coalition-header.js';
 import {checkpoint} from './ranked-session.js';
-import {watchRelease} from './release-notice.js';
+import {registerSessionSave} from './release-notice.js';
 import {createCoach} from './coach.js';
 import {coalitionHelp} from './coach-help.js';
 import {tr} from './language.js';
@@ -235,10 +236,8 @@ export function startCoalition() {
  }
  function header() {
   const muted = music.muted;
-  return '<header class="top"><div class="top-left"><img src="/coalition-koala.svg" width="30" height="30" alt=""><span class="label">' + tr('ШТАБ КОАЛІЦІЇ · ВІДДІЛ ЗВІТНОСТІ','COALITION HQ · REPORTING DEPARTMENT') + '</span></div>' +
-   '<div class="top-title"><strong>' + tr('СЕЗОН ХЛОПКІВ','POP SEASON') + '</strong><span>' + tr('КОАЛІЦІЯ ОХОЧИХ','COALITION OF THE WILLING') + '</span></div>' +
-   '<div class="top-status">' + languageButton() + '<button type="button" class="c-sides c-quiet" data-action="quiet" aria-pressed="' + muted + '" aria-label="' + tr('Тихий режим','Quiet mode') + '"><span class="full">' + tr('Тихий режим','Quiet mode') + '</span><span class="short" aria-hidden="true">' + '♪' + '</span></button>' +
-   autoButton() + '<button type="button" class="c-sides" data-coach-toggle aria-pressed="' + coach.enabled + '">' + tr('Навчання','Coach') + '</button><span class="label">' + tr('РЕЖИМ','MODE') + '</span><span class="chip"><i class="dot" aria-hidden="true"></i><span>' + phaseWord() + '</span></span>' + button('sides', tr('Спочатку','Start over'), false, 'c-sides') + '</div></header>';
+  return coalitionHeader('<button type="button" class="c-sides c-quiet" data-action="quiet" aria-pressed="' + muted + '" aria-label="' + tr('Тихий режим','Quiet mode') + '"><span class="full">' + tr('Тихий режим','Quiet mode') + '</span><span class="short" aria-hidden="true">' + '♪' + '</span></button>' +
+   autoButton() + '<button type="button" class="c-sides" data-coach-toggle aria-pressed="' + coach.enabled + '">' + tr('Навчання','Coach') + '</button><span class="label">' + tr('РЕЖИМ','MODE') + '</span><span class="chip"><i class="dot" aria-hidden="true"></i><span>' + phaseWord() + '</span></span>' + button('sides', tr('Спочатку','Start over'), false, 'c-sides'));
  }
  function left() {
   const tired = Math.round((1 - s.fatigue) * 100);
@@ -706,12 +705,11 @@ export function startCoalition() {
   console.error('Coalition 3D view failed', error); stage = null;
   window.dispatchEvent(new Event('game-ready'));
  }
- watchRelease(() => {
+ registerSessionSave(() => {
   autoOn = false;
   pause();
   if (!save()) { refreshAuto(); return false }
-  location.reload();
   return true;
- }, () => true);
+ });
  requestAnimationFrame(view);
 }
