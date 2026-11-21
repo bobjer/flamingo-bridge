@@ -1,6 +1,7 @@
 // Board-game credits. Production sets availability; the invoice is paid at launch.
 export const launchPrices=[8,12,14,10,12,11,1];
 export const overhead=5;
+export const embargoFee=4;
 export const openingFunds=100;
 export const openingTrust=75;
 export const dealAdvance=10;
@@ -15,5 +16,5 @@ export function settleWave(trust,reports,surveyReturns,deal,embargo){
  const payout=deal?dealAdvance:Math.round(gross*(.5+trust/200))+(surveyReturns>0?3:0);
  const trustChange=deal?-dealTrustCost:confirmed.length?5:surveyReturns>0?-4:-12;
  const nextTrust=Math.min(100,Math.max(0,trust+trustChange));
- return {payout,trust:nextTrust,trustChange:nextTrust-trust,embargoFee:embargo?4:0,confirmed:confirmed.length,deal};
+ return {payout,trust:nextTrust,trustChange:nextTrust-trust,embargoFee:embargo?embargoFee:0,confirmed:confirmed.length,deal};
 }

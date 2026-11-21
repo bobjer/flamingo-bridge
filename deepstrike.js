@@ -773,7 +773,9 @@ export function startDeepstrike(){
    const firstSector=((s.lastAutoSurvey??-1)+1)%surveySectors.length;
    const previousFlights=s.lastTracks??[];
    const previousSurveyOnly=previousFlights.length>0&&previousFlights.every(f=>f.survey);
-   const canStockpile=!previousSurveyOnly&&s.base.damage<100&&(!s.base.moved||s.wave%2!==0);
+   const invoice=s.invoice;
+   const previousWaveProfitable=invoice?.wave===s.wave-1&&invoice.payout>invoice.cost+invoice.embargoFee;
+   const canStockpile=previousWaveProfitable&&!previousSurveyOnly&&s.base.damage<100&&(!s.base.moved||s.wave%2!==0);
    const plan=planDeepWave({credits:s.credits,trust:s.trust,stock:s.stock,targets,
     sectorCount:surveySectors.length,firstSector,canStockpile});
    for(const [id,row] of plan.strikes)selected.set(id,row);
