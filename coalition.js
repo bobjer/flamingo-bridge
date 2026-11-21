@@ -4,7 +4,7 @@ import {coalitionHelp} from './coach-help.js';
 import {tr} from './language.js';
 import {changeSide, languageButton, read, write, levelField, preferredLevel, rememberLevel} from './factions.js';
 import {CFG, costs, openingBudget, retentionFor, offContractRate, newSeason, pickSponsor, purchase, launch, finishWave, nextWave, acceptDeal, declineDeal, evaluate, total, aaChance, cameraSubjects} from './coalition-rules.js';
-import {units, unitHints, subjectName, fmtViews, sponsor, cameo, donorLines, ending, wavesWord, icon, chanceTitle} from './coalition-copy.js';
+import {units, unitHints, subjectName, fmtMoney, fmtViews, sponsor, cameo, donorLines, ending, wavesWord, icon, chanceTitle} from './coalition-copy.js';
 import {createStage} from './coalition-world.js';
 import {signalAt,broadcastOverlay,drawBroadcast} from './broadcast-events.js';
 import {replayViewer} from './coalition-replay.js';
@@ -171,7 +171,7 @@ export function startCoalition() {
    if (kind === 'drone' && !r.stills?.[s.cam]) pendingFrame = {report:r, cam:s.cam, time:f.impact};
    const score = evaluate(s, s.captures, f.impact);
    const pay = score.payNow[i];
-   const payout = score.orderHit === i ? tr('Передзамовлення','Preorder')+' · '+productionText(r.orderOffer) : (r.sponsor === 'conference' ? tr('Аванс','Advance') : tr('Виплата','Payout')) + ' +' + pay;
+   const payout = score.orderHit === i ? tr('Передзамовлення','Preorder')+' · '+productionText(r.orderOffer) : (r.sponsor === 'conference' ? tr('Аванс','Advance') : tr('Виплата','Payout')) + ' +' + fmtMoney(pay);
    if (f.intercepted) { say(tr('ЗБИТО','SHOT DOWN') + (pay ? ' · ' + payout : ''), 'shot', where); continue }
    const hit = score.hits.find(h => h.i === i);
    if (f.decree) say(tr('СКАСОВАНО УКАЗОМ','CANCELLED BY DECREE'), 'decree', where);
@@ -245,17 +245,17 @@ export function startCoalition() {
   return '<aside class="col c-left" aria-label="' + tr('Штаб','HQ') + '">' +
    '<section class="panel br"><div class="label">' + tr('ПОТОЧНА ФАЗА','CURRENT PHASE') + '</div><div class="phase-row"><b class="big" aria-hidden="true">' + String(s.wave).padStart(2, '0') + '</b><div><h1>' + tr('Нема відео — <i>не було</i>','No video — <i>no happened</i>') + '</h1><div class="c-phase">● ' + phaseWord() + '</div></div></div></section>' +
    '<section class="panel br"><div class="label">' + tr('ЗВЕДЕННЯ','SUMMARY') + '</div>' +
-    stat(tr('Бюджет','Budget'), s.funds, 'c-accent') + (s.offer.reach ? '<small class="c-tired">'+marketLine()+'</small>' : '') + '<div class="c-views"><label>' + tr('Перегляди','Views') + '</label><b class="big">' + fmtViews(s.views) + '</b></div>' +
+    stat(tr('Бюджет','Budget'), fmtMoney(s.funds), 'c-accent') + (s.offer.reach ? '<small class="c-tired">'+marketLine()+'</small>' : '') + '<div class="c-views"><label>' + tr('Перегляди','Views') + '</label><b class="big">' + fmtViews(s.views) + '</b></div>' +
     stat(tr('Найкраще комбо','Best combo'), '×' + s.bestCombo) + stat(tr('Імовірність збиття на ППО','Anti-air kill chance'), aaPct() + '%') +
-    (s.production ? stat(tr('У виробництві','In production'), productionText(s.production)) : '') + (s.ious.length ? stat(tr('Конференція винна','Conference owes'), s.ious.reduce((a, x) => a + x.amount, 0)) : '') + '</section>' +
+    (s.production ? stat(tr('У виробництві','In production'), productionText(s.production)) : '') + (s.ious.length ? stat(tr('Конференція винна','Conference owes'), fmtMoney(s.ious.reduce((a, x) => a + x.amount, 0))) : '') + '</section>' +
    '<section class="panel br"><div class="label">' + tr('ВТОМА ДОНОРІВ','DONOR FATIGUE') + '</div>' +
     '<progress max="100" value="' + Math.round(s.fatigue * 100) + '" aria-label="' + tr('Поточний множник виплат','Current payout multiplier') + '"></progress>' +
     '<small class="c-tired">' + tr('Донори втомились на ' + tired + '%','Donors are ' + tired + '% tired') + ' · ' + tr('виплати ×','payouts ×') + num(s.fatigue.toFixed(2)) + '</small></section>' +
    '<section class="panel br brief"><div class="label">' + tr('ІНСТРУКТАЖ','BRIEFING') + '</div>' +
     '<details><summary>' + tr('Як це працює','How it works') + '</summary><p>' + tr('Спонсори платять за кадр. Камера дрона зі зв’язком записує влучання у своєму кадрі. Дальня камера дає 50% за паляницю й 30% за решту, з урахуванням умов спонсора. Ігровий повтор доступний завжди. За пропущений кадр можуть заплатити партнери, якщо його зняв супутник або надійшов витік.','Sponsors pay for footage. A connected drone records hits in its frame. The far camera gives 50% for Palianytsia and 30% for other units, subject to sponsor terms. Game replays are always available. Satellite footage or a later leak can earn funding for an off-camera hit.') + '</p><p>' + tr('Кожне наступне влучання, зняте дроном, дає +25% переглядів. Промах камери скидає комбо.','Each next hit filmed by a drone adds +25% views. A missed camera resets the combo.') + '</p><p>' + tr('«Автогра» віддає ефір підряднику: він купує зграю й перемикає дрони. Забіг позначається в лідерборді.','“Autoplay” outsources the broadcast to a contractor who buys the flock and switches drones. The run is marked on the leaderboard.') + '</p></details>' +
     '<details><summary>' + tr('Камери','Cameras') + '</summary><p>' + tr('Три камери висвітлюють три сюжети хвилі. Назву сюжету видно на вкладці. Іноді на четвертій камері доступний супутниковий проліт за тарифом дальньої камери. На вкладці «▲N» — скільки юнітів летить до маркера; за 1,5 с до удару вона блимає. Клавіші 1–4 (5 — пресконференція).','Three cameras cover three stories each wave. Each tab names its story. Occasionally the fourth tab receives a satellite pass at the far-camera rate. “▲N” on a tab is how many units are heading to that marker; it blinks 1.5 s before impact. Keys 1–4 (5 is the press tab).') + '</p></details>' +
-    '<details><summary>' + tr('Гарнізон і втома','Garrison and fatigue') + '</summary><p>' + tr('Над маркерами видно значки ППО. Шанс збиття 8% + 4,5% за хвилю, максимум 70%; Малюків збивають вдвічі рідше. На цій складності ставки за наступну хвилю падають на ' + cut + '%. Базова ставка за контрактний кадр — ' + CFG.hitContract + ', за інший — ' + offContractRate(s.difficulty) + '.','Anti-air icons sit above covered markers. Kill chance is 8% + 4.5% per wave, capped at 70%; Maliuk is hit half as often. At this difficulty rates fall by ' + cut + '% each wave. Base rates are ' + CFG.hitContract + ' for a contract shot and ' + offContractRate(s.difficulty) + ' for other footage.') + '</p></details>' +
-    '<details><summary>' + tr('Юніти','Units') + '</summary><p>' + units().map((n, i) => n + ' ' + costs[i] + ' — ' + unitHints()[i]).join('; ') + '.</p></details></section></aside>';
+    '<details><summary>' + tr('Гарнізон і втома','Garrison and fatigue') + '</summary><p>' + tr('Над маркерами видно значки ППО. Шанс збиття 8% + 4,5% за хвилю, максимум 70%; Малюків збивають вдвічі рідше. На цій складності ставки за наступну хвилю падають на ' + cut + '%. Базова ставка за контрактний кадр — ' + fmtMoney(CFG.hitContract) + ', за інший — ' + fmtMoney(offContractRate(s.difficulty)) + '.','Anti-air icons sit above covered markers. Kill chance is 8% + 4.5% per wave, capped at 70%; Maliuk is hit half as often. At this difficulty rates fall by ' + cut + '% each wave. Base rates are ' + fmtMoney(CFG.hitContract) + ' for a contract shot and ' + fmtMoney(offContractRate(s.difficulty)) + ' for other footage.') + '</p></details>' +
+    '<details><summary>' + tr('Юніти','Units') + '</summary><p>' + units().map((n, i) => n + ' ' + fmtMoney(costs[i]) + ' — ' + unitHints()[i]).join('; ') + '.</p></details></section></aside>';
  }
  const unitList = list => list.map(([n, i]) => n + ' ×' + i).join(' → ');
  const legacyTitles = () => ({span:tr('Проліт упав · камера з човна','Span down · boat camera'),hole:tr('Діра в асфальті · відеореєстратор','Road crater · dashcam'),train:tr('Поїзд полетів · камера рибалки','Airborne train · angler’s camera')});
@@ -288,7 +288,7 @@ export function startCoalition() {
    return (s.report?.leaks ?? []).map((l,i) => {
      const subject = l.film?.subjects[l.film.marker], title = subject ? subjectName(l.film.subject ?? subject) : legacyTitles()[l.clip];
      if (!title) return '';
-     return '<figure class="c-leak">'+playThumb('leak-'+i,title,subject?poster(subject):'/leak-'+l.clip+'.svg')+'<figcaption><small>'+tr('ВИТІК З ТОГО БОКУ · ХВИЛЯ ','LEAKED FOOTAGE · WAVE ')+l.source+'</small><strong>'+title+'</strong><span>+'+fmtViews(l.views)+' '+tr('переглядів','views')+(l.funding?' · +'+l.funding+' '+tr('до бюджету','funding'):'')+'</span></figcaption></figure>';
+     return '<figure class="c-leak">'+playThumb('leak-'+i,title,subject?poster(subject):'/leak-'+l.clip+'.svg')+'<figcaption><small>'+tr('ВИТІК З ТОГО БОКУ · ХВИЛЯ ','LEAKED FOOTAGE · WAVE ')+l.source+'</small><strong>'+title+'</strong><span>+'+fmtViews(l.views)+' '+tr('переглядів','views')+(l.funding?' · +'+fmtMoney(l.funding)+' '+tr('до бюджету','funding'):'')+'</span></figcaption></figure>';
    }).join('');
  }
  function openFilm(b) {
@@ -328,31 +328,31 @@ export function startCoalition() {
  function reportCard() {
   const r = s.report, x = r.result;
   if (r.skipped) return '<section class="c-card" data-tone="report" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('КАМЕО · ТРАМП · ХВИЛЯ ','CAMEO · TRUMP · WAVE ') + r.wave + '</div><h2 id="c-title">' + tr('Угоду підписано','Deal signed') + '</h2>' +
-   '<dl class="c-stats">' + tile(tr('Гроші','Money'), sign(x.money)) + tile(tr('Перегляди','Views'), fmtViews(x.views)) + tile(tr('Втома','Fatigue'), '×' + num((s.fatigue).toFixed(2))) + '</dl>' +
+   '<dl class="c-stats">' + tile(tr('Гроші','Money'), (x.money > 0 ? '+' : '') + fmtMoney(x.money)) + tile(tr('Перегляди','Views'), fmtViews(x.views)) + tile(tr('Втома','Fatigue'), '×' + num((s.fatigue).toFixed(2))) + '</dl>' +
    '<p>' + tr('Угоду підписано. Війну завершено. У понеділок продовжимо.','Deal signed. War ended. We resume on Monday.') + '</p>' +
    productionReport(r) + leakReel() + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
   const lines = donorLines(r, s).map(l => '<p class="c-line">' + l + '</p>');
   lines.unshift(productionReport(r));
-  if (r.reserveReleased) lines.unshift('<p class="c-good">'+tr('Фінансування згорнуто. У касі ','Funding withdrawn. Budget: ')+s.funds+tr('. На наступну хвилю зі складу видано ракет: ','. Reserve missiles available next wave: ')+r.reserveReleased+'.</p>');
-  if (r.newSponsor) lines.unshift('<p class="c-good">'+tr('Новий спонсор: ','New sponsor: ')+sponsor(r.newSponsor).name+tr(' · аванс +',' · advance +')+r.advance+'</p>');
+  if (r.reserveReleased) lines.unshift('<p class="c-good">'+tr('Фінансування згорнуто. У касі ','Funding withdrawn. Budget: ')+fmtMoney(s.funds)+tr('. На наступну хвилю зі складу видано ракет: ','. Reserve missiles available next wave: ')+r.reserveReleased+'.</p>');
+  if (r.newSponsor) lines.unshift('<p class="c-good">'+tr('Новий спонсор: ','New sponsor: ')+sponsor(r.newSponsor).name+tr(' · аванс +',' · advance +')+fmtMoney(r.advance)+'</p>');
   if (r.sponsor === 'defence') lines.push('<p>' + tr('Оборонний концерн: освоєно ' + r.units + ' юнітів.','Defence Concern: ' + r.units + ' units absorbed.') + '</p>');
   if (x.viral) lines.push('<p class="c-good">' + tr('Вірусно, бо нічого не видно: перегляди ×2.','Viral because nothing was visible: views ×2.') + '</p>');
   if (r.decree) lines.push('<p>' + tr('Трамп образився: одне влучання скасовано указом.','Trump took offence: one hit was cancelled by decree.') + '</p>');
   if (s.offer.spotlight) lines.push('<p>'+marketLine()+'</p>');
   if ((s.offer.chanceFee ?? 1)!==1) lines.push('<p>'+tr('Картка «Шанс» · гонорар цієї хвилі ','Chance card · this wave’s fee ')+sign(Math.round(100*(s.offer.chanceFee-1)))+'%</p>');
-  if (r.partnerFunding) lines.push('<p class="c-good">'+tr('Супутник від партнерів · фінансування +','Partner satellite · funding +')+r.partnerFunding+'</p>');
+  if (r.partnerFunding) lines.push('<p class="c-good">'+tr('Супутник від партнерів · фінансування +','Partner satellite · funding +')+fmtMoney(r.partnerFunding)+'</p>');
   if (r.rebate) lines.push('<p>' + rebateText(r.rebate) + '</p>');
   if (x.pressMs) lines.push('<p>' + tr('Пресконференція: перегляди є, відео немає.','Press briefing: the views are there, the footage is not.') + '</p>');
-  if (x.iou.paid) lines.push('<p class="c-good">' + tr('Конференція партнерів виплатила ' + x.iou.paid + '.','The Partners’ Conference paid ' + x.iou.paid + '.') + '</p>');
-  if (x.iou.postponed) lines.push('<p>' + tr('Конференція партнерів: «перенесено на наступний рік» (' + x.iou.postponed + ').','Partners’ Conference: “postponed to next year” (' + x.iou.postponed + ').') + '</p>');
+  if (x.iou.paid) lines.push('<p class="c-good">' + tr('Конференція партнерів виплатила ' + fmtMoney(x.iou.paid) + '.','The Partners’ Conference paid ' + fmtMoney(x.iou.paid) + '.') + '</p>');
+  if (x.iou.postponed) lines.push('<p>' + tr('Конференція партнерів: «перенесено на наступний рік» (' + fmtMoney(x.iou.postponed) + ').','Partners’ Conference: “postponed to next year” (' + fmtMoney(x.iou.postponed) + ').') + '</p>');
   if (r.sponsor === 'conference') lines.push('<p>' + tr('Конференція виплатить через дві хвилі. Може бути.','The conference pays in two waves. Maybe.') + '</p>');
   return '<section class="c-card" data-tone="report" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ХВИЛЯ ','DONOR REPORT · WAVE ') + r.wave + '</div><h2 id="c-title">' + tr('Звіт донору','Donor report') + '</h2><small>' + sponsor(r.sponsor).name + '</small>' + chanceCard() + leakReel() +
    '<dl class="c-stats">' + tile(tr('Знято','Filmed'), (x.filmed + x.far) + '/' + x.hits) + tile(tr('Не знято','Not filmed'), x.none) + tile(tr('Збито','Shot down'), x.shot) + '</dl>' +
-   '<dl class="c-stats c-stats-2">' + tile(tr('Гроші','Money'), sign(x.money)) + tile(tr('Перегляди','Views'), fmtViews(x.views)) + tile(tr('Комбо','Combo'), '×' + x.combo) + '</dl>' +
+   '<dl class="c-stats c-stats-2">' + tile(tr('Гроші','Money'), (x.money > 0 ? '+' : '') + fmtMoney(x.money)) + tile(tr('Перегляди','Views'), fmtViews(x.views)) + tile(tr('Комбо','Combo'), '×' + x.combo) + '</dl>' +
    lines.join('') + droneReel() + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
  }
  function overCard() {
-  return '<section class="c-card" data-tone="lost" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ПІДСУМОК','DONOR REPORT · FINAL') + '</div><h2 id="c-title">' + tr('Спонсори згорнули програму','The sponsors pulled out') + '</h2><p>'+tr('Виплата за хвилю: ','Wave payout: ')+s.report.result.money+tr('. У касі ','. Budget: ')+s.funds+tr(', найдешевша ракета коштує ',', cheapest missile: ')+Math.min(...costs)+tr('. Склад порожній. Нового авансу немає.','. No missiles in stock and no new advance.')+'</p>' + chanceCard() + droneReel() + leakReel() +
+  return '<section class="c-card" data-tone="lost" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ПІДСУМОК','DONOR REPORT · FINAL') + '</div><h2 id="c-title">' + tr('Спонсори згорнули програму','The sponsors pulled out') + '</h2><p>'+tr('Виплата за хвилю: ','Wave payout: ')+fmtMoney(s.report.result.money)+tr('. У касі ','. Budget: ')+fmtMoney(s.funds)+tr(', найдешевша ракета коштує ',', cheapest missile: ')+fmtMoney(Math.min(...costs))+tr('. Склад порожній. Нового авансу немає.','. No missiles in stock and no new advance.')+'</p>' + chanceCard() + droneReel() + leakReel() +
    '<dl class="c-stats c-stats-over">' + tile(tr('Перегляди','Views'), fmtViews(s.views)) + tile(tr('Хвиль','Waves'), s.wave) + tile(tr('Комбо','Combo'), '×' + s.bestCombo) + '</dl>' +
    '<p class="c-line">' + wavesWord(s.wave) + tr('. ', '. ') + tr(fmtViews(s.views) + ' переглядів. 0 змін. ', fmtViews(s.views) + ' views. 0 changes. ') + ending(s) + '</p>' +
    (s.assisted ? '<p class="c-note">' + tr('Забіг з автогрою','Run with autoplay') + '</p>' : '') +
@@ -362,9 +362,9 @@ export function startCoalition() {
  function trumpCard() {
   const c = cameo.trump(), gain = Math.round(CFG.trumpPay * s.fatigue);
   return '<section class="c-card c-trump" data-tone="lost" role="dialog" aria-modal="true" aria-labelledby="c-title"><div class="c-kicker">' + tr('КАМЕО · ТРАМП','CAMEO · TRUMP') + '</div><h2 id="c-title">«' + c.title + '»</h2>' +
-   '<p>' + tr('Пропусти хвилю й отримай +' + gain + '. Втома донорів зросте вдвічі. «Угоду підписано. Війну завершено. У понеділок продовжимо.»','Skip the wave and take +' + gain + '. Donor fatigue doubles. “Deal signed. War ended. We resume on Monday.”') + '</p>' +
+   '<p>' + tr('Пропусти хвилю й отримай +' + fmtMoney(gain) + '. Втома донорів зросте вдвічі. «Угоду підписано. Війну завершено. У понеділок продовжимо.»','Skip the wave and take +' + fmtMoney(gain) + '. Donor fatigue doubles. “Deal signed. War ended. We resume on Monday.”') + '</p>' +
    '<p class="c-note">' + tr('Відмовишся — він образиться: одне влучання буде «скасовано указом».','Decline and he takes offence: one hit will be “cancelled by decree”.') + '</p>' +
-   '<div class="c-actions"><button type="button" data-action="deal">' + tr('Підписати +' + gain,'Sign +' + gain) + '</button><button type="button" class="c-ghost" data-action="nodeal">' + tr('Відмовитись','Decline') + '</button></div></section>';
+   '<div class="c-actions"><button type="button" data-action="deal">' + tr('Підписати +' + fmtMoney(gain),'Sign +' + fmtMoney(gain)) + '</button><button type="button" class="c-ghost" data-action="nodeal">' + tr('Відмовитись','Decline') + '</button></div></section>';
  }
  function feed() {
   const names = camNames();
@@ -381,7 +381,7 @@ export function startCoalition() {
    card + '</section>';
  }
  function arcade() {
-  const status = wave() + ' · ' + tr('Бюджет','Budget') + ' ' + s.funds + ' · ' + tr('Перегляди','Views') + ' ' + fmtViews(s.views);
+  const status = wave() + ' · ' + tr('Бюджет','Budget') + ' ' + fmtMoney(s.funds) + ' · ' + tr('Перегляди','Views') + ' ' + fmtViews(s.views);
   const sp = sponsor(s.offer.cards[s.offer.pick].id), contract = zones()[s.offer.cards[s.offer.pick].marker];
   const copy = { plan: tr('Оберіть спонсора, купіть зграю і тисніть ПУСК. В ефірі перемикайте дрони: нема відео — не було.','Pick a sponsor, buy a flock and hit LAUNCH. On air, switch drones: no video, no happened.'),
    watch: tr('Контракт: ' + contract + ' · ' + sp.name + '. Тримайте відкритим дрон того маркера, куди летить зграя.','Contract: ' + contract + ' · ' + sp.name + '. Keep the drone of the target marker open.'),
@@ -402,7 +402,7 @@ export function startCoalition() {
   const names = units(), planning = s.phase === 'plan', locked = !planning || s.deal === 'pending';
   const buy = names.map((name, i) => '<div class="c-buy"><i class="c-badge">' + icon(i) + '</i><div class="c-name"><b>' + name + '</b><small>' + tr('У зграї ','In flock ') + '<span class="c-owned">' + s.stock[i] + '</span></small></div>' +
    '<button type="button" class="c-minus" data-action="undo-' + i + '" aria-label="' + tr('Скасувати покупку: ','Undo purchase: ') + name + '"' + (locked || !s.bought[i] ? ' disabled' : '') + '>−</button>' +
-   '<button type="button" class="c-plus" data-action="buy-' + i + '" aria-label="' + tr('Купити ','Buy ') + name + ' ' + costs[i] + '"' + (locked || s.funds < costs[i] || s.stock[i] >= CFG.cap ? ' disabled' : '') + '>+1 · ' + costs[i] + '</button><small class="c-hint">' + unitHints()[i] + '</small></div>').join('');
+   '<button type="button" class="c-plus" data-action="buy-' + i + '" aria-label="' + tr('Купити ','Buy ') + name + ' ' + fmtMoney(costs[i]) + '"' + (locked || s.funds < costs[i] || s.stock[i] >= CFG.cap ? ' disabled' : '') + '>+1 · ' + fmtMoney(costs[i]) + '</button><small class="c-hint">' + unitHints()[i] + '</small></div>').join('');
   const cta = { plan: button('attack', tr('ПУСК','LAUNCH') + ' · ' + total(s) + ' →', locked || !total(s), 'c-start'), watch: button('x', tr('В ЕФІРІ…','ON AIR…'), true, 'c-start'),
    report: button('next', tr('Наступна хвиля →','Next wave →'), false, 'c-start'), over: button('fresh', tr('Ще раз →','Play again →'), false, 'c-start') }[s.phase];
   return '<aside class="col c-right" aria-label="' + tr('Арсенал','Arsenal') + '">' + (canPickLevel() ? levelField(s.difficulty) : '') +
@@ -529,7 +529,7 @@ export function startCoalition() {
    const done=applyMove(s, m); save(); render();
    if(done) coach.explain(()=>{
     if(m.do==='pick')return tr('Обираю контракт «','Choosing “')+sponsor(s.offer.cards[m.i].id).name+tr('»: бот порівняв умови двох карток.','”: its terms scored higher for this broadcast.');
-    if(m.do==='buy')return tr('Додаю до хвилі: ','Adding to the lineup: ')+units()[m.id]+tr('. Ціна — ','. Cost: ')+costs[m.id]+tr('. Після покупки лишилось ','. Budget left: ')+s.funds+'.';
+    if(m.do==='buy')return tr('Додаю до хвилі: ','Adding to the lineup: ')+units()[m.id]+tr('. Ціна — ','. Cost: ')+fmtMoney(costs[m.id])+tr('. Після покупки лишилось ','. Budget left: ')+fmtMoney(s.funds)+'.';
     return m.do==='deal'?tr('Приймаю угоду: бюджет малий, тому беру виплату за паузу.','Taking the deal: cash is low, so I accept a paid break.'):tr('Відмовляюся від угоди: бюджету вистачає на наступний ефір.','Declining the deal: there is enough money to keep broadcasting.');
    });
    if (m.do === 'deal' || m.do === 'nodeal') { auto.queue = null; auto.t = now + 800 } else { auto.t = now + (m.do === 'buy' ? 1150 : 2000); if (!auto.queue.length) { auto.launch = true; auto.t = now + 2600 } }
