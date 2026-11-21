@@ -5,7 +5,7 @@ export const cities=[
  ['Вітрограддя','Windfold'],['Очеретів Ключ','Reed Key'],['Жароцвіт','Emberbloom'],['Дзвінська Брама','Bellgate']
 ];
 export const points=[[20,18],[38,24],[62,15],[83,27],[71,33],[42,52],[65,44],[83,56],[22,76],[44,81],[63,71],[82,84]];
-const origin=[7,48];
+export const origin=[7,48];
 export const corridors=[
  [[12,36],[29,31],[52,34],[75,32]],
  [[14,50],[31,55],[54,51],[75,54]],
@@ -15,18 +15,30 @@ export function district([x,y]){
  const column=x<22?0:x<41?1:x<63?2:3;
  return (y<40?0:y<61?1:2)*4+column;
 }
-export function drawRoute(site,flagged){
+// Distance from circle {x,y,r} to segment a-b is within the radius.
+export function segmentHitsCircle([ax,ay],[bx,by],{x,y,r}){
+ const dx=bx-ax,dy=by-ay,len=dx*dx+dy*dy,t=len?Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/len)):0;
+ return Math.hypot(ax+t*dx-x,ay+t*dy-y)<=r;
+}
+export function zoneHits(path,zones){
+ let n=0;
+ for(const z of zones)for(let i=1;i<path.length;i++)if(segmentHitsCircle(path[i-1],path[i],z)){n++;break}
+ return n;
+}
+// Optional third argument: known AD/EW zones [{x,y,r}] that lanes should avoid.
+export function drawRoute(site,flagged,zones=[]){
  const end=points[site], preferred=Math.floor(site/4);
  const options=corridors.map((lane,row)=>{
   const stops=lane.filter(([x])=>x<end[0]);
   const warnings=stops.filter(p=>flagged.has(district(p))).length;
-  return {score:warnings*10+Math.abs(row-preferred),path:[origin,...stops,end]};
+  const path=[origin,...stops,end];
+  return {score:warnings*10+zoneHits(path,zones)*10+Math.abs(row-preferred),path};
  });
  return options.sort((a,b)=>a.score-b.score)[0].path;
 }
 // A cartographic arc for the board animation. Its bend is purely illustrative.
-export function boardPath(site,type,flags){
- if(type!==4)return drawRoute(site,flags);
+export function boardPath(site,type,flags,zones=[]){
+ if(type!==4)return drawRoute(site,flags,zones);
  const [x,y]=points[site],dx=x-origin[0],dy=y-origin[1];
  return Array.from({length:33},(_,step)=>{
   const t=step/32,bend=t*(1-t);

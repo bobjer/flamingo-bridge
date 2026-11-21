@@ -100,11 +100,12 @@ export function conditionText(damage,known=false){
 function segments(before,after){
  return '<span class="dr-seg" aria-hidden="true">'+Array.from({length:10},(_,k)=>'<i class="'+(k*10<after?'on':'')+(k*10<before?' was':'')+'"></i>').join('')+'</span>';
 }
-export function appendSummary(panel,{reports,repairs,bulletin,kind,surveys}){
+export function appendSummary(panel,{reports,repairs,bulletin,kind,surveys,notices}){
  const confirmed=reports.filter(r=>r.hit).length,card=document.createElement('section');card.className='dr-summary';
  card.innerHTML='<div class="dr-sum-head">'+icons.doc+'<b>'+tr('Зведення минулої хвилі','Previous wave reports')+'</b></div>'+
   '<div class="dr-counts"><span class="dr-count good"><b>'+confirmed+'</b>'+tr('підтверджено','confirmed')+'</span><span class="dr-count"><b>'+(reports.length-confirmed)+'</b>'+tr('без підтвердження','unconfirmed')+'</span><span class="dr-count warn"><b>'+(repairs?.length??0)+'</b>'+tr('ремонти','repairs')+'</span></div>'+
   (surveys?.length?'<ul class="dr-surveys" aria-label="'+tr('Розвідка','Survey')+'">'+surveys.map(line=>'<li>'+icons.scout+'<span>'+esc(line)+'</span></li>').join('')+'</ul>':'')+
+  (notices?.length?notices.map(line=>'<p class="dr-bulletin" data-kind="spotted">'+icons.bulletin+'<span>'+esc(line)+'</span></p>').join(''):'')+
   (bulletin?'<p class="dr-bulletin" data-kind="'+kind+'">'+icons.bulletin+'<span>'+esc(bulletin)+'</span></p>':'');
  panel.append(card);
 }

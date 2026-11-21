@@ -10,7 +10,8 @@ import {changeSide,read,write} from './factions.js';
 import './deepstrike.css';
 import {advanceConditions,boardImpact} from './site-condition.js';
 import {appendReport,appendSummary,appendEmpty,appendRepairs,conditionText} from './deep-reports.js';
-import {cities,points,district,boardPath,travel} from './deep-atlas.js';
+import {cities,points,district,boardPath,travel,zoneHits} from './deep-atlas.js';
+import {lanePath,placeThreats,validThreats,relocate,resolveSurvey,dummyPath,isLost,refine,activeZones,districtsOf,crossedThreats,confidence,nearestLane} from './deep-threats.js';
 
 const key='pop-deepstrike-v1';
 const names=[
@@ -29,7 +30,7 @@ const fleet=[
  {name:['Тіньолист','Shadeleaf'],baseChance:22,weakTo:'net',limit:91,cycle:2},
  {name:['Зорескок','Starbound'],baseChance:8,weakTo:'dome',limit:69,partner:true,restrictedChance:0,cycle:2},
  {name:['Присмерк','Gloaming'],baseChance:16,weakTo:'guard',limit:84,partner:true,restrictedChance:.35,cycle:3},
- {name:['Пустушки','Dummies'],surveyOnly:true,surveyLoss:.2,limit:69,cycle:1,batch:4,start:12}
+ {name:['Пустушки','Dummies'],surveyOnly:true,surveyLoss:.05,limit:69,cycle:1,batch:4,start:12}
 ];
 // Stylized board icons, all drawn facing right.
 const flightIcons=[
@@ -75,19 +76,22 @@ const surveySectors=[
     offsets.set(f.sector,start+f.count);
     const [origin]=f.path,end=surveySectors[f.sector].point,dx=end[0]-origin[0],dy=end[1]-origin[1],length=Math.hypot(dx,dy);
     return Array.from({length:f.count},(_,index)=>{
+     const loss=f.losses?.[index];
+     // New saves store a loss record per dummy and fly the corridor lane; older saves stored booleans on a short path.
+     if(loss&&typeof loss==='object')return {...f,path:dummyPath(f.sector,loss.offset??0),lane:true,number:start+index+1,lost:!!loss.lost,cause:loss.cause,lossAt:loss.fraction,lossPoint:loss.at};
      const lane=(start+index-(total-1)/2)*Math.min(2.7,15/total);
      const offset=[-dy/length*lane,dx/length*lane];
      const path=[origin,[origin[0]+dx*.36+offset[0],origin[1]+dy*.36+offset[1]],
       [end[0]+offset[0],end[1]+offset[1]]];
-     return {...f,path,number:start+index+1,lost:f.losses?.[index]??false};
+     return {...f,path,number:start+index+1,lost:loss??false};
     });
    });
   }
 const lostTrackFraction=.68;
 function surveyLossMarks(flights,wave){
- return mapFlights(flights.filter(f=>f.survey)).filter(f=>f.lost).map(f=>{
-  const {x,y}=travel(f.path,lostTrackFraction);
-  return {x,y,number:f.number,wave};
+ return mapFlights(flights.filter(f=>f.survey)).filter(f=>f.lost&&f.cause!=='unknown').map(f=>{
+  const {x,y}=travel(f.path,f.lane?f.lossAt:lostTrackFraction);
+  return {x,y,number:f.number,wave,cause:f.cause};
  });
 }
 const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -120,6 +124,10 @@ export function startDeepstrike(){
  const offline=()=>objectives.filter(id=>s.conditions[id]?.damage===100).length;
  if(offline()===objectives.length)s.won=true;
  s.stock??=[];
+ const migrateThreats=!validThreats(s.threats)||!Array.isArray(s.trace);
+ const onGround=(x,y)=>!inHome([x,y]);
+ if(!validThreats(s.threats))s.threats=placeThreats(onGround,Math.random,s.wave);
+ if(!Array.isArray(s.trace))s.trace=[];
  fleet.forEach((unit,id)=>{s.stock[id]??=unit.start??1});
  if(!playable[city])city=-1;
  const retired=s.flights.filter(f=>!f.survey&&!playable[f.i]);
@@ -136,13 +144,14 @@ export function startDeepstrike(){
  if(migrateLosses)s.surveyLossMarks=surveyLossMarks(s.lastTracks??[],s.wave-1);
  for(const mark of s.surveyLossMarks)mark.wave??=s.wave-1;
  const save=()=>write(key,{...s,plan:{targets:[...selected],surveys,sector,layers:visible,unit:active,city}});
- if(migrateLosses||legacy||retired.length||JSON.stringify([...selected])!==JSON.stringify(s.plan?.targets??[]))save();
+ if(migrateLosses||migrateThreats||legacy||retired.length||JSON.stringify([...selected])!==JSON.stringify(s.plan?.targets??[]))save();
  const root=document.createElement('main');root.className='deep-board';document.body.append(root);
  const radius=(type=active)=>Math.min(fleet[type].limit,bridgeReach+(fleet[type].limit-69)*.8+(s.wave-1)*5);
  const distance=i=>Math.hypot(points[i][0]-7,points[i][1]-48);
  const inRange=(i,type)=>distance(i)<=radius(type);
  // One shared route per site; a mixed group avoids the curved Starbound arc.
- const sitePath=(i,row,flags)=>boardPath(i,Object.keys(row).map(Number).find(type=>type!==4)??4,flags);
+ const knownZones=()=>activeZones(s.trace);
+ const sitePath=(i,row,flags)=>boardPath(i,Object.keys(row).map(Number).find(type=>type!==4)??4,flags,knownZones());
  function change(i,type,delta){
   if(!playable[i]||fleet[type].surveyOnly)return false;
   const row=selected.get(i)??{};
@@ -156,7 +165,7 @@ export function startDeepstrike(){
   if(Object.keys(row).length)selected.set(i,row);else selected.delete(i);
   save();return true;
  }
- const flagged=()=>new Set([...s.marks.map(district),...Object.keys(s.intel).filter(i=>(+i===5||+i===8)&&playable[i]&&s.wave-s.intel[i].wave<3).map(i=>district(points[i]))]);
+ const flagged=()=>new Set([...s.marks.map(district),...s.trace.filter(e=>!e.stale).flatMap(e=>[district([e.x,e.y]),...districtsOf(e)]),...Object.keys(s.intel).filter(i=>(+i===5||+i===8)&&playable[i]&&s.wave-s.intel[i].wave<3).map(i=>district(points[i]))]);
  function intelligence(buy=false){
   const feeds=buy?[2]:s.partner?.blocked?[0]:[0,1];
   for(const source of feeds){
@@ -171,9 +180,23 @@ export function startDeepstrike(){
  function finish(deal=false){
   const surveyFlights=s.flights.filter(f=>f.survey);
   s.surveyReports=surveyFlights.map(({sector,type,count})=>({sector,type,count}));
+  const lossRecords=[],passes=[];
   s.surveyReports.forEach((group,index)=>{
-   const lost=surveyFlights[index].losses?.filter(Boolean).length??0;
+   const flight=surveyFlights[index],tally=flight.losses??[];
+   const lost=tally.filter(isLost).length;
    group.lost=lost;s.stock[group.type]+=group.count-lost;
+   group.shot=tally.filter(l=>l?.cause==='shot').length;group.jammed=tally.filter(l=>l?.cause==='jammed').length;
+   for(const l of tally)if(l&&typeof l==='object'){lossRecords.push(l);if(!l.lost)passes.push(dummyPath(flight.sector,l.offset))}
+  });
+  // Dummy losses refine the estimated AD/EW zones; the trace also ages when nothing flew.
+  const refined=refine(s.trace,lossRecords,s.wave,{threats:s.threats,passes});
+  s.trace=refined.trace;
+  s.surveyNotice=refined.fresh.length+refined.confirmed.length>0;
+  s.surveyReports.forEach((group,index)=>{
+   const hit=(surveyFlights[index].losses??[]).find(l=>l?.lost&&l.at&&l.kind);
+   if(!hit)return;
+   const zone=s.trace.find(e=>e.kind===hit.kind&&Math.hypot(e.x-hit.at[0],e.y-hit.at[1])<=1.6*e.r+.01);
+   if(zone)group.zone={kind:zone.kind,sector:nearestLane(zone.x,zone.y),r:zone.r,confirmed:zone.confirmed};
   });
   // One report per site; every surviving drone of a group rolls its own hit.
   const groups=new Map();
@@ -230,7 +253,7 @@ export function startDeepstrike(){
   }
   deliverProduction(s,Math.random,invoice);
   const freshMarks=surveyLossMarks(s.flights,s.wave);
-  s.lastTracks=s.flights;s.wave++;s.started=0;s.flights=[];s.diplomacy=beginDiplomacy(s.wave,s.diplomacy.embargoThrough);s.partner=partnerTurn(s.partner,s.wave);
+  s.lastTracks=s.flights;s.wave++;s.threats=relocate(s.threats,s.wave,onGround).threats;s.started=0;s.flights=[];s.diplomacy=beginDiplomacy(s.wave,s.diplomacy.embargoThrough);s.partner=partnerTurn(s.partner,s.wave);
   invoice.weather=Math.random()<.5?'clear':'cloudy';
   const reviewAvailable=!s.partner.blocked&&invoice.weather==='clear';
   const beforeReview=s.surveyLossMarks.length;
@@ -251,11 +274,12 @@ export function startDeepstrike(){
     text+=' '+(clear?tr('Погода: ясно.','Weather: clear.'):tr('Погода: хмарно. Перевірку позначок відкладено.','Weather: cloudy. Marker review postponed.'));
     if(clear&&!s.partner?.blocked)text+=' '+tr('Знято позначок: ','Markers removed: ')+s.invoice.dismissedMarks+'.';
    }
-   const surveyLines=(s.surveyReports??[]).map(g=>tr('Розвідка','Survey')+' · '+tr(...surveySectors[g.sector].label)+' · '+tr(...fleet[g.type].name)+' ×'+g.count+' · '+tr('Повернулися','Returned')+' '+(g.count-(g.lost??0))+'/'+g.count);
-   appendSummary(panel,{reports:s.reports,repairs:s.repairs,bulletin:text,kind,surveys:surveyLines});
+   const surveyLines=(s.surveyReports??[]).map(g=>tr('Розвідка','Survey')+' · '+tr(...surveySectors[g.sector].label)+' · '+tr(...fleet[g.type].name)+' ×'+g.count+' · '+tr('Повернулися','Returned')+' '+(g.count-(g.lost??0))+'/'+g.count+(g.lost?' · '+tr('Втрачено ','Lost ')+g.lost+tr(' пустушок',' dummies')+(g.zone?' · '+(g.zone.kind==='ew'?tr('РЕБ','EW'):tr('ППО','AD'))+tr(' імовірно в зоні ',' likely in zone ')+tr(...surveySectors[g.zone.sector].label)+' (±'+Math.round(g.zone.r)+')':''):''));
+   const notices=s.surveyNotice?[tr('Нова позиція ППО/РЕБ на карті','New AD/EW position on the map')]:[];
+   appendSummary(panel,{reports:s.reports,repairs:s.repairs,bulletin:text,kind,surveys:surveyLines,notices});
    for(const report of s.reports)closeReport=appendReport(panel,report,s.wave-1,tr(...cities[report.i])+' · '+tr(...names[report.i]))??closeReport;
    appendRepairs(panel,s.repairs,r=>tr(...cities[r.i])+' · '+tr(...names[r.i]));
-   if(!s.reports.length&&!s.repairs?.length&&!surveyLines.length)appendEmpty(panel);
+   if(!s.reports.length&&!s.repairs?.length&&!surveyLines.length&&!notices.length)appendEmpty(panel);
   }
  const sponsorName=id=>id===1?tr('Супутникове агентство','Satellite agency'):tr('Редакція новин','News desk');
  function showWaveReport(){
@@ -313,7 +337,7 @@ export function startDeepstrike(){
   const autoLabel=autoOn?tr('Грати самому','Take over'):tr('Автогра','Autoplay');
   const legend='<details class="deep-legend"'+(legendOpen?' open':'')+'><summary>'+tr('Легенда','Legend')+'</summary><ul>'+
    [0,1,2].map(l=>'<li>'+glyphSvg(l)+tr(...layerNames[l])+'</li>').join('')+
-   '<li><i class="lg lg-base"></i>'+tr('База запуску','Launch base')+'</li><li><i class="lg lg-range"></i>'+tr('Радіус дальності','Range ring')+'</li><li><i class="lg lg-alert"></i>'+tr('Імовірна ППО','Suspected air defence')+'</li><li><i class="lg lg-sel"></i>'+tr('Обрана ціль','Selected target')+'</li><li><i class="lg lg-survey"></i>'+tr('Сектор розвідки','Survey sector')+'</li></ul></details>';
+   '<li><i class="lg lg-base"></i>'+tr('База запуску','Launch base')+'</li><li><i class="lg lg-range"></i>'+tr('Радіус дальності','Range ring')+'</li><li><i class="lg lg-alert"></i>'+tr('Імовірна ППО','Suspected air defence')+'</li><li><i class="lg lg-sel"></i>'+tr('Обрана ціль','Selected target')+'</li><li><i class="lg lg-survey"></i>'+tr('Сектор розвідки','Survey sector')+'</li><li><i class="lg lg-ad"></i>'+tr('ППО? (за втратами)','AD? (from losses)')+'</li><li><i class="lg lg-ew"></i>'+tr('РЕБ? (за втратами)','EW? (from losses)')+'</li><li><i class="lg lg-loss"></i>'+tr('Збито / заглушено','Shot / jammed')+'</li></ul></details>';
   root.innerHTML=coalitionHeader('<button class="c-sides c-auto" data-auto aria-pressed="'+autoOn+'">'+autoLabel+'</button><span class="chip"><i class="dot"></i>'+phase+'</span><button class="c-sides" data-exit>'+tr('Сторони','Factions')+'</button>')+
    '<section class="c-main deep-layout"><aside class="col c-left"><section class="panel br deep-phase"><div class="label">'+tr('Поточна фаза','Current phase')+'</div><div class="phase-row"><b class="big">'+String(s.wave).padStart(2,'0')+'</b><div><h1>'+tr('Діпстрайк','Deepstrike')+'</h1><div class="c-phase"><span class="deep-phase-chip" data-flying="'+flying+'">'+phase+'</span></div></div></div><div class="deep-credits"><span>'+tr('Кредити','Credits')+'</span><b>'+s.credits+'</b></div></section><section class="panel br" data-supply></section></aside>'+
    '<section class="c-play panel br"><div class="label">'+tr('Карта секторів','Sector map')+'</div><div class="deep-layers c-toggles"></div><svg viewBox="0 0 100 100" aria-label="'+tr('Карта секторів','Sector map')+'"></svg>'+legend+'</section>'+
@@ -418,7 +442,16 @@ export function startDeepstrike(){
   }
   supply.hidden=flying;
   let visibleTotal=0;const sum=document.createElement('div'),list2=document.createElement('div');sum.className='deep-sum';list2.className='deep-targets';
-  if(!flying)panel.append(sum,list2);
+  const kindName=k=>k==='ew'?tr('РЕБ','EW'):tr('ППО','AD');
+  function zonesBlock(){
+   const box=document.createElement('section');box.className='deep-zones';
+   const list=[...s.trace].sort((a,b)=>confidence(b)-confidence(a));
+   box.innerHTML='<div class="deep-sec">'+tr('Відомі зони ППО/РЕБ','Known AD/EW zones')+' <b>'+list.length+'</b></div>'+
+    (list.length?'<ul>'+list.map(e=>'<li class="'+e.kind+(e.stale?' stale':'')+'"><b>'+kindName(e.kind)+(e.confirmed?'':'?')+'</b><span>'+tr(...surveySectors[nearestLane(e.x,e.y)].label)+' · ±'+Math.round(e.r)+'</span><small>'+confidence(e)+'% · '+Math.max(0,s.wave-1-e.wave)+tr(' хв. тому',' w. ago')+(e.stale?' · '+tr('застаріло','stale'):'')+'</small></li>').join('')+'</ul>':
+     '<p class="deep-hint">'+tr('Втрати пустушок покажуть, де стоїть ППО або РЕБ.','Dummy losses will show where air defence or EW stands.')+'</p>');
+   return box;
+  }
+  if(!flying)panel.append(zonesBlock(),sum,list2);
   const zoom=document.createElement('select');zoom.setAttribute('aria-label',tr('Масштаб карти','Map scale'));
   zoom.add(new Option(tr('Усі області','All regions'),'-1'));
   cities.forEach((name,i)=>playable[i]&&zoom.add(new Option(tr(...name),String(i))));
@@ -468,6 +501,13 @@ export function startDeepstrike(){
    const [x,y]=patrolSectors[seen.sector];
    const label=tr('ППО · хв. ','AD · wave ')+seen.wave;
    map.insertAdjacentHTML('beforeend','<g class="partner-sighting" pointer-events="none" opacity="'+(seen.wave===s.wave?1:.55)+'"><title>'+tr('Останнє спостереження партнерів','Last partner sighting')+'</title><circle cx="'+x+'" cy="'+y+'" r="2.4" fill="none" stroke="#f0b46d" stroke-width=".45" stroke-dasharray=".7 .45"/><text class="atlas-city" x="'+x+'" y="'+(y+4.7)+'">'+label+'</text></g>');
+  }
+  if(visible[2])for(const e of s.trace){
+   const ad=e.kind==='ad',label=kindName(e.kind)+(e.confirmed?' ×'+e.hits:'?'),ago=Math.max(0,s.wave-1-e.wave);
+   map.insertAdjacentHTML('beforeend','<g class="th th-'+e.kind+(e.confirmed?' conf':'')+(e.stale?' stale':'')+'" pointer-events="none"><title>'+label+' · '+confidence(e)+'% · ±'+Math.round(e.r)+' · '+ago+tr(' хв. тому',' w. ago')+(e.stale?' · '+tr('застаріло','stale'):'')+'</title>'+
+    '<circle class="th-ring" cx="'+e.x+'" cy="'+e.y+'" r="'+e.r+'"/><g transform="translate('+e.x+' '+e.y+')">'+
+    (ad?'<path class="th-glyph" d="M0-2.2 2.1 1.6H-2.1Z"/><circle class="th-in" r=".6" cy=".35"/>':'<circle class="th-glyph" r="2"/><path class="th-in" d="M.5-1.4-.9.2H0L-.5 1.4 .9-.2H0Z"/>')+
+    '</g><text class="atlas-city th-label" x="'+e.x+'" y="'+(e.y+4.4)+'">'+label+'</text></g>');
   }
   if(!flying){
    surveySectors.forEach((entry,index)=>{
@@ -552,11 +592,11 @@ export function startDeepstrike(){
   function drawTracks(overlay,flights,elapsed){
    const past=elapsed===Infinity,calm=reduced();
    for(const f of flights){
-    const t=Math.min(1,elapsed/f.duration);
+    const t=Math.min(1,elapsed/f.duration),laneLoss=!!(f.lane&&f.lost),jam=f.cause==='jammed';
     const path=f.path??[[7,48],points[f.i]];
-    const {x:px,y:py,angle,segment}=travel(path,t*(f.lost?lostTrackFraction:1));
+    const {x:px,y:py,angle,segment}=travel(path,laneLoss?Math.min(t,f.lossAt):t*(f.lost?lostTrackFraction:1));
     const flown=[...path.slice(0,segment+1),[px,py]].map(p=>p.join(',')).join(' ');
-    const done=t===1,k=past?1:Math.min(1,Math.max(0,(elapsed-f.duration)/1200)),tone=done?(f.lost?'#ff6b5e':f.survey?'#7fcfa6':'#ffb347'):f.survey?'#bfeed3':'#ece4bd';
+    const done=laneLoss?t>=f.lossAt:t===1,k=past?1:Math.min(1,Math.max(0,(elapsed-(laneLoss?f.lossAt*f.duration:f.duration))/1200)),tone=done?(f.lost?(jam?'#6fd3e8':'#ff6b5e'):f.survey?'#7fcfa6':'#ffb347'):f.survey?'#bfeed3':'#ece4bd';
     let h='<g class="trk'+(past?' past':'')+'">'+(past?'':'<polyline class="trk-plan" points="'+path.map(p=>p.join(',')).join(' ')+'"/><polyline class="trk-glow" stroke="'+tone+'" points="'+flown+'"/>')+'<polyline class="trk-line atlas-track" stroke="'+tone+'" points="'+flown+'"/>';
     if(!past&&f.surprise&&t>=.4){
      const [x,y]=f.surprise,pulse=calm?0:Math.abs(Math.sin(elapsed/230));
@@ -565,7 +605,10 @@ export function startDeepstrike(){
     let symbol;
     if(!done)symbol='<g transform="rotate('+angle+')"><path d="M-7 0H0" stroke="url(#wake)" stroke-width=".7"/><path d="'+(flightIcons[f.type]??flightIcons[0])+'" fill="white" stroke="#25343a" stroke-width=".15"/></g>';
     else if(past&&f.survey&&f.lost)symbol='';
-    else if(f.lost)symbol=(past?'':'<circle class="trk-ring" r="'+(1.4+k*3.6)+'" opacity="'+(.85*(1-k))+'"/>')+'<path class="trk-x" d="M-1.5-1.5L1.5 1.5M1.5-1.5L-1.5 1.5"'+(past?' transform="scale(.7)"':'')+'/>';
+    else if(f.lost){
+     const kr=calm&&!past?.4:k;
+     symbol=(past?'':'<circle class="trk-ring'+(jam?' jam':'')+'" r="'+(1.4+kr*3.6)+'" opacity="'+(.85*(1-kr))+'"/>')+(jam?'<path class="trk-bolt" d="M.6-1.9-1 .35H0L-.6 1.9 1-.35H0Z"'+(past?' transform="scale(.7)"':'')+'/>':'<path class="trk-x" d="M-1.5-1.5L1.5 1.5M1.5-1.5L-1.5 1.5"'+(past?' transform="scale(.7)"':'')+'/>');
+    }
     else if(f.survey)symbol='<g class="trk-ok"'+(past?' transform="scale(.8)"':'')+'>'+(past?'':'<circle class="trk-wave ok" r="'+(1.5+k*3)+'" opacity="'+(.9*(1-k))+'"/>')+'<circle r="1.35"/><path d="M-.7 0L-.2.6L.75-.6"/></g>';
     else symbol='<g'+(past?' transform="scale(.6)"':'')+'>'+(past?'':'<circle class="trk-wave" r="'+(1.5+k*4)+'" opacity="'+(.9*(1-k))+'"/>'+[0,1,2,3,4,5,6,7].map(a=>'<path class="trk-ray" d="M0-1.9V-'+(2.8+k*1.1)+'" transform="rotate('+(a*45+(a%2?0:11))+')"/>').join(''))+'<circle r="2.1" fill="#ff802740"/><path d="M0 1.5C-2 1-1.6-.4-.6-1.3L-.45-.45Q.4-1 .15-2.4C2 .1 1.6 1.2 0 1.5" fill="#ff972e"/><circle cy=".6" r=".55" fill="#ffe39a"/></g>';
     if(past&&done)symbol+=f.lost||f.survey?'':'<g class="trk-tick" transform="translate(2.4 -2.4)"><circle r="1.2"/><path d="M-.6 0L-.15.5L.65-.5"/></g>';
@@ -579,12 +622,10 @@ export function startDeepstrike(){
    drawTracks(history,mapFlights(s.lastTracks),Infinity);
   }
   if(!flying){
-   let previousY=-Infinity;
-   for(const mark of [...s.surveyLossMarks].sort((a,b)=>a.y-b.y)){
-    const labelY=Math.max(mark.y,previousY+2.2);
-    previousY=labelY;
+   for(const mark of s.surveyLossMarks){
     const label=tr('Зв’язок втрачено · хв. ','Signal lost · W')+mark.wave+' · #'+mark.number;
-    map.insertAdjacentHTML('beforeend','<g class="survey-loss" pointer-events="none"><title>'+label+'</title><path class="trk-x" d="M'+(mark.x-1)+' '+(mark.y-1)+'l2 2m-2 0l2 -2"/><path d="M'+mark.x+' '+mark.y+'L'+(mark.x+2)+' '+labelY+'" stroke="#ff897c" stroke-width=".18"/><text class="atlas-city" x="'+(mark.x+2.2)+'" y="'+labelY+'" style="text-anchor:start">'+label+'</text></g>');
+    const jam=mark.cause==='jammed',fade=Math.max(.3,1-Math.max(0,s.wave-1-mark.wave)*.18);
+    map.insertAdjacentHTML('beforeend','<g class="survey-loss" pointer-events="none" opacity="'+fade+'"><title>'+label+(mark.cause?' · '+(jam?tr('заглушено','jammed'):tr('збито','shot')):'')+'</title>'+(jam?'<path class="trk-bolt" d="M'+(mark.x+.6)+' '+(mark.y-1.9)+'L'+(mark.x-1)+' '+(mark.y+.35)+'H'+mark.x+'L'+(mark.x-.6)+' '+(mark.y+1.9)+'L'+(mark.x+1)+' '+(mark.y-.35)+'H'+mark.x+'Z"/>':'<path class="trk-x" d="M'+(mark.x-1)+' '+(mark.y-1)+'l2 2m-2 0l2 -2"/>')+'</g>');
    }
   }
   const surveyTotal=Object.values(surveys).reduce((n,row)=>n+sumRow(row),0),drones=droneCount(),launchTotal=drones+surveyTotal;
@@ -613,11 +654,17 @@ export function startDeepstrike(){
    panel.append(hud);
    const paint=elapsed=>entries.forEach((e,n)=>{
     const end=Math.max(...e.flights.map(f=>f.duration)),t=Math.min(1,elapsed/end),r=rows[n];
-    const alive=e.survey?e.drones-(e.flights[0].losses?.filter(Boolean).length??0):e.flights.filter(f=>!f.lost).length;
+    const tally=e.survey?(e.flights[0].losses??[]):[];
+    const alive=e.survey?e.drones-tally.filter(isLost).length:e.flights.filter(f=>!f.lost).length;
     const st=t<1?'go':alive?'hit':'lost';
+    const lossText=list=>{
+     const part=[[list.filter(l=>l.cause==='shot').length,tr('збито','shot')],[list.filter(l=>l.cause==='jammed').length,tr('заглушено','jammed')],[list.filter(l=>l.cause==='unknown').length,tr('зв’язок','signal')]].filter(([n])=>n).map(([n,w])=>n+' '+w);
+     return list.length?tr('Втрачено ','Lost ')+list.length+' ('+part.join(' · ')+')':'';
+    };
+    const records=tally.filter(l=>l&&typeof l==='object'&&l.lost),reached=records.filter(l=>l.fraction*e.flights[0].duration<=elapsed);
     r.row.dataset.state=st;r.bar.style.width=(t*100)+'%';
-    r.stat.textContent=st==='go'?tr('Летить','En route'):st==='lost'?tr('Перехоплено','Intercepted'):
-     e.survey?tr('Повернулися','Returned')+' '+alive+'/'+e.drones:tr('Влучання','Impact')+(e.drones>1?' '+alive+'/'+e.drones:'');
+    r.stat.textContent=st==='go'?tr('Летить','En route')+(reached.length?' · '+lossText(reached):''):st==='lost'&&!e.survey?tr('Перехоплено','Intercepted'):
+     e.survey?tr('Повернулися','Returned')+' '+alive+'/'+e.drones+(records.length?' · '+lossText(records):''):tr('Влучання','Impact')+(e.drones>1?' '+alive+'/'+e.drones:'');
    });
    const overlay=document.createElementNS('http://www.w3.org/2000/svg','g');map.append(overlay);
    const tracks=mapFlights(s.flights);
@@ -632,6 +679,14 @@ export function startDeepstrike(){
    animate();return;
   }
   fillSum();
+  {
+   const zones=knownZones(),risky=zones.length?[...selected].filter(([i,row])=>zoneHits(sitePath(i,row,flags),zones)>0).map(([i])=>tr(...cities[i])):[];
+   if(risky.length){
+    const warn=document.createElement('span');warn.className='deep-chips deep-zone-warn';warn.setAttribute('role','status');
+    warn.innerHTML=risky.map(name=>'<small class="deep-chip warn">'+tr('Маршрут проходить зону ППО/РЕБ','Route crosses an AD/EW zone')+' · <b>'+name+'</b></small>').join('');
+    panel.append(warn);
+   }
+  }
   const acts=document.createElement('div');acts.className='deep-actions';panel.append(acts);
   const ghosts=document.createElement('div');ghosts.className='deep-ghosts';
   const groups=Object.entries(surveys).flatMap(([sectorKey,row])=>Object.entries(row).map(([type,count])=>({sector:Number(sectorKey),type:Number(type),count})));
@@ -646,7 +701,7 @@ export function startDeepstrike(){
     const path=sitePath(i,row,flags);
     // The group shares one path, surprise and pace; lanes keep a tight formation and each drone rolls its own interception.
     const surprise=Math.random()<.27?path[1]:null;
-    const encounter=!!surprise||(s.partner&&district(points[i])===district(patrolSectors[s.partner.sector]));
+    const encounter=!!surprise||crossedThreats(path,s.threats).length>0||(s.partner&&district(points[i])===district(patrolSectors[s.partner.sector]));
     const base=2500+travel(path,1).total*(65+Math.random()*90);
     const [ox,oy]=path[0],[ex,ey]=path[path.length-1],length=Math.hypot(ex-ox,ey-oy)||1;
     types.forEach((type,k)=>{
@@ -658,8 +713,9 @@ export function startDeepstrike(){
    for(const group of groups){
     s.stock[group.type]-=group.count;
     const risk=fleet[group.type].surveyLoss??0;
-    const losses=Array.from({length:group.count},()=>risk>0&&Math.random()<risk);
-    s.flights.push({...group,survey:true,losses,path:[[7,48],surveySectors[group.sector].point],duration:4500});
+    // Each dummy flies its corridor lane; hidden AD/EW can shoot or jam it (see deep-threats.js).
+    const path=lanePath(group.sector),losses=resolveSurvey(path,group.count,s.threats,Math.random,risk);
+    s.flights.push({...group,survey:true,losses,path,duration:6000});
    }
    for(const sectorKey of Object.keys(surveys))delete surveys[sectorKey];
    selected.clear();marking=false;s.started=Date.now();save();render();

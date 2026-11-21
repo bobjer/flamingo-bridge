@@ -360,3 +360,30 @@
  .deep-wave-card .deep-report:has(.dr-clip)>.dr-clip-label{grid-column:2;grid-row:1}
  .deep-wave-card .deep-report:has(.dr-clip)>.dr-clip{grid-column:2;grid-row:2 / span 5;min-width:0}
 }
+
+/* Estimated enemy air defence / EW zones revealed by dummy losses */
+.deep-layout .th-ring{fill:#f0b46d14;stroke:#f0b46d;stroke-width:.35;stroke-dasharray:1 .7}
+.deep-layout .th-ew .th-ring{fill:#6fd3e814;stroke:#6fd3e8}
+.deep-layout .th.conf .th-ring{stroke-dasharray:none;stroke-width:.5;fill-opacity:1}
+.deep-layout .th.stale{opacity:.38}
+.deep-layout .th-glyph{fill:#f0b46d;stroke:#071016;stroke-width:.25}
+.deep-layout .th-ew .th-glyph{fill:#6fd3e8}
+.deep-layout .th-in{fill:#071016}
+.deep-layout .th-label{fill:#ffd9a6;font-weight:700}
+.deep-layout .th-ew .th-label{fill:#b7f0fb}
+.trk-bolt{fill:#6fd3e8;stroke:#071016;stroke-width:.15;stroke-linejoin:round}
+.trk-ring.jam{stroke:#6fd3e8}
+.lg-ad{border-radius:1px;border:1.5px dashed #f0b46d;background:#f0b46d33}
+.lg-ew{border:1.5px dashed #6fd3e8;background:#6fd3e833}
+.lg-loss{border-radius:1px;border:1px solid #ff8a78;background:linear-gradient(135deg,transparent 45%,#ff6b5e 45% 55%,transparent 55%),linear-gradient(45deg,transparent 45%,#6fd3e8 45% 55%,transparent 55%)}
+.deep-chip.warn{border-color:#f0b46d;color:#ffd9a6;background:#2a1d0c;white-space:normal}
+.deep-chip.warn b{color:#ffd9a6}
+.deep-zone-warn{margin:6px 0}
+.deep-zones{display:grid;gap:6px;margin-bottom:10px}
+.deep-zones ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.deep-zones li{display:grid;grid-template-columns:auto 1fr;gap:1px 10px;align-items:baseline;padding:6px 10px;border-left:3px solid #f0b46d;background:var(--bg);font-size:12px;color:var(--fg)}
+.deep-zones li.ew{border-left-color:#6fd3e8}
+.deep-zones li.stale{opacity:.5}
+.deep-zones li b{font:700 11px var(--mono)}
+.deep-zones li small{grid-column:1/-1;color:var(--soft);font-size:10.5px}
+.deep-zones .deep-hint{font-size:11.5px}
