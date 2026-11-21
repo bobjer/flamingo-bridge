@@ -231,8 +231,11 @@ export function startDeepstrike(){
   deliverProduction(s,Math.random,invoice);
   const freshMarks=surveyLossMarks(s.flights,s.wave);
   s.lastTracks=s.flights;s.wave++;s.started=0;s.flights=[];s.diplomacy=beginDiplomacy(s.wave,s.diplomacy.embargoThrough);s.partner=partnerTurn(s.partner,s.wave);
-  const reviewAvailable=!s.partner.blocked&&Math.random()<.5;
+  invoice.weather=Math.random()<.5?'clear':'cloudy';
+  const reviewAvailable=!s.partner.blocked&&invoice.weather==='clear';
+  const beforeReview=s.surveyLossMarks.length;
   if(reviewAvailable)s.surveyLossMarks=s.surveyLossMarks.filter(()=>Math.random()>=.35);
+  invoice.dismissedMarks=beforeReview-s.surveyLossMarks.length;
   s.surveyLossMarks.push(...freshMarks);
   intelligence();save();
  }
@@ -242,6 +245,11 @@ export function startDeepstrike(){
     if(s.partner.blocked){kind='blocked';text=tr('Трамп заблокував партнерську розвідку на цю хвилю.','Trump blocked partner intelligence for this wave.')}
     else if(s.partner.seen?.wave===s.wave){kind='spotted';text=tr('Партнери помітили ППО. Сектор позначено на шарі розвідки.','Partners spotted air defence. The sector is marked on the intelligence layer.')}
     else text=tr('Партнери не надіслали нових спостережень.','No new sightings from partners.');
+   }
+   if(s.invoice?.weather){
+    const clear=s.invoice.weather==='clear';
+    text+=' '+(clear?tr('Погода: ясно.','Weather: clear.'):tr('Погода: хмарно. Перевірку позначок відкладено.','Weather: cloudy. Marker review postponed.'));
+    if(clear&&!s.partner?.blocked)text+=' '+tr('Знято позначок: ','Markers removed: ')+s.invoice.dismissedMarks+'.';
    }
    const surveyLines=(s.surveyReports??[]).map(g=>tr('Розвідка','Survey')+' · '+tr(...surveySectors[g.sector].label)+' · '+tr(...fleet[g.type].name)+' ×'+g.count+' · '+tr('Повернулися','Returned')+' '+(g.count-(g.lost??0))+'/'+g.count);
    appendSummary(panel,{reports:s.reports,repairs:s.repairs,bulletin:text,kind,surveys:surveyLines});
