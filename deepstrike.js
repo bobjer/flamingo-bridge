@@ -1,5 +1,6 @@
 import {productionOffer,deliverProduction} from './coalition-rules.js';
 import {launchPrices,openingFunds,openingTrust,dealAdvance,dealTrustCost,minimumLaunch,waveCost,settleWave} from './deep-economy.js';
+import {planDeepWave} from './deep-bot.js';
 import {coalitionHeader} from './coalition-header.js';
 import {beginDiplomacy,recordLaunch,deliveryChance} from './deep-supply.js';
 import {partnerTurn,patrolSectors} from './deep-partners.js';
@@ -24,7 +25,7 @@ const sources=[['Власна розвідка','Field intelligence'],['Парт
 const layerNames=[['Підприємства','Industry'],['Енергетика','Energy'],['Розвідка','Intelligence']];
 // Ranges and delivery intervals are board-game units.
 const fleet=[
- {name:['Шурхіт','Rustle'],baseChance:24,weakTo:'net',limit:77,cycle:1},
+ {name:['Шурхіт','Rustle'],baseChance:24,weakTo:'net',limit:77,cycle:1,batch:2},
  {name:['Буревійник','Squallwing'],baseChance:18,weakTo:'guard',limit:103,cycle:3},
  {name:['Міднокрил','Copperwing'],baseChance:20,weakTo:'guard',limit:116,cycle:4},
  {name:['Тіньолист','Shadeleaf'],baseChance:22,weakTo:'net',limit:91,cycle:2},
@@ -300,6 +301,12 @@ export function startDeepstrike(){
   if(invoice?.contract!=null)note(sponsorName(invoice.contract)+' · '+(invoice.qualified?tr('Контракт виконано','Contract fulfilled'):tr('Умови не виконано','Terms unmet')));
   const delivery=invoice?.delivery;
   if(delivery)note(tr('Поставка','Delivery')+' · '+tr(...fleet[delivery.type].name)+' ×'+delivery.delivered+' · '+tr('Втрати','Lost')+' '+delivery.lost+' · '+tr('Залишилося','Remaining')+' '+delivery.remaining);
+  if(autoOn){
+   const takeover=document.createElement('button');
+   takeover.textContent=tr('Грати самому','Take over');
+   takeover.onclick=()=>{autoOn=false;render()};
+   card.append(takeover);
+  }
   if(invoice?.offer&&!invoice.choice){
    const order=invoice.offer;
    const choose=choice=>{
@@ -313,7 +320,10 @@ export function startDeepstrike(){
     const b=document.createElement('button');b.textContent=label;b.onclick=()=>choose(choice);card.append(b)
    }
    reportContents(card);
-   if(autoOn)autoTimer=setTimeout(()=>choose(s.credits>=40?'order':'cash'),1800);
+   if(autoOn)autoTimer=setTimeout(()=>{
+    if(document.hidden||document.querySelector('dialog:modal'))render();
+    else choose(s.credits>=65?'order':'cash');
+   },1800);
    return;
   }
   const unreported=new Set((s.lastTracks??[]).filter(f=>!f.survey).map(f=>f.i));
@@ -324,6 +334,10 @@ export function startDeepstrike(){
   const next=document.createElement('button');next.textContent=over?tr('Підсумок кампанії','Campaign result'):tr('Наступна хвиля →','Next wave →');
   next.onclick=()=>{s.reportPending=false;save();render()};title.after(next);
   reportContents(card);
+  if(autoOn&&!over)autoTimer=setTimeout(()=>{
+   if(document.hidden||document.querySelector('dialog:modal'))render();
+   else next.click();
+  },3200);
  }
  function render(){
   closeReport?.();closeReport=null;
@@ -352,8 +366,8 @@ export function startDeepstrike(){
   const details=document.createElement('details'),summary=document.createElement('summary');
   summary.textContent=tr('Спонсори · довіра ','Sponsors · trust ')+s.trust+'%';
   details.append(summary,document.createTextNode(tr(
-   'Хвиля: 5 кредитів + ціна кожного борта. За підтверджений звіт: новини 30, супутник 36, помножені на 50% + половину довіри. Розвідка з поверненням: 3 за хвилю. Без підтверджень: −12 довіри, з поверненням розвідки: −4. Підтвердження: +5. Ембарго: −4 кредити за хвилю.',
-   'Wave: 5 credits plus each unit. Confirmed report: news 30, satellite 36, scaled by 50% plus half your trust. Returning survey: 3 per wave. No confirmations: −12 trust, or −4 with a returning survey. Confirmation: +5. Embargo: −4 credits per wave.')));
+   'Хвиля: 5 кредитів + ціна кожного борта. За підтверджений звіт: новини 30, супутник 36, і +10 за кожне додаткове попадання по тій самій цілі. Суму помножено на 50% + половину довіри. Розвідка з поверненням: 3 за хвилю. Без підтверджень: −12 довіри, з поверненням розвідки: −4. Підтвердження: +5. Ембарго: −4 кредити за хвилю.',
+   'Wave: 5 credits plus each unit. Confirmed report: news 30, satellite 36, and +10 per additional hit at the same site. The total scales by 50% plus half your trust. Returning survey: 3 per wave. No confirmations: −12 trust, or −4 with a returning survey. Confirmation: +5. Embargo: −4 credits per wave.')));
   treasury.append(details);
   if(s.invoice){
    const r=s.invoice,line=document.createElement('p');
@@ -689,10 +703,12 @@ export function startDeepstrike(){
   }
   const acts=document.createElement('div');acts.className='deep-actions';panel.append(acts);
   const ghosts=document.createElement('div');ghosts.className='deep-ghosts';
-  const groups=Object.entries(surveys).flatMap(([sectorKey,row])=>Object.entries(row).map(([type,count])=>({sector:Number(sectorKey),type:Number(type),count})));
-  const cost=waveCost(fleet.map((_,id)=>assigned(id)));
-  const launch=button(acts,tr('Запустити хвилю','Launch wave')+' ('+launchTotal+')',()=>{
-   if(!cost||s.credits<cost)return;
+  const planCost=()=>waveCost(fleet.map((_,id)=>assigned(id)));
+  const cost=planCost();
+  function launchWave(){
+   const cost=planCost();
+   if(s.started||!cost||s.credits<cost||fleet.some((_,id)=>available(id)<0))return;
+   const groups=Object.entries(surveys).flatMap(([sectorKey,row])=>Object.entries(row).map(([type,count])=>({sector:Number(sectorKey),type:Number(type),count})));
    s.credits-=cost;s.launchCost=cost;
    recordLaunch(s.diplomacy,s.wave,selected);
    s.flights=[];
@@ -719,7 +735,8 @@ export function startDeepstrike(){
    }
    for(const sectorKey of Object.keys(surveys))delete surveys[sectorKey];
    selected.clear();marking=false;s.started=Date.now();save();render();
-  },!launchTotal||s.credits<cost);
+  }
+  const launch=button(acts,tr('Запустити хвилю','Launch wave')+' ('+launchTotal+')',launchWave,!launchTotal||s.credits<cost);
   launch.className='c-start deep-launch';
   launch.innerHTML='<span>'+tr('Запустити хвилю','Launch wave')+'</span><span class="deep-pill">'+launchTotal+' · '+cost+' '+tr('кр.','cr.')+'</span>';
   if(s.diplomacy.talks)button(acts,tr('Прийняти умови Трампа','Accept Trump’s deal')+' · +'+dealAdvance+' / −'+dealTrustCost+'% · '+tr('пропустити хвилю','skip wave'),()=>{
@@ -735,22 +752,24 @@ export function startDeepstrike(){
   if(autoOn)autoTimer=setTimeout(()=>{
    if(document.hidden||document.querySelector('dialog:modal')){render();return}
    if(launchTotal){
-    if(cost<=s.credits)launch.click();
-    else{autoOn=false;render()}
-    return;
+    if(!launch.disabled&&fleet.every((_,id)=>available(id)>=0)){launchWave();return}
+    autoOn=false;render();return;
    }
-   const cards=[...panel.querySelectorAll('button[aria-pressed="false"]:enabled')].filter(b=>b.classList.contains('target-card'));
-   if(cards.length&&s.credits>=5+launchPrices[active]){cards[Math.floor(Math.random()*cards.length)].click();return}
-   if(!s.stock[6]&&s.credits>=7){s.stock[6]+=5;s.credits--}
-   if(s.stock[6]>0&&s.credits>=6){
-    sector=((s.lastAutoSurvey??-1)+1)%surveySectors.length;
-    s.lastAutoSurvey=sector;
-    (surveys[sector]??={})[6]=1;
-    save();render();return;
-   }
-   const next=s.stock.findIndex((count,i)=>count>0&&!fleet[i].surveyOnly&&i!==active);
-   if(next>=0){active=next;visible.fill(true)}else autoOn=false;
-   render();
+   const targets=points.flatMap((_,id)=>{
+    const damage=s.conditions[id]?.damage??0;
+    const types=fleet.flatMap((unit,type)=>!unit.surveyOnly&&s.stock[type]>0&&inRange(id,type)?[type]:[])
+     .sort((a,b)=>launchPrices[a]-launchPrices[b]);
+    if(!playable[id]||damage===100||!types.length)return [];
+    const objective=objectives.includes(id);
+    return [{id,types,objective,groupSize:objective&&damage<75?3:2}];
+   }).sort((a,b)=>Number(b.objective)-Number(a.objective)||a.types.length-b.types.length);
+   const firstSector=((s.lastAutoSurvey??-1)+1)%surveySectors.length;
+   const plan=planDeepWave({credits:s.credits,stock:s.stock,targets,sectorCount:surveySectors.length,firstSector});
+   for(const [id,row] of plan.strikes)selected.set(id,row);
+   Object.assign(surveys,plan.surveys);
+   if(Object.keys(plan.surveys).length)s.lastAutoSurvey=firstSector;
+   if(plan.strikes.size||Object.keys(plan.surveys).length){launchWave();return}
+   autoOn=false;render();
   },1800);
   if(s.wave>1)button(panel,tr('Відкрити звіт минулої хвилі','Open previous wave report'),()=>{s.reportPending=true;save();render()});
 
