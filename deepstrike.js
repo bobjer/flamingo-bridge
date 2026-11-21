@@ -54,6 +54,7 @@ function inHome([x,y]){
  return inside;
 }
 const playable=points.map(point=>!inHome(point));
+const objectives=[0,1,9,10].filter(id=>playable[id]);
 // Marker glyphs per layer: industry square, energy diamond + bolt, intelligence / AD triangle-ring.
 const glyph=l=>l===0?'<rect class="mk" x="-1.6" y="-1.6" width="3.2" height="3.2" rx=".3"/>':
  l===1?'<path class="mk" d="M0-2.3 2.3 0 0 2.3-2.3 0Z"/><path class="mk-in" d="M.45-1.2-.9.2H0L-.45 1.2 .9-.2H0Z"/>':
@@ -89,6 +90,9 @@ export function startDeepstrike(){
  let closeReport,autoTimer,autoOn=false,refocus=-1,refocusCard=-1,refocusStep=null,legendOpen=false;
  let marking=false, active=s.plan?.unit??0, timer, city=s.plan?.city??-1;
  s.conditions??={};
+ s.base??={station:1,damage:0,moved:false};
+ const offline=()=>objectives.filter(id=>s.conditions[id]?.damage===100).length;
+ if(offline()===objectives.length)s.won=true;
  s.stock??=[];
  fleet.forEach((unit,id)=>{s.stock[id]??=unit.start??1});
  if(!playable[city])city=-1;
@@ -162,7 +166,18 @@ export function startDeepstrike(){
    s.conditions[report.i].damage=damage;
    Object.assign(report,{damage,impact:damage-report.previous,hits});
   }
+  if(offline()===objectives.length)s.won=true;
+  const base=s.base;
+  let incident=null;
+  if(!deal&&!s.won&&s.wave>1&&!base.moved&&Math.random()<.18){
+   const damage=1+Math.floor(Math.random()*100),loss=1+Math.floor(Math.random()*100);
+   base.damage=Math.min(100,base.damage+damage);
+   let lost=0;
+   s.stock=s.stock.map(count=>{const removed=Math.ceil(count*loss/100);lost+=removed;return count-removed});
+   incident={damage,loss,lost};
+  }
   fleet.forEach((item,id)=>{
+   if(!item.partner&&(base.damage===100||(base.moved&&s.wave%2===0)))return;
    if(s.wave%item.cycle===0&&(!item.partner||Math.random()<deliveryChance(item,s.wave,s.diplomacy)))s.stock[id]+=item.batch??1;
   });
   const result=settleWave(s.trust,s.reports,s.surveyReports.reduce((n,g)=>n+g.count-g.lost,0),deal,s.wave<=s.diplomacy.embargoThrough);
@@ -172,6 +187,7 @@ export function startDeepstrike(){
   const contract=s.contractSource??0;
   const qualified=!deal&&s.reports.some(r=>r.hit&&r.source===contract);
   const invoice=s.invoice;
+  invoice.incident=incident;base.moved=false;
   invoice.contract=contract;
   invoice.qualified=qualified;
   if(qualified){
@@ -198,7 +214,7 @@ export function startDeepstrike(){
  const sponsorName=id=>id===1?tr('Супутникове агентство','Satellite agency'):tr('Редакція новин','News desk');
  function showWaveReport(){
   const wave=s.invoice?.wave??s.wave-1;
-  const over=s.trust===0||s.credits<minimumLaunch(s.stock);
+  const over=s.won||s.trust===0||s.credits<minimumLaunch(s.stock);
   root.innerHTML='<section class="c-card deep-wave-card" data-tone="report" role="dialog" aria-labelledby="deep-report-title"><div class="c-kicker">'+tr('ЗВІТ ДОНОРУ · ХВИЛЯ ','DONOR REPORT · WAVE ')+wave+'</div><h2 id="deep-report-title" tabindex="-1">'+tr('Підсумок хвилі','Wave report')+'</h2></section>';
   const card=root.firstElementChild,invoice=s.invoice;
   if(invoice){
@@ -207,6 +223,8 @@ export function startDeepstrike(){
    card.append(line);
   }
   const note=text=>{const p=document.createElement('p');p.textContent=text;card.append(p)};
+  if(s.won)note(tr('Перемога! Промисловість та енергетика зупинені.','Victory! All factories and energy sites are offline.'));
+  if(invoice?.incident){const e=invoice.incident;note(tr('Аварія на базі','Base incident')+' · '+tr('Пошкодження','Damage')+' '+s.base.damage+'% · '+tr('Втрачено зі складу','Stock lost')+' '+e.lost+' ('+e.loss+'%)')}
   if(invoice?.contract!=null)note(sponsorName(invoice.contract)+' · '+(invoice.qualified?tr('Контракт виконано','Contract fulfilled'):tr('Умови не виконано','Terms unmet')));
   const delivery=invoice?.delivery;
   if(delivery)note(tr('Поставка','Delivery')+' · '+tr(...fleet[delivery.type].name)+' ×'+delivery.delivered+' · '+tr('Втрати','Lost')+' '+delivery.lost+' · '+tr('Залишилося','Remaining')+' '+delivery.remaining);
@@ -271,14 +289,24 @@ export function startDeepstrike(){
    line.textContent=tr('Хвиля ','Wave ')+r.wave+' · '+tr('Витрати ','Spent ')+r.cost+' · '+(r.deal?tr('Аванс ','Advance '):tr('Виплата ','Payout '))+r.payout+(r.embargoFee?' · '+tr('Ембарго −','Embargo −')+r.embargoFee:'')+' · '+tr('Довіра ','Trust ')+(r.trustChange>0?'+':'')+r.trustChange;
    treasury.append(line);
   }
-  if(!flying&&(s.trust===0||s.credits<minimumLaunch(s.stock))){
+  if(!flying&&(s.won||s.trust===0||s.credits<minimumLaunch(s.stock))){
    autoOn=false;root.querySelector('[data-auto]').disabled=true;
-   root.querySelector('.deep-phase-chip').textContent=tr('Гру завершено','Game over');
-   panel.textContent=s.trust===0?tr('Спонсори закрили програму.','Sponsors withdrew funding.'):tr('Бюджету не вистачає на наступну хвилю.','The budget cannot fund another wave.');
+   root.querySelector('.deep-phase-chip').textContent=s.won?tr('Перемога','Victory'):tr('Гру завершено','Game over');
+   panel.textContent=s.won?tr('Перемога! Усі заводи та енергетичні об’єкти одночасно зупинені.','Victory! All factories and energy sites are offline together.'):s.trust===0?tr('Спонсори закрили програму.','Sponsors withdrew funding.'):tr('Бюджету не вистачає на наступну хвилю.','The budget cannot fund another wave.');
    button(panel,tr('Нова кампанія','New campaign'),()=>{if(write(key,null))location.reload()});
    return;
   }
   if(!flying){
+   const status=document.createElement('p');
+   status.textContent=tr('До перемоги · зупинено ','Victory objective · offline ')+offline()+'/'+objectives.length+' · '+objectives.map(i=>tr(...names[i])+' '+(s.conditions[i]?.damage??0)+'%').join(', ');
+   treasury.append(status);
+   const base=s.base, info=document.createElement('p');
+   info.textContent=tr('База №','Base #')+base.station+' · '+tr('Пошкодження ','Damage ')+base.damage+'%';
+   treasury.append(info);
+   const hint=document.createElement('small');hint.textContent=tr('Переїзд захищає склад на одну хвилю. У парну хвилю переїзду місцеву поставку пропущено. При 100% пошкодження місцеве виробництво зупиняється.','Moving protects stock for one wave. Moving on an even wave skips local supply. At 100% damage local production stops.');treasury.append(hint);
+   button(treasury,tr('Перемістити базу','Move base'),()=>{base.station=3-base.station;base.moved=true;save();render()},base.moved);
+   const repair=Math.min(25,base.damage),fee=Math.ceil(repair/5);
+   if(repair)button(treasury,tr('Ремонт','Repair')+' '+repair+'% · '+fee+tr(' кр.',' cr.'),()=>{base.damage-=repair;s.credits-=fee;save();render()},fee>s.credits);
    const heading=document.createElement('div');heading.className='label';heading.textContent=tr('Контракт спонсора · оберіть підтвердження','Sponsor contract · choose the evidence');treasury.append(heading);
    for(const id of [0,1])button(treasury,sponsorName(id)+' · +12',()=>{s.contractSource=id;save();render()},false,(s.contractSource??0)===id,'c-sides');
    if(s.production){const p=document.createElement('p');p.textContent=tr('У виробництві','In production')+' · '+tr(...fleet[s.production.type].name)+' ×'+s.production.remaining;treasury.append(p)}
