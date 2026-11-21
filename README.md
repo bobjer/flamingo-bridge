@@ -2,7 +2,7 @@
 
 On wave one, you have a bridge, a budget, and a plan. By wave nine, you have a bridge, a flock of flamingos, and a few questions for whoever approved the budget.
 
-**[Play in English](https://flamingo-bridge-vhs.rustyperch5.chatgpt.site/en)** · [Play in Ukrainian](https://flamingo-bridge-vhs.rustyperch5.chatgpt.site)
+**[Play in English](https://flamingo-bridge.rustyperch5.chatgpt.site/en)** · [Play in Ukrainian](https://flamingo-bridge.rustyperch5.chatgpt.site)
 
 ![Flamingos over the bridge on the Pop Season cover](public/share-en.jpg)
 
@@ -49,6 +49,6 @@ I’d love balance feedback, better 3D unit models, and pull requests with fixes
 
 ## License
 
-You can use, remix, host, and sell Pop Season. Keep the [license](LICENSE) with your version and credit the [original idea by No Sense](https://github.com/bobjer/flamingo-bridge) somewhere your users can find it.
+Pop Season is licensed under the [Apache License, Version 2.0](LICENSE). You can use, modify, host, and sell the game under its terms. See [NOTICE](NOTICE) for attribution.
 
 Built your own game from scratch after playing Pop Season? If it sparked the idea, please credit [Pop Season by No Sense](https://github.com/bobjer/flamingo-bridge), even if every line of code and every asset is yours.
