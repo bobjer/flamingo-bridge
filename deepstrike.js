@@ -777,7 +777,7 @@ export function startDeepstrike(){
    const previousWaveProfitable=invoice?.wave===s.wave-1&&invoice.payout>invoice.cost+invoice.embargoFee;
    const canStockpile=previousWaveProfitable&&!previousSurveyOnly&&s.base.damage<100&&(!s.base.moved||s.wave%2!==0);
    const plan=planDeepWave({credits:s.credits,trust:s.trust,stock:s.stock,targets,
-    sectorCount:surveySectors.length,firstSector,canStockpile});
+    sectorCount:surveySectors.length,firstSector,canStockpile,embargo});
    for(const [id,row] of plan.strikes)selected.set(id,row);
    Object.assign(surveys,plan.surveys);
    if(Object.keys(plan.surveys).length)s.lastAutoSurvey=firstSector;

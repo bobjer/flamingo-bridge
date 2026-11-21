@@ -7,7 +7,7 @@ const cheapestStrike=Math.min(...launchPrices.slice(0,surveyType));
 const surveyOnlyBudget=3;
 const stockpileReserve=2*(overhead+embargoFee)+surveyOnlyBudget+cheapestStrike;
 
-export function planDeepWave({credits,trust,stock,targets,sectorCount,firstSector,canStockpile}){
+export function planDeepWave({credits,trust,stock,targets,sectorCount,firstSector,canStockpile,embargo=false}){
  const remaining=[...stock];
  const strikes=new Map();
  const surveys={};
@@ -42,7 +42,9 @@ export function planDeepWave({credits,trust,stock,targets,sectorCount,firstSecto
  }
 
  // One returning dummy earns the survey payout. Spread backups over sectors.
- const surveyBudget=strikeCount?strikeBudget:Math.min(affordable,surveyOnlyBudget);
+ const nextStrikeCost=overhead+cheapestStrike;
+ const surveyCeiling=affordable-nextStrikeCost-(embargo?embargoFee:0);
+ const surveyBudget=Math.min(strikeCount?strikeBudget:surveyOnlyBudget,surveyCeiling);
  for(let offset=0;offset<sectorCount;offset++){
   if(remaining[surveyType]<=0||spent+launchPrices[surveyType]>surveyBudget)break;
   const sector=(firstSector+offset)%sectorCount;
