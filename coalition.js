@@ -61,7 +61,7 @@ export function startCoalition() {
  let autoOn = false;
  const auto = { stage: '', t: 0, queue: null, launch: false, stampAt: 0, holdUntil: 0 };
  const feedLayer = createFeed();
- let stage = null, waveKey = '', prevView = 0, firstFrame = false;
+ let stage = null, waveKey = '', prevView = 0, firstFrame = false, victoryClock = 0, victoryOn = false;
  let drawnCam = -1, holdShotUntil = 0;
  const player = replayViewer(feedLayer.host, () => stage, rewind => { if (rewind) waveKey = ''; auto.t = performance.now()+2500 });
  let finale = 0;
@@ -163,7 +163,7 @@ export function startCoalition() {
        if (s.cam === f.marker || otherInShot?.half >= 9) kind = 'drone';
      }
      (r.filmLog ??= {})[i] = {camera:s.cam,state};
-     if (kind !== 'none') holdShotUntil = Math.max(holdShotUntil,performance.now()+(cameraSubjects(s)[f.marker]==='cruiser' && !f.extra ? 3100 : 900));
+     if (kind !== 'none') holdShotUntil = Math.max(holdShotUntil,performance.now()+(cameraSubjects(s)[f.marker]==='cruiser' && !f.extra ? CFG.tailCruiser / watchRate() : 900));
    }
    s.captures[i] = kind;
    if (coach.enabled && !autoOn && (kind === 'drone' || kind === 'far') && ['arch','pier','hole'].includes(cameraSubjects(s)[f.marker])) {
@@ -304,19 +304,27 @@ export function startCoalition() {
      return '<figure class="c-leak">'+playThumb('leak-'+i,title,subject?poster(subject):'/leak-'+l.clip+'.svg')+'<figcaption><small>'+tr('ВИТІК З ТОГО БОКУ · ХВИЛЯ ','LEAKED FOOTAGE · WAVE ')+l.source+'</small><strong>'+title+'</strong><span>+'+fmtViews(l.views)+' '+tr('переглядів','views')+(l.funding?' · +'+fmtMoney(l.funding)+' '+tr('до бюджету','funding'):'')+'</span></figcaption></figure>';
    }).join('');
  }
+ function filmTail(f, subjects, collapse) {
+  if (!f) return CFG.tailDefault;
+  if (f === collapse) return CFG.tailCollapse;
+  if (!f.success || f.decree) return CFG.tailDefault;
+  if (f.extra) return f.extra === 'tanker' ? CFG.tailTanker : CFG.tailDefault;
+  const subject = subjects[f.marker];
+  return subject === 'cruiser' ? CFG.tailCruiser : subject === 'sam' ? CFG.tailSam : CFG.tailDefault;
+ }
  function openFilm(b) {
    const [kind,id] = b.dataset.film.split('-'), r = s.report;
    if(kind === 'wave' || kind === 'loss') {
      if(!r?.flights || (kind==='loss' && !r.cameraLoss)) return;
-     player.show(b,kind==='wave'?wave():tr('Останній кадр дрона','Last drone transmission'),{...r,aa:s.aa,subjects:cameraSubjects(s),whole:kind==='wave',camera:r.cameraLoss?.camera ?? 3,time:r.cameraLoss?.at ?? 0,orbital:s.offer.orbital,showSignal:true});
+     player.show(b,kind==='wave'?wave():tr('Останній кадр дрона','Last drone transmission'),{...r,aa:s.aa,subjects:cameraSubjects(s),whole:kind==='wave',tail:CFG.tailDefault,camera:r.cameraLoss?.camera ?? 3,time:r.cameraLoss?.at ?? 0,orbital:s.offer.orbital,showSignal:true});
    } else if(kind === 'leak') {
      const l = r?.leaks?.[id]; if(!l) return;
-     if(l.film) player.show(b,subjectName(l.film.subject ?? l.film.subjects[l.film.marker]),{...l.film,reverse:true});
+     if(l.film) player.show(b,subjectName(l.film.subject ?? l.film.subjects[l.film.marker]),{...l.film,reverse:true,tail:filmTail(l.film.flights?.find(g=>g.impact===l.film.time && g.marker===l.film.marker),l.film.subjects)});
      else if(Object.hasOwn(legacyTitles(),l.clip)) player.show(b,legacyTitles()[l.clip],null,l.clip);
    } else {
      const f = r?.flights?.[id]; if(!f || f.noScene || f.decree) return;
      const camera = kind==='sat' || s.captures[id]==='far' ? 3 : s.captures[id]==='drone' ? (r.filmLog?.[id]?.camera ?? f.marker) : f.marker;
-     player.show(b,subjectName(f.extra ?? cameraSubjects(s)[f.marker]),{...r,aa:s.aa,subjects:cameraSubjects(s),time:f.impact,marker:f.marker,camera,satelliteSubject:kind==='sat'?f.marker:undefined,orbital:kind==='sat' || camera===3 && s.offer.orbital});
+     player.show(b,subjectName(f.extra ?? cameraSubjects(s)[f.marker]),{...r,aa:s.aa,subjects:cameraSubjects(s),time:f.impact,marker:f.marker,tail:filmTail(f,cameraSubjects(s),r.archFell ? r.flights.filter(g=>g.archDamage).sort((a,b)=>b.impact-a.impact)[0] : null),camera,satelliteSubject:kind==='sat'?f.marker:undefined,orbital:kind==='sat' || camera===3 && s.offer.orbital});
    }
  }
  function chanceCard() {
@@ -380,12 +388,12 @@ export function startCoalition() {
  }
  function overCard() {
   const victory = s.fallenArches === 2;
-  return '<section class="c-card" data-tone="lost" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ПІДСУМОК','DONOR REPORT · FINAL') + '</div><h2 id="c-title">' + (victory ? tr('Повна перемога','Total victory') : tr('Спонсори згорнули програму','The sponsors pulled out')) + '</h2><p>'+(victory ? tr('Обидві арки зруйновано.','Both arches have fallen.') : tr('Виплата за хвилю: ','Wave payout: ')+fmtMoney(s.report.result.money)+tr('. У касі ','. Budget: ')+fmtMoney(s.funds)+tr(', найдешевша ракета коштує ',', cheapest missile: ')+fmtMoney(Math.min(...costs))+tr('. Склад порожній. Нового авансу немає.','. No missiles in stock and no new advance.'))+'</p>' + chanceCard() + droneReel() + leakReel() +
+  return '<section class="c-card"' + (victory ? ' data-victory="1"' : '') + ' data-tone="lost" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ПІДСУМОК','DONOR REPORT · FINAL') + '</div><h2 id="c-title">' + (victory ? tr('Повна перемога','Total victory') : tr('Спонсори згорнули програму','The sponsors pulled out')) + '</h2><p>'+(victory ? tr('Обидві арки зруйновано.','Both arches have fallen.') : tr('Виплата за хвилю: ','Wave payout: ')+fmtMoney(s.report.result.money)+tr('. У касі ','. Budget: ')+fmtMoney(s.funds)+tr(', найдешевша ракета коштує ',', cheapest missile: ')+fmtMoney(Math.min(...costs))+tr('. Склад порожній. Нового авансу немає.','. No missiles in stock and no new advance.'))+'</p>' + chanceCard() + droneReel() + leakReel() +
    '<dl class="c-stats c-stats-over">' + tile(tr('Перегляди','Views'), fmtViews(s.views)) + tile(tr('Хвиль','Waves'), s.wave) + tile(tr('Комбо','Combo'), '×' + s.bestCombo) + '</dl>' +
    '<p class="c-line">' + wavesWord(s.wave) + tr('. ', '. ') + (victory ? fmtViews(s.views)+tr(' переглядів.',' views.') : tr(fmtViews(s.views) + ' переглядів. 0 змін. ', fmtViews(s.views) + ' views. 0 changes. ') + ending(s)) + '</p>' +
    (s.assisted ? '<p class="c-note">' + tr('Забіг з автогрою','Run with autoplay') + '</p>' : '') +
    '<p class="coffee-note">' + tr('Посміялися чи просто залипли ще на одну хвилю?', 'Had a laugh or stayed for one more wave?') + ' <a href="https://buymeacoffee.com/bobjer" target="_blank" rel="noopener noreferrer">' + tr('Пригостіть мене кавою ☕', 'Buy me a coffee ☕') + '</a></p>' +
-   levelField(preferredLevel(), true) + '<div class="c-actions"><button type="button" class="c-ghost" data-action="share">' + tr('Поділитися','Share') + '</button><button type="button" data-action="fresh">' + tr('Ще раз','Play again') + '</button></div>' +
+   levelField(preferredLevel(), true) + '<div class="c-actions">' + (victory ? '<button type="button" class="c-ghost c-flyover" data-action="flyover">' + tr('▶ Облет','▶ Flyover') + '</button>' : '') + '<button type="button" class="c-ghost" data-action="share">' + tr('Поділитися','Share') + '</button><button type="button" data-action="fresh">' + tr('Ще раз','Play again') + '</button></div>' +
    '<small class="c-share-status" role="status">' + sharing + '</small></section>';
  }
  function trumpCard() {
@@ -636,6 +644,7 @@ export function startCoalition() {
   if (action === 'sides') { save(); changeSide(); return }
   if (action === 'quiet') { const muted = music.toggle(); el.setAttribute('aria-pressed', String(muted)); return }
   if (action === 'share') { share(); return }
+  if (action === 'flyover') { victoryClock = 0; return }
   if (action === 'auto') { toggleAuto(); return }
   if (action === 'attack') attack();
   if (action === 'pause') { if (!paused) { pause(); return } paused = false; previous = 0; frame = requestAnimationFrame(tick) }
@@ -643,7 +652,7 @@ export function startCoalition() {
   if (action === 'next') nextWave(s);
   if (action === 'deal') acceptDeal(s);
   if (action === 'nodeal') declineDeal(s);
-  if (action === 'fresh' && s.phase === 'over') { pickedWave=0; const c = s.cam; s = newSeason(Math.random, preferredLevel()); s.cam = c; elapsed = 0; sharing = ''; waveKey = ''; feedLayer.reset() }
+  if (action === 'fresh' && s.phase === 'over') { pickedWave=0; const c = s.cam; s = newSeason(Math.random, preferredLevel()); s.cam = c; elapsed = 0; sharing = ''; waveKey = ''; victoryClock = 0; victoryOn = false; feedLayer.reset() }
   if (action === 'buy') purchase(s, id, 1);
   if (action === 'undo') purchase(s, id, -1);
   save(); render();
@@ -662,7 +671,20 @@ export function startCoalition() {
   if (!filmFirst && now >= holdShotUntil) autoStep(now);
   if (!stage) return;
   const key = s.wave + ':' + cameraSubjects(s).join() + ':' + (s.aa || []).map(Number).join('');
-  if (key !== waveKey) { waveKey = key; stage.resetWave(); stage.setBroadcast(cameraSubjects(s), s.aa, s.phase === 'over' ? s.fallenArches : s.report?.archStart ?? s.fallenArches) }
+  if (key !== waveKey) { waveKey = key; victoryClock = 0; stage.resetWave(); stage.setBroadcast(cameraSubjects(s), s.aa, s.phase === 'over' ? s.fallenArches : s.report?.archStart ?? s.fallenArches) }
+  if (s.phase === 'over' && s.fallenArches === 2) {
+   // Total victory: golden-hour drone flight over the ruins, looped; no glitches, no signal states.
+   if (!victoryOn) { victoryOn = true; victoryClock = 0 }
+   victoryClock += dt;
+   const L = stage.victoryLength?.() ?? 32;
+   stage.step({ orbital: false, dt, real: (now - realStart) / 1000, elapsed: 0, report: null, cam: 3, victory: true, victoryT: victoryClock % L });
+   feedLayer.pre({ orbital: false, now, cam: 3, state: 'live', quality: 100, victory: true, victoryT: victoryClock });
+   stage.render(); drawnCam = 3;
+   feedLayer.post({ orbital: false, now, dt, cam: 3, state: 'live', quality: 100, watching: false, paused: false, stage, gl: stage.glCanvas, show: false, victory: true, victoryT: victoryClock });
+   if (!firstFrame) { firstFrame = true; window.dispatchEvent(new Event('game-ready')) }
+   return;
+  }
+  victoryOn = false;
   const cam = s.cam === 4 ? 3 : s.cam, state = linkState(s.cam), quality = linkQuality(s.cam);
   const live = watching(), report = s.phase === 'watch' || s.phase === 'report' ? s.report : null;
   const orbital = !!s.offer.orbital && s.cam === 3;

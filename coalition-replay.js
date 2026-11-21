@@ -49,7 +49,7 @@ export function replayViewer(host, getStage, restoreReport) {
      controls.hidden = !film;
      if (film && getStage()) {
        host.before(placeholder); screen.append(host); screen.insertAdjacentHTML('beforeend',broadcastOverlay());
-       from = film.whole ? 0 : Math.max(0,film.time-1600); length = film.whole ? film.duration : film.time+3400-from; position = 0; running = true;
+       from = film.whole ? 0 : Math.max(0,film.time-1600); length = film.whole ? Math.max(film.duration ?? 0, 0) : film.time+(film.tail ?? 3400)-from; position = 0; running = true;
        seek.max = length; seek.value = '0'; seek.setAttribute('aria-label',tr('Час запису','Playback position'));
        reset(); labels();
      } else if (legacy) {

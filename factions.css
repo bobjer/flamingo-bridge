@@ -457,3 +457,18 @@ button.c-sponsor:hover{border-color:var(--accent)}
 .coalition .brief summary {cursor:pointer; padding-block:10px}
 .coalition .brief summary:focus-visible {outline:2px solid var(--accent);outline-offset:-2px}
 .coalition .brief details p {font-size:14px;line-height:1.55;color:var(--fg)}
+
+/* total victory: cinematic flyover */
+.feed-cine{display:none;position:absolute;inset:0;z-index:4;pointer-events:none}
+.feed-layer.is-victory .feed-cine{display:block}
+.feed-layer.is-victory :is(.feed-noise,.feed-scan,.feed-bar,.feed-frame,.osd,.feed-tear){display:none!important}
+.feed-layer.is-victory .feed-stage{filter:saturate(1.08) contrast(1.04)}
+.cine-top,.cine-bot{position:absolute;left:0;right:0;height:7%;background:#000}
+.cine-top{top:0}.cine-bot{bottom:0}
+.cine-title{position:absolute;left:0;right:0;top:50%;margin-top:-.6em;text-align:center;opacity:0;color:#fff;font:700 clamp(28px,7vw,64px)/1.1 var(--display);letter-spacing:.14em;text-shadow:0 2px 24px rgba(0,0,0,.65),0 0 40px rgba(255,190,110,.35)}
+.c-feed:has(.feed-layer.is-victory) :is(.feed-lost,.broadcast-overlay,.c-score,.feed-ticker,.feed-pop,.c-committee){display:none!important}
+.c-feed:has(.feed-layer.is-victory) .feed-stage{opacity:1!important}
+.c-feed:has(.feed-layer.is-victory){background:#000}
+/* keep the flyover visible beside/behind the final card */
+.c-card[data-victory]{top:auto;bottom:calc(7% + 10px);translate:-50% 0;max-height:min(58%,520px);background:rgba(8,12,17,.78);backdrop-filter:blur(6px)}
+.c-card .c-actions .c-flyover{grid-column:1/-1}

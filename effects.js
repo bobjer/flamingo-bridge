@@ -46,6 +46,24 @@ const foamTex=canvas(256,(g,s)=>{
   g.fillStyle=grad;g.fillRect(x-R,y-R,R*2,R*2);
  }
 });
+// Whirlpool: dark eye fading outwards, with spiral arms of white/teal foam.
+const whirlTex=canvas(256,(g,s)=>{
+ const c=s/2;
+ const eye=g.createRadialGradient(c,c,0,c,c,c*.62);eye.addColorStop(0,'rgba(8,24,34,.85)');eye.addColorStop(.5,'rgba(10,30,42,.45)');eye.addColorStop(1,'rgba(10,30,42,0)');
+ g.save();g.translate(c,c);g.scale(1,.95);g.translate(-c,-c);g.fillStyle=eye;g.fillRect(0,0,s,s);g.restore();
+ g.lineCap='round';
+ for(let arm=0;arm<5;arm++){
+  const a0=arm/5*Math.PI*2;
+  for(let pass=0;pass<2;pass++){
+   g.strokeStyle=pass?'rgba(190,235,240,.3)':'rgba(255,255,255,.4)';g.lineWidth=pass?9:3.5;
+   g.beginPath();
+   for(let i=0;i<=40;i++){const u=i/40,r=c*(.12+.82*u),a=a0+u*2.6+pass*.05;const x=c+Math.cos(a)*r,y=c+Math.sin(a)*r;i?g.lineTo(x,y):g.moveTo(x,y)}
+   g.globalAlpha=1;g.stroke();
+  }
+ }
+ const fade=g.createRadialGradient(c,c,c*.55,c,c,c);fade.addColorStop(0,'rgba(0,0,0,0)');fade.addColorStop(1,'rgba(0,0,0,1)');
+ g.globalCompositeOperation='destination-out';g.fillStyle=fade;g.fillRect(0,0,s,s);
+});
 // Oil slick: near-black film with a thin-film rainbow sheen and ragged edge.
 export const oilTex=canvas(256,(g,s)=>{
  const c=s/2;
@@ -266,6 +284,27 @@ export function fireworks(scene){
   m.rotation.x=-Math.PI/2;m.rotation.z=rnd()*6;m.position.set(p.x,.07,p.z);m.renderOrder=4;scene.add(m);
   decals.push({m,age:-delay,life:2.2,kind:'ring',k});
  }
+ // Churning water after something big goes under.
+ function bubbles(p,k=1){
+  for(let i=0;i<Math.round(14*k);i++){
+   const a=rnd()*Math.PI*2,r=Math.sqrt(rnd())*.6*k;
+   spray.emit({pos:v3(p.x+Math.cos(a)*r,-.25+rnd()*.2,p.z+Math.sin(a)*r),v:v3((rnd()-.5)*.3,.8+rnd()*1,(rnd()-.5)*.3),gravity:0,drag:.2,
+    life:.9+rnd()*.8,s0:.08+rnd()*.08,s1:.1+rnd()*.1,c0:C(0xf3fbff,1.5),c1:C(0xc9e4ee,1.2),alpha:.6,fadeIn:.03,fadePow:1.4});
+  }
+ }
+ function foam(p,k=1){
+  for(let i=0;i<Math.round(10*k);i++){
+   const a=rnd()*Math.PI*2,r=rnd()*.8*k,d=.3+rnd()*.6;
+   spray.emit({pos:v3(p.x+Math.cos(a)*r,.05,p.z+Math.sin(a)*r),v:v3(Math.cos(a)*d,0,Math.sin(a)*d),gravity:0,drag:1,
+    life:2.2+rnd()*1.3,s0:.5*k,s1:1.6*k,c0:C(0xeaf4f6,1.3),alpha:.5,fadeIn:.15,fadePow:1.5});
+  }
+ }
+ function ripple(p,k=1){ring(p,k*.6,0)}
+ function whirl(p,k=1,life=6){
+  const m=new T.Mesh(ringGeo,new T.MeshBasicMaterial({map:whirlTex,transparent:true,depthWrite:false,opacity:0}));
+  m.rotation.x=-Math.PI/2;m.rotation.z=rnd()*6;m.position.set(p.x,.08,p.z);m.renderOrder=4;m.scale.set(.6*k,.6*k,1);scene.add(m);
+  decals.push({m,age:0,life,kind:'whirl',k});
+ }
  function spill(p,k=1,life=30){
   const m=new T.Mesh(ringGeo,new T.MeshBasicMaterial({map:oilTex,transparent:true,depthWrite:false,opacity:0}));
   m.rotation.x=-Math.PI/2;m.rotation.z=rnd()*6;m.position.set(p.x,.06+rnd()*.01,p.z);m.renderOrder=3;scene.add(m);
@@ -435,6 +474,7 @@ export function fireworks(scene){
    const t=d.age/d.life;
    if(t>=1){d.m.removeFromParent();d.m.material.dispose();decals.splice(i,1);continue}
    if(d.kind==='ring'){const s=(1+9*(1-Math.pow(1-t,2.2)))*d.k;d.m.scale.set(s,s,1);d.m.material.opacity=.85*Math.min(1,t*10)*(1-t)}
+   else if(d.kind==='whirl'){const e=1-Math.pow(1-t,2),s=(.6+2.8*e)*d.k;d.m.scale.set(s,s,1);d.m.rotation.z-=dt*.9*(1-t);d.m.material.opacity=.8*Math.min(1,t*8)*(1-t)}
    else{const s=(1.4+5.5*(1-Math.exp(-d.age/5)))*d.k;d.m.scale.set(s,s*d.stretch,1);d.m.rotation.z+=dt*.01;d.m.material.opacity=.9*Math.min(1,t*12)*Math.min(1,(1-t)*3)}
   }
   for(let i=chunks.length-1;i>=0;i--){
@@ -468,7 +508,7 @@ export function fireworks(scene){
   reset();for(const d of decals){d.m.removeFromParent();d.m.material.dispose()}decals.length=0;for(const c of chunks)c.m.removeFromParent();chunks.length=0;
   for(const f of flashes)f.l.intensity=0;flashes.length=0;smoke.reset();spray.reset();fire.reset();glow.reset();
  }
- return {launch,launchAt,tick,reset,clear,explosion,splash,spill,dust,smolder,tracer,flak,kill,feathers,wreck,throwCar,breakup,piece,shards,smokeColumn,burnTrail,blaze,sparks,breaker,
+ return {launch,launchAt,tick,reset,clear,explosion,splash,spill,bubbles,foam,whirl,ripple,dust,smolder,tracer,flak,kill,feathers,wreck,throwCar,breakup,piece,shards,smokeColumn,burnTrail,blaze,sparks,breaker,
   burst:p=>explosion(p,1.5),
   pendingDamage(target){return flights.reduce((sum,f)=>sum+(f.target===target?f.damage:0),0)},
   snapshot(enemies){return flights.filter(f=>enemies.includes(f.target)).map(f=>({origin:f.origin.toArray(),target:enemies.indexOf(f.target),damage:f.damage,age:f.age,duration:f.duration,position:f.rocket.position.toArray()}))},

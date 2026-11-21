@@ -1,7 +1,9 @@
 import * as T from 'three';
+import {waterTurmoil} from './water-turmoil.js';
 
 // A destroyed oil tanker: one hit and it is a floating bomb. The whole ship burns, blows up again and again,
 // rolls onto its side, settles by the stern and goes under. Everything runs on an `age` advanced by tick(dt).
+export const TANKER_SINK_TOTAL = 20;   // wreck gone at END, churning water lingers after
 const END = 14;              // wreck removed
 const FIRE_END = 12.5;       // deck fires and smoke stop
 const OIL_END = 13;          // burning oil on the water stops
@@ -26,6 +28,7 @@ const ease = x => { x = clamp01(x); return x * x * (3 - 2 * x) };
 
 export function tankerSinking(fx) {
   const wrecks = [];
+  const turmoil = waterTurmoil(fx);
   const tmpA = new T.Vector3(), tmpB = new T.Vector3(), tmpQuat = new T.Quaternion(), tmpScale = new T.Vector3();
   // points on the hull whose highest world y says whether the ship is still showing above the water
   const TOP_REFS = [[0, 1.6, -2.2], [0, .6, 3], [.9, .6, 3], [-.9, .6, 3], [.9, .6, -3], [-.9, .6, -3], [.9, .6, 0], [-.9, .6, 0]]
@@ -89,6 +92,7 @@ export function tankerSinking(fx) {
   }
 
   function tick(dt) {
+    turmoil.tick(dt);
     for (let i = wrecks.length - 1; i >= 0; i--) {
       const w = wrecks[i];
       w.age += dt;
@@ -135,11 +139,19 @@ export function tankerSinking(fx) {
   return {
     start(ship, opts = {}) {
       const {elapsed = 0, quiet = false, drift = null} = opts;
-      if (elapsed >= END) return;
+      if (elapsed >= TANKER_SINK_TOTAL) return;
       ship.updateWorldMatrix(true, false);
       ship.matrixWorld.decompose(tmpA, tmpQuat, tmpScale);
       const base = tmpA.clone(), quat = tmpQuat.clone(), scl = tmpScale.clone();
       const axis = new T.Vector3(0, 0, 1).applyQuaternion(quat).setY(0).normalize();
+      {
+        const d = new T.Vector3();
+        if (drift) d.copy(drift).multiplyScalar(DRIFT_TIME / 3 * (1 - Math.pow(1 - Math.min(8.5, DRIFT_TIME) / DRIFT_TIME, 3)));
+        const at = base.clone().add(d).setY(.05);
+        turmoil.start(at, {radius: 3.4, duration: 7, intensity: 1.3, delay: 8.5, elapsed, quiet});
+        turmoil.start(at.clone().addScaledVector(axis, -2.4), {radius: 2.4, duration: 6, intensity: 1, delay: 11, elapsed, quiet});
+      }
+      if (elapsed >= END) return;
       const centre = base.clone().setY(base.y + .7);
 
       // t = 0: the blast
@@ -197,6 +209,6 @@ export function tankerSinking(fx) {
       wrecks.push(w);
     },
     tick,
-    clear() { for (const w of wrecks) finish(w); wrecks.length = 0 }
+    clear() { for (const w of wrecks) finish(w); wrecks.length = 0; turmoil.clear() }
   };
 }

@@ -7,6 +7,7 @@ export const CFG = {
   contractShare: .6, success: .75,
   viewsPer: 10000, comboStep: .25, loaf: 2,
   travel: [1550, 1100, 1550, 2100], spacing: 350, groupGap: 1600, lead: 1600, tail: 2500,
+  tailCollapse: 14000, tailCruiser: 12500, tailTanker: 17000, tailSam: 7500, tailDefault: 3400,
   defenceLaunch: 3, defenceHit: .5, analyticShot: 8, analyticHit: .5, tenderMult: 2,
   conferenceMult: 3, conferenceAdvance: .3, tenderOther: .5, conferenceOk: .5, conferenceDelay: 2,
   trumpPay: 40, trumpFatigue: .95, pressViews: 60000, muskDur: 4500, muskViral: 2,
@@ -171,11 +172,15 @@ export function launch(s, random = Math.random) {
   report.archFell = assignScenes(cameraSubjects(s), flights, random);
   if (report.archFell) {
     const lastCritical = Math.max(...flights.filter(f => f.archDamage).map(f => f.impact));
-    report.duration = Math.max(report.duration, lastCritical + 6000);
+    report.duration = Math.max(report.duration, lastCritical + CFG.tailCollapse);
   }
   report.assignedScenes = true;
-  const cruiser = flights.find(f => f.success && !f.decree && !f.extra && cameraSubjects(s)[f.marker] === 'cruiser');
-  if (cruiser) report.duration = Math.max(report.duration, cruiser.impact + 3400);
+  for (const f of flights) {
+    if (!f.success || f.decree) continue;
+    const here = cameraSubjects(s)[f.marker];
+    const tail = f.extra ? (f.extra === 'tanker' ? CFG.tailTanker : 0) : here === 'cruiser' ? CFG.tailCruiser : here === 'sam' ? CFG.tailSam : 0;
+    if (tail) report.duration = Math.max(report.duration, f.impact + tail);
+  }
   if (random() < .22) {
     const first = Math.min(...flights.map(f => f.start));
     const from = first + Math.floor(random() * (end-first));

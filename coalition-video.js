@@ -29,13 +29,15 @@ const MARKUP = `
  <div class="osd-bat" data-drone><div><span data-volt></span><span class="bat"><i></i><i></i><i></i><i></i><i></i></span><span data-pct></span></div><small data-mah></small><b class="osd-warn" data-warn></b></div>
  <div class="osd-far" data-far><b data-far-title></b><small data-far-time></small></div>
  <div class="osd-locks"></div>
-</div>`;
+</div>
+<div class="feed-cine" aria-hidden="true"><i class="cine-top"></i><i class="cine-bot"></i><b class="cine-title" data-cine-title></b></div>`;
 
 export function createFeed() {
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const el = document.createElement('div'); el.className = 'feed-layer'; el.innerHTML = MARKUP;
   const q = s => el.querySelector(s);
   const stage = q('[data-stage]'), noise = q('.feed-noise'), bar = q('.feed-bar'), osd = q('.osd');
+  const cineTitle = q('[data-cine-title]');
   const horizon = q('[data-horizon]'), ladder = q('[data-ladder]');
   const sigBars = [...el.querySelectorAll('.sig i')], batSegs = [...el.querySelectorAll('.bat i')];
   const tear = document.createElement('canvas'); tear.className = 'feed-tear'; tear.setAttribute('aria-hidden', 'true'); tear.hidden = true; stage.append(tear);
@@ -129,6 +131,19 @@ export function createFeed() {
     drawNoiseOnce: drawNoise,
     // Called every frame, before the 3D render. c: {now, cam, state, quality, watching, paused, stage}
     pre(c) {
+      if (c.victory) { // clean cinematic mode: full colour, no snow, no OSD, no interference
+        el.classList.add('is-victory');
+        const f = 'saturate(1.08) contrast(1.04)';
+        if (stage.style.filter !== f) stage.style.filter = f;
+        stage.style.transform = ''; noise.style.opacity = '0'; bar.style.opacity = '0'; bar.style.transform = '';
+        for (let i = 0; i < 3; i++) current[i] = null;
+        frozen = false; lastNow = c.now; this.event = null;
+        const t = c.victoryT ?? 0, k = t < 1.5 ? 0 : t < 3 ? (t - 1.5) / 1.5 : t < 7.5 ? 1 : t < 9 ? (9 - t) / 1.5 : 0;
+        setText(cineTitle, tr('ПОВНА ПЕРЕМОГА', 'TOTAL VICTORY'));
+        cineTitle.style.opacity = k.toFixed(3); cineTitle.style.transform = 'translateY(' + ((1 - k) * 10).toFixed(1) + 'px)';
+        return null;
+      }
+      el.classList.remove('is-victory');
       const now = c.now, cam = c.cam, drone = cam < 3, dt = lastNow ? Math.min(.1, (now - lastNow) / 1000) : 0; lastNow = now;
       if (!startedAt) startedAt = now;
       if (cam !== lastCam) { if (lastCam !== -1) burstUntil = now + 120; lastCam = cam }
@@ -166,6 +181,7 @@ export function createFeed() {
     },
     // After the 3D render of this frame: tearing and rolling copy the fresh canvas into the overlay.
     post(c) {
+      if (c.victory) { if (!tear.hidden) tear.hidden = true; return }
       const e = this.event, gl = c.gl;
       if (e && (e.type === 'tear' || e.type === 'roll') && gl && !frozen) { tear.hidden = !drawTear(gl, e, c.now) }
       else if (!tear.hidden) tear.hidden = true;
@@ -237,7 +253,7 @@ export function createFeed() {
       });
     },
     // reduced-motion and language changes only need a fresh static grain
-    reset() { burstUntil = 0; current.fill(null); nextAt.fill(0); frozen = false },
+    reset() { el.classList.remove('is-victory'); burstUntil = 0; current.fill(null); nextAt.fill(0); frozen = false },
     battery: () => batt
   };
 }
