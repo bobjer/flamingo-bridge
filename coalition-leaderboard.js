@@ -1,3 +1,4 @@
+import {checkpointsSent} from './ranked-session.js';
 // Coalition leaderboard client. Ranks by views, separate table and endpoint from the bridge records.
 // Fails gracefully: when the API (Cloudflare D1) is unreachable the card just says it is unavailable.
 import {tr} from './language.js';
@@ -20,7 +21,9 @@ export function showCoalitionBoard(card, run, onSaved = () => {}) {
  async function load(submit) {
   if (submit) { posting = true; button.disabled = true }
   try {
+   if (submit) await checkpointsSent();
    const response = await fetch(url, submit ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: run.id, name: input.value.trim(), waves: run.waves, views: run.views, combo: run.combo, assisted: !!run.assisted }) } : {});
+   if(submit && [403,429].includes(response.status)){ status.textContent=response.status===429?tr('Забагато спроб. Спробуйте пізніше.','Too many attempts. Try later.'):tr('Сервер не підтвердив цю партію.','This run could not be verified.'); button.disabled=false; posting=false; return }
    if (!response.ok || !/json/.test(response.headers.get('content-type') || '')) throw Error();
    const rows = await response.json();
    if (!Array.isArray(rows)) throw Error();

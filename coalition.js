@@ -1,3 +1,4 @@
+import {checkpoint} from './ranked-session.js';
 import {watchRelease} from './release-notice.js';
 import {createCoach} from './coach.js';
 import {coalitionHelp} from './coach-help.js';
@@ -445,6 +446,10 @@ export function startCoalition() {
  }
  function render() {
   const scrolls = [...root.querySelectorAll('.col')].map(c => c.scrollTop), key = focusKey(), hadCard = !!root.querySelector('.c-card');
+  if (s.phase !== 'over') {
+   s.runId ||= crypto.randomUUID();
+   checkpoint(s.runId,'coalition',s.wave,s.views,s.assisted);
+  }
   root.dataset.phase = s.phase;
   s.cam = [0, 1, 2, 3, 4].includes(s.cam) ? s.cam : 0;
   if (s.cam === 4 && !pressActive()) s.cam = 3;

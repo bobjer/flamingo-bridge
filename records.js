@@ -1,3 +1,4 @@
+import {checkpointsSent} from './ranked-session.js';
 import {tr} from './language.js';
 const rendered=new WeakMap();
 export function showRecords(card,run){
@@ -15,7 +16,9 @@ export function showRecords(card,run){
  async function load(submit){
   if(submit){posting=true;button.disabled=true}
   try{
+   if (submit) await checkpointsSent();
    const response=await fetch(url,submit?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...run,name:input.value.trim()})}:{});
+   if(submit && [403,429].includes(response.status)){ status.textContent=response.status===429?tr('Забагато спроб. Спробуйте пізніше.','Too many attempts. Try later.'):tr('Сервер не підтвердив цю партію.','This run could not be verified.'); button.disabled=false; posting=false; return }
    if(!response.ok)throw Error();
    const rows=await response.json();
    if(!submit&&posting)return;

@@ -11,6 +11,7 @@ await writeFile('dist/server/index.js',(await readFile('records-worker.js','utf8
  '\nconst assets='+JSON.stringify(assets)+';\n'+
  `export default {async fetch(request,env){
  const path=new URL(request.url).pathname;
+ if(path==='/api/ranked-wave')return rankedWave(request,env.DB);
  if(path==='/api/records')return records(request,env.DB);
  if(path==='/api/coalition-records')return coalitionRecords(request,env.DB);
  const asset=assets[path==='/'?'/index.html':/^\\/en\\/?$/.test(path)?'/en.html':path];

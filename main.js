@@ -1,3 +1,4 @@
+import {checkpoint} from './ranked-session.js';
 import {createCoach} from './coach.js';
 import {defenceHelp} from './coach-help.js';
 import {cruiserSinking} from './cruiser-sinking.js';
@@ -347,6 +348,7 @@ function reset(){seed=daily?seedOf(daily+':'+$('difficulty').value):0;forecast=n
  writeMessage(()=>tr("Що вища складність, то бідніша країна. Залишок у скарбниці засекречено.","Higher difficulty means a poorer country. The treasury balance is classified."));ui()}
 function button(text,action,disabled,kind='unit'){const b=document.createElement('button');b.className='unit';b.innerHTML=text;b.disabled=disabled;b.dataset.kind=kind;b.onclick=action;$('shop').append(b)}
 function ui(){
+ if (phase !== 'over') checkpoint(runId,boardKey(),wave,score,assisted);
  document.body.dataset.board=boardKey();
  const resume=$('resume-game');
  resume.hidden=phase!=='live'||!paused;
