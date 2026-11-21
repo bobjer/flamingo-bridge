@@ -358,6 +358,28 @@ export function startDeepstrike(){
   next.onclick=()=>{s.reportPending=false;save();render()};title.after(next);
   reportContents(card);
  }
+ function showCampaignResult(){
+  autoOn=false;
+  const wave=s.invoice?.wave??Math.max(0,s.wave-1);
+  const reason=s.won?tr('Усі заводи та енергетичні об’єкти одночасно зупинені.','All factories and energy sites are offline together.'):
+   s.trust===0?tr('Спонсори закрили програму.','Sponsors withdrew funding.'):
+   tr('Бюджету не вистачає на наступну хвилю.','The budget cannot fund another wave.');
+  root.innerHTML='<section class="c-card deep-wave-card" data-tone="report" aria-labelledby="deep-result-title">'+
+   '<div class="c-kicker">'+tr('ДІПСТРАЙК · ПІДСУМОК КАМПАНІЇ','DEEPSTRIKE · CAMPAIGN RESULT')+'</div>'+
+   '<h2 id="deep-result-title" tabindex="-1">'+(s.won?tr('Перемога','Victory'):tr('Кампанію завершено','Campaign ended'))+'</h2></section>';
+  const card=root.firstElementChild;
+  for(const text of [reason,tr('Завершено хвиль ','Waves completed ')+wave+' · '+tr('Баланс ','Balance ')+s.credits+' · '+tr('Довіра ','Trust ')+s.trust+'%']){
+   const line=document.createElement('p');line.textContent=text;card.append(line);
+  }
+  const actions=document.createElement('div');actions.className='c-actions';card.append(actions);
+  const action=(label,run)=>{
+   const button=document.createElement('button');button.type='button';button.textContent=label;button.onclick=run;actions.append(button);
+  };
+  action(tr('Нова кампанія','New campaign'),()=>{if(write(key,null))location.reload()});
+  if(wave>0)action(tr('Звіт останньої хвилі','Last wave report'),()=>{s.reportPending=true;save();render()});
+  action(tr('Сторони','Factions'),changeSide);
+  root.scrollTop=0;card.querySelector('h2').focus({preventScroll:true});
+ }
  function render(){
   closeReport?.();closeReport=null;
   clearTimeout(timer);clearTimeout(autoTimer);
@@ -366,6 +388,7 @@ export function startDeepstrike(){
   if(s.started&&s.flights.every(f=>elapsed>=f.duration+1200))finish();
   if(s.reportPending&&!s.started){showWaveReport();return}
   const flying=!!s.started;
+  if(!flying&&campaignOver()){showCampaignResult();return}
   const phase=flying?tr('У польоті','In flight'):tr('Планування','Planning');
   const autoLabel=autoOn?tr('Грати самому','Take over'):tr('Автогра','Autoplay');
   const legend='<details class="deep-legend"'+(legendOpen?' open':'')+'><summary>'+tr('Легенда','Legend')+'</summary><ul>'+
@@ -392,13 +415,6 @@ export function startDeepstrike(){
    const r=s.invoice,line=document.createElement('p');
    line.textContent=tr('Хвиля ','Wave ')+r.wave+' · '+tr('Витрати ','Spent ')+r.cost+' · '+(r.deal?tr('Аванс ','Advance '):tr('Виплата ','Payout '))+r.payout+(r.embargoFee?' · '+tr('Ембарго −','Embargo −')+r.embargoFee:'')+' · '+tr('Довіра ','Trust ')+(r.trustChange>0?'+':'')+r.trustChange;
    treasury.append(line);
-  }
-  if(!flying&&campaignOver()){
-   autoOn=false;root.querySelector('[data-auto]').disabled=true;
-   root.querySelector('.deep-phase-chip').textContent=s.won?tr('Перемога','Victory'):tr('Гру завершено','Game over');
-   panel.textContent=s.won?tr('Перемога! Усі заводи та енергетичні об’єкти одночасно зупинені.','Victory! All factories and energy sites are offline together.'):s.trust===0?tr('Спонсори закрили програму.','Sponsors withdrew funding.'):tr('Бюджету не вистачає на наступну хвилю.','The budget cannot fund another wave.');
-   button(panel,tr('Нова кампанія','New campaign'),()=>{if(write(key,null))location.reload()});
-   return;
   }
   if(!flying){
    const guide=document.createElement('details'),guideTitle=document.createElement('summary');
