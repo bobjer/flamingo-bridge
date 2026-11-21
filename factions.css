@@ -440,7 +440,8 @@ button.c-sponsor:hover{border-color:var(--accent)}
 
 /* Witness phone footage through a passenger window. */
 .replay-screen.witness-window {overflow:hidden}
-.witness-window .feed-stage {filter:saturate(.62) contrast(.91) brightness(.95)}
+.replay-screen .feed-stage {filter:none !important}
+.replay-screen.night-replay .feed-stage {filter:grayscale(1) !important}
 .witness-window::after {content:"";position:absolute;inset:0;pointer-events:none;background:
  linear-gradient(178deg,#121219 0 3%,transparent 4.2%),
  linear-gradient(81deg,rgba(21,18,25,.9),transparent 5%),

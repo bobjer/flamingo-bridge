@@ -69,7 +69,9 @@ export function replayViewer(host, getStage, restoreReport) {
      const state = film.showSignal ? signalAt(film,cam,elapsed) : 'live';
      drawBroadcast(screen.querySelector('.broadcast-overlay'),film,cam,elapsed,state);
      stage.step({dt:fresh?0:dt,elapsed,real:elapsed/1000,report:film,cam:Math.min(3,cam),orbital:film.orbital,reverse:film.reverse,satelliteSubject:film.satelliteSubject});
-     stage.render(); fresh=false; seek.value=position;
+     stage.render((film.lightStart ?? 0) + elapsed / 1000);
+     screen.classList.toggle('night-replay',stage.world.daylight() < .2);
+     fresh=false; seek.value=position;
      if(position>=length) running=false;
      labels();
    }
