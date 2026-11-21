@@ -232,10 +232,17 @@ export function landscape(view) {
 
  // --- second (railway) deck ---
  parts = scenery;
- box('railbed', 0, 2.85, -6, 110, .52, 3.6);
- box('shade', 0, 2.52, -6, 110, .22, 3.7);
- for (const z of [-6.62, -5.38]) box('steel', 0, 3.18, z, 110, .13, .1);
- for (let x = -54; x < 55; x += .65) box('sleeper', x, 3.12, -6, .15, .09, 1.65);
+ // the deck over the arch section is split into DECK_N hinged segments so it can collapse with the rail arch
+ const DECK_N = 8, DECK_L = 110 / DECK_N, deckSegs = Array.from({length: DECK_N}, () => new Map());
+ for (let i = 0; i < DECK_N; i++) {
+  parts = deckSegs[i];
+  const mid = -55 + DECK_L * (i + .5);
+  box('railbed', mid, 2.85, -6, DECK_L, .52, 3.6);
+  box('shade', mid, 2.52, -6, DECK_L, .22, 3.7);
+  for (const z of [-6.62, -5.38]) box('steel', mid, 3.18, z, DECK_L, .13, .1);
+ }
+ for (let x = -54; x < 55; x += .65) { parts = deckSegs[Math.min(DECK_N - 1, Math.floor((x + 55) / DECK_L))]; box('sleeper', x, 3.12, -6, .15, .09, 1.65); }
+ parts = scenery;
  for (const x of piers) {
   for (const z of [-6.9, -5.1]) column('concrete', x, 1.3, z, .8, 1.1, 2.9, 1.1);
   box('concreteDark', x, 2.45, -6, 1.4, .4, 4.1);
@@ -333,6 +340,58 @@ export function landscape(view) {
   pivot.add(parts.group); scene.add(pivot);
   return {pivot, side: i === 0 ? -1 : 1, since: null};
  });
+ // --- rail deck segments (hinged at their outer end) ---
+ const railDeck = new T.Group(); scene.add(railDeck);
+ // th: hinge angle, yc: final centre height (null = stump, uses dy), dy: pivot drop, roll/yaw: twist, T: fall time
+ const DECK_POSE = [
+  {th: .2, dy: -.15, roll: .03, yaw: 0, T: 1.3}, {th: .35, dy: -.25, roll: -.05, yaw: .02, T: 1.4},
+  {th: .62, yc: -1.5, roll: .22, yaw: .1, T: 1.9}, {th: .85, yc: -2.5, roll: -.18, yaw: -.08, T: 2.2},
+  {th: .78, yc: -2.2, roll: .26, yaw: .07, T: 2.1}, {th: .5, yc: -1.3, roll: -.2, yaw: -.1, T: 1.8},
+  {th: .35, dy: -.25, roll: .06, yaw: -.02, T: 1.4}, {th: .2, dy: -.15, roll: -.03, yaw: 0, T: 1.3}
+ ];
+ const deckPivots = deckSegs.map((m, i) => {
+  const side = i < DECK_N / 2 ? -1 : 1, px = -55 + DECK_L * (side < 0 ? i : i + 1), P = DECK_POSE[i];
+  const g = new T.Group(), pivot = new T.Group();
+  for (const [key, geos] of m) {
+   const mesh = new T.Mesh(mergeGeometries(geos), material(key));
+   mesh.castShadow = mesh.receiveShadow = true; g.add(mesh); geos.forEach(q => q.dispose());
+  }
+  g.position.set(-px, -2.85, 6); pivot.position.set(px, 2.85, -6); pivot.add(g); railDeck.add(pivot);
+  return {pivot, side, th: P.th, roll: P.roll, yaw: P.yaw, T: P.T, delay: .25 + .55 * Math.abs(i - 3.5),
+   dy: P.yc != null ? P.yc - 2.85 + DECK_L / 2 * Math.sin(P.th) : P.dy, cx: -55 + DECK_L * (i + .5), hit: false};
+ });
+ function poseDeck(d, e) { d.pivot.position.y = 2.85 + d.dy * e; d.pivot.rotation.set(d.roll * e, d.yaw * e, d.side * d.th * e); }
+
+ // --- ruins: broken truss fragments and slabs jutting out of the water (own RNG: keeps the scene's seed untouched) ---
+ const ruinRand = (() => { let s = 7919; return () => (s = s * 16807 % 2147483647) / 2147483647; })();
+ const rr = (a, b) => a + (b - a) * ruinRand();
+ function buildRuins(cx, cz, sx, sz, nFrag, nSlab) {
+  const m = new Map(); parts = m;
+  const X = new T.Vector3(1, 0, 0), E = new T.Euler();
+  for (let i = 0; i < nFrag; i++) {
+   const len = rr(.8, 4), a = rr(0, Math.PI * 2), el = rr(-.9, .9), w = rr(.1, .3);
+   const dir = new T.Vector3(Math.cos(a) * Math.cos(el), Math.sin(el), Math.sin(a) * Math.cos(el));
+   const key = ['white', 'white', 'steel', 'shade'][Math.floor(ruinRand() * 4)];
+   const x = rr(-sx, sx), y = rr(-.5, 1.1), z = rr(-sz, sz);
+   if (i % 2) { const h = dir.clone().multiplyScalar(len / 2); beam(key, [x - h.x, y - h.y, z - h.z], [x + h.x, y + h.y, z + h.z], w); }
+   else solid(new T.BoxGeometry(len, w, w), key, x, y, z, new T.Quaternion().setFromUnitVectors(X, dir));
+  }
+  for (let i = 0; i < nSlab; i++) {
+   const key = ['concreteDark', 'asphalt', 'railbed', 'concrete'][i % 4];
+   solid(new T.BoxGeometry(rr(2, 4.5), rr(.25, .5), rr(1.4, 2.6)), key, rr(-sx, sx), rr(-.2, .5), rr(-sz, sz), new T.Quaternion().setFromEuler(E.set(rr(-.35, .35), rr(0, Math.PI), rr(-.45, .45))));
+  }
+  parts = scenery;
+  const group = new T.Group();
+  for (const [key, geos] of m) {
+   const mesh = new T.Mesh(mergeGeometries(geos), material(key));
+   mesh.castShadow = mesh.receiveShadow = true; group.add(mesh); geos.forEach(q => q.dispose());
+  }
+  group.position.set(cx, 0, cz); group.visible = false; return group;
+ }
+ const ruinsRoad = buildRuins(0, 0, 13, 3.5, 10, 3), ruinsRail = buildRuins(0, -6, 25, 3, 11, 4);
+ const ruins = new T.Group(); ruins.add(ruinsRoad, ruinsRail); scene.add(ruins);
+ const RUIN_SITES = [[-41, 3.3, -6], [41, 3.3, -6], [-18, 3.1, -6], [18, 3.1, -6], [-30, .5, -6], [30, .5, -6], [-8, .7, -6.5], [7, .6, -5.5], [-6, .8, 1], [5, .9, -1.5], [0, 1.1, 2]];
+
  const span = steel.group;
  scene.add(span);
  const railway = span.clone();
@@ -484,19 +543,19 @@ export function landscape(view) {
  const stormWater = new T.Color(0x2b564c), stormHaze = new T.Color(0x8b9182);
  const rollerAt = (x, z, t) => { const s = .5 + .5 * Math.sin(x * .078 + z * .208 - t * .8); return s * s * s * s; };
  const swellAt = (x, z, t) => Math.sin(x * .21 + z * .13 + t * 1.3) * .5 + Math.sin(x * -.11 + z * .27 + t * 1.7) * .32 + Math.sin(x * .37 + z * -.19 + t * 2.3) * .18;
- let railFall = -1;
+ let railFall = -1, railSplashed = false, collapseRate = 1, onCollapseEvent = null, roadRuinAge = null, railRuinAge = null;
  let collapseAge = 0, splashed = false, ringStart = null, onCollapseSplash = null;
  let collapse = false, prevDist = camera.position.distanceTo(controls.target);
  // Bullet-time: fly in to an impact, sweep around it in slow motion, fly back.
  let cine = null, cineLast = 0, cineCooldown = 0, pose = null, poseSaved = null;
  const sight = new T.Raycaster(), sightTo = new T.Vector3(), sightDir = new T.Vector3();
- const occluders = [falling, railway, ...looseDecks.map(d => d.pivot), ...sceneryMeshes];
+ const occluders = [falling, railway, ...deckPivots.map(d => d.pivot), ...looseDecks.map(d => d.pivot), ...sceneryMeshes];
  function blocked(point, ang, r, h) {
   sightTo.set(point.x + Math.cos(ang) * r, Math.max(.8, point.y + h), point.z + Math.sin(ang) * r);
   sightDir.subVectors(sightTo, point); const dist = sightDir.length(); sightDir.divideScalar(dist);
   // skip the subject's own surroundings, and look a bit past the lens so the camera never sits inside a beam
   sight.set(point, sightDir); sight.near = Math.min(1.4, dist * .25); sight.far = dist + .8;
-  return sight.intersectObjects(occluders, true).length > 0;
+  return sight.intersectObjects(ruins.children.filter(g => g.visible).concat(occluders), true).length > 0;
  }
  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -630,6 +689,10 @@ export function landscape(view) {
   },
   cinematicActive: () => !!cine,
   onCollapseSplash(fn) { onCollapseSplash = fn; },
+  onCollapseEvent(fn) { onCollapseEvent = fn; },
+  setCollapseRate(r) { collapseRate = T.MathUtils.clamp(+r || 1, .05, 1); },
+  collapseInfo: () => ({road: collapse ? collapseAge : -1, rail: railFall >= 0 ? railFall : -1}),
+  ruinSites: () => RUIN_SITES.map(p => new T.Vector3(...p)),
   setStorm(on) { stormTarget = on ? 1 : 0; },
   stormLevel: () => storm,
   // surface height and tilt at a point, for floating things
@@ -641,13 +704,22 @@ export function landscape(view) {
   },
   daylight: () => daylight,
   setRailHits(hits, instant = false) {
-   railFall = hits < 3 ? -1 : instant ? 5 : Math.max(0,railFall);
+   railFall = hits < 3 ? -1 : instant ? 8 : Math.max(0,railFall);
    railway.scale.y = 1.05 - .035 * hits;
-   if (railFall < 0) { railway.position.y = 0; railway.rotation.z = 0 }
+   if (railFall < 0) {
+    railway.position.y = 0; railway.rotation.z = 0; railSplashed = false; railRuinAge = null; ruinsRail.visible = false;
+    for (const d of deckPivots) { d.hit = false; poseDeck(d, 0); }
+   } else if (instant) {
+    railSplashed = true; railRuinAge = 1; ruinsRail.visible = true; ruinsRail.scale.setScalar(1);
+    railway.position.y = -12; railway.rotation.z = .23;
+    for (const d of deckPivots) { d.hit = true; poseDeck(d, 1); }
+   }
   },
   setHits(hits, instant = false) {
    if (hits >= 3 && !collapse) { collapseAge = instant ? 30 : 0; splashed = instant; ringStart = null; }
    collapse = hits >= 3;
+   if (!collapse) { roadRuinAge = null; ruinsRoad.visible = false; }
+   else if (instant) { roadRuinAge = 1; ruinsRoad.visible = true; ruinsRoad.scale.setScalar(1); }
    if (!hits) { falling.position.y = 0; falling.rotation.z = 0; falling.rotation.x = 0; }
    span.scale.y = 1 - .035 * hits;
   },
@@ -675,20 +747,34 @@ export function landscape(view) {
    water.material.uniforms.sunDirection.value.copy(sun.position).normalize();
    water.material.uniforms.sunColor.value.copy(sun.color).multiplyScalar(.38+.5*day);
 
+   const dt = realDt * collapseRate;
    if (railFall >= 0) {
-    railFall = Math.min(5,railFall + realDt);
-    const drop = T.MathUtils.smoothstep(railFall,0,5);
+    railFall = Math.min(8,railFall + dt);
+    const drop = T.MathUtils.smoothstep(Math.min(5, railFall),0,5);
     railway.position.y = -12 * drop; railway.rotation.z = .23 * drop;
+    if (!railSplashed && railway.position.y < -2.7) { railSplashed = true; railRuinAge = 0; onCollapseEvent?.({kind: 'rail', point: new T.Vector3(0, 0, -6), k: 2.5}); }
+    for (const d of deckPivots) {
+     const s = T.MathUtils.clamp((railFall - d.delay) / d.T, 0, 1);
+     poseDeck(d, s * s * (1.6 - .6 * s));
+     if (!d.hit && s > .82) { d.hit = true; onCollapseEvent?.({kind: 'deck', point: new T.Vector3(d.cx, 0, -6), k: 1}); }
+    }
+   }
+   for (const [age, g, key] of [[roadRuinAge, ruinsRoad, 'road'], [railRuinAge, ruinsRail, 'rail']]) {
+    if (age == null) continue;
+    const a = Math.min(age + dt, 1.5);
+    if (key === 'road') roadRuinAge = a; else railRuinAge = a;
+    const u = Math.min(a / .6, 1);
+    g.visible = true; g.scale.setScalar(Math.max(.001, 1 - (1 - u) ** 3));
    }
    if (collapse) {
     // sag and groan, then a long slow fall; the deck slaps the water and pushes out a ring wave
-    collapseAge += realDt;
+    collapseAge += dt;
     const a = collapseAge, sag = T.MathUtils.smoothstep(a, 0, 1.1), fall = T.MathUtils.clamp((a - 1.1) / 4.2, 0, 1), f = fall * fall * (1.6 - .6 * fall);
     const shiver = a < 1.4 ? Math.sin(a * 60) * .012 * (1.4 - a) : 0;
     falling.position.y = -.35 * sag - 7.2 * f;
     falling.rotation.z = -.05 * sag - .27 * f + shiver;
     falling.rotation.x = .06 * f;
-    if (!splashed && falling.position.y < -2.7) { splashed = true; ringStart = collapseAge; onCollapseSplash?.(); }
+    if (!splashed && falling.position.y < -2.7) { splashed = true; ringStart = collapseAge; roadRuinAge = 0; onCollapseSplash?.(); onCollapseEvent?.({kind: 'road', point: new T.Vector3(0, 0, 0), k: 3}); }
    }
    const ringU = water.material.uniforms.ring.value;
    if (ringStart != null && collapseAge - ringStart < 18) ringU.set(0, 0, collapseAge - ringStart, .9); else ringU.z = -1;

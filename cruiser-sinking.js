@@ -1,10 +1,12 @@
 import * as T from 'three';
+import {waterTurmoil} from './water-turmoil.js';
 
 // A destroyed cruiser: guns, bridge and mast fly off, the hull snaps in two amidships,
 // both halves burn, drift apart, list and slip under. Everything runs on an `age` advanced by tick(dt).
 const CUT_X = .05;          // local x of the break
 const SHUDDER_END = .4;     // halves stay together and tremble until the secondary blast
 const END = 7.5;            // everything is gone by now
+export const CRUISER_SINK_TOTAL = 12;   // wreck gone at END, churning water lingers after
 const WATER_Y = 0;          // world waterline
 const BOW_DIVE = 1.2;       // final bow pitch (rotation.z) in the last second
 const rnd = () => Math.random();
@@ -13,6 +15,7 @@ const ease = x => { x = clamp01(x); return x * x * (3 - 2 * x) };
 
 export function cruiserSinking(fx) {
   const wrecks = [];
+  const turmoil = waterTurmoil(fx);
   const tmpPos = new T.Vector3(), tmpQuat = new T.Quaternion(), tmpScale = new T.Vector3();
 
   function makeHalf(sign, pivot, ship, hull, cloned) {
@@ -72,6 +75,7 @@ export function cruiserSinking(fx) {
   }
 
   function tick(dt) {
+    turmoil.tick(dt);
     for (let i = wrecks.length - 1; i >= 0; i--) {
       const w = wrecks[i];
       w.age += dt;
@@ -121,6 +125,11 @@ export function cruiserSinking(fx) {
       mesh.updateWorldMatrix(true, false);
       mesh.matrixWorld.decompose(tmpPos, tmpQuat, tmpScale);
       const origin = tmpPos.clone(), quat = tmpQuat.clone(), scl = tmpScale.clone();
+      if (elapsed >= CRUISER_SINK_TOTAL) { mesh.removeFromParent(); return }
+      const cutPoint = mesh.localToWorld(new T.Vector3(CUT_X, 0, 0)).setY(.05);
+      const tdir = new T.Vector3(1, 0, 0).applyQuaternion(quat).setY(0).normalize();
+      turmoil.start(cutPoint, {radius: 3.2, duration: 6, intensity: 1.2, delay: 3.5, elapsed, quiet});
+      turmoil.start(cutPoint.clone().addScaledVector(tdir, 1.3), {radius: 2.6, duration: 6, intensity: 1, delay: 5.2, elapsed, quiet});
       if (elapsed >= END) { mesh.removeFromParent(); return }
       const centre = mesh.localToWorld(new T.Vector3(0, .5, 0));
       const base = mesh.localToWorld(new T.Vector3(CUT_X, 0, 0));
@@ -163,6 +172,6 @@ export function cruiserSinking(fx) {
       wrecks.push(w);
     },
     tick,
-    clear() { for (const w of wrecks) finish(w); wrecks.length = 0 }
+    clear() { for (const w of wrecks) finish(w); wrecks.length = 0; turmoil.clear() }
   };
 }

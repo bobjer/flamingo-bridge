@@ -9,6 +9,7 @@ import {model, randomCarType} from './models.js';
 import {fireworks} from './effects.js';
 import {tankerTraffic} from './tanker-traffic.js';
 import {railTraffic} from './rail-traffic.js';
+import {waterTurmoil} from './water-turmoil.js';
 import {LANDFALL, groundHeight} from './terrain.js';
 
 const V = (x = 0, y = 0, z = 0) => new T.Vector3(x, y, z);
@@ -27,7 +28,10 @@ export function createStage(host) {
   const fx = fireworks(scene);
   const beams = searchlights(scene);
   const tankers = tankerTraffic(scene);
+  const sceneBefore = new Set(scene.children);
   const moveTrain = railTraffic(world, LANDFALL);
+  const trainCars = scene.children.filter(c => !sceneBefore.has(c));
+  const turmoil = waterTurmoil(fx);
   const glCanvas = host.querySelector('canvas');
 
   const land = V(-41, groundHeight(-41, 14), 14), sea = V(22, .24, 31);
@@ -62,15 +66,113 @@ export function createStage(host) {
   });
 
   /* ---------- anti-air garrison ---------- */
-  let roadFallen = false;
+  let roadFallen = false, fallenLevel = 0;
+
+  /* ---------- slow motion, ruins, SAM crater ---------- */
+  const SLOW_HOLD = 7, SLOW_EASE = 3, SLOW_MIN = .3;
+  let slow = 1, slowOn = false, slowT = 0, lastReal = null;
+  const ease = x => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x) };
+  function startSlow() { slowOn = true; slowT = 0; slow = SLOW_MIN; world.setCollapseRate(slow) }
+  function tickSlow(rdt) {
+    if (!slowOn) return;
+    slowT += rdt;
+    slow = slowT < SLOW_HOLD ? SLOW_MIN : SLOW_MIN + (1 - SLOW_MIN) * ease((slowT - SLOW_HOLD) / SLOW_EASE);
+    if (slowT >= SLOW_HOLD + SLOW_EASE) { slowOn = false; slow = 1 }
+    world.setCollapseRate(slow);
+  }
+  const rr = (a, b) => a + Math.random() * (b - a);
+  let ruinFires = [], ruinSmokeT = 0;
+  function startRuins(fallen) {
+    ruinFires = [];
+    if (fallen < 1) return;
+    world.ruinSites().forEach((p, i) => {
+      if (fallen === 1 && Math.abs(p.x) >= 20) return;
+      ruinFires.push({p, k: .9 + hash(i * 3.3 + 1) * .7, t: hash(i) * .05});
+    });
+    for (let i = 0; i < 4; i++) {
+      const a = hash(i * 5.1 + 2) * 6.283, d = 1.5 + hash(i * 2.7 + 4) * 4.5;
+      ruinFires.push({p: V(Math.cos(a) * d, .15, -3 + Math.sin(a) * d), k: .7, t: 0, water: true});
+    }
+    fx.spill(V(0, 0, -3), 3.2, 90);
+  }
+  function tickRuins(sd) {
+    if (!ruinFires.length) return;
+    for (const f of ruinFires) fx.blaze(f, sd);
+    ruinSmokeT -= sd;
+    if (ruinSmokeT <= 0) {
+      ruinSmokeT = .4;
+      const land_ = ruinFires.filter(f => !f.water), f = land_[Math.floor(Math.random() * land_.length)];
+      if (f) {
+        fx.smokeColumn(f.p.clone().add(V(0, .8, 0)), rr(.8, 1.4), true);
+        if (Math.random() < .3) fx.sparks(f.p.clone().add(V(0, .6, 0)), .5, 10);
+      }
+    }
+  }
+  // SAM site left burning: scorch decal, fires, smoke, charred debris. Stays until resetWave.
+  let samCrater = null;
+  function clearCrater() {
+    if (!samCrater) return;
+    samCrater.scorch.removeFromParent(); samCrater.scorch.geometry.dispose(); samCrater.scorch.material.dispose();
+    for (const d of samCrater.debris) { d.removeFromParent(); const ms = Array.isArray(d.material) ? d.material : [d.material]; for (const m of ms) m.dispose() }
+    samCrater = null;
+  }
+  function startCrater(unit, silent) {
+    if (samCrater) return;
+    const gy = groundHeight(land.x, land.z) + .05;
+    const scorch = new T.Mesh(new T.CircleGeometry(3.2, 32), new T.MeshBasicMaterial({color: 0x0a0807, transparent: true, opacity: .85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2}));
+    scorch.rotation.x = -Math.PI / 2; scorch.position.set(land.x, gy, land.z); scorch.renderOrder = 3;
+    scorch.scale.setScalar(silent ? 1 : .01); scene.add(scorch);
+    const fires = Array.from({length: 5}, () => { const a = rr(0, 6.283), d = Math.sqrt(Math.random()) * 3; return {p: V(land.x + Math.cos(a) * d, groundHeight(land.x + Math.cos(a) * d, land.z + Math.sin(a) * d) + .2, land.z + Math.sin(a) * d), k: rr(.6, 1.2), t: 0} });
+    const src = [];
+    if (unit) { unit.m.updateWorldMatrix(true, true); unit.m.traverse(o => { if (o.isMesh) src.push(o) }) }
+    const debris = [], n = 5 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      let c;
+      if (src.length) {
+        const o = src[i % src.length], ws = V(); o.getWorldScale(ws);
+        c = o.clone(); c.material = Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone();
+        for (const m of Array.isArray(c.material) ? c.material : [c.material]) if (m.color) m.color.multiplyScalar(.28);
+        c.scale.copy(ws);
+      } else {
+        c = new T.Mesh(new T.BoxGeometry(rr(.3, .8), rr(.15, .4), rr(.3, .8)), new T.MeshStandardMaterial({color: 0x1d1b19, roughness: .9}));
+      }
+      const a = rr(0, 6.283), d = rr(1, 3.8), x = land.x + Math.cos(a) * d, z = land.z + Math.sin(a) * d;
+      c.position.set(x, groundHeight(x, z) + .12, z); c.rotation.set(rr(-.4, .4), rr(0, 6.283), rr(-.4, .4)); c.castShadow = true;
+      scene.add(c); debris.push(c);
+    }
+    samCrater = {scorch, fires, debris, age: silent ? 1 : 0, smokeT: 0};
+  }
+  function tickCrater(sd) {
+    if (!samCrater) return;
+    samCrater.age += sd;
+    samCrater.scorch.scale.setScalar(Math.max(.01, ease(samCrater.age / .6)));
+    for (const f of samCrater.fires) fx.blaze(f, sd);
+    samCrater.smokeT -= sd;
+    if (samCrater.smokeT <= 0) { samCrater.smokeT = .6; const f = samCrater.fires[Math.floor(Math.random() * samCrater.fires.length)]; fx.smokeColumn(f.p.clone().add(V(0, .6, 0)), rr(.7, 1.1), true) }
+  }
+  // arch collapse events from the scene: splashes, oil, churning water
+  world.onCollapseEvent(e => {
+    if (e.kind === 'road' || e.kind === 'rail') {
+      const k = e.k || 1, p = e.point;
+      for (const i of [-.8, -.4, 0, .4, .8]) fx.splash(V(p.x + i * 2.4 * k, .15, p.z + (Math.random() - .5) * 2), k * (.7 + Math.random() * .4));
+      fx.foam(V(p.x, .1, p.z), k); fx.spill(V(p.x, 0, p.z), k * 1.6, 90);
+      const r = Math.min(8, 7 * k / 3);
+      turmoil.start(V(p.x, 0, p.z), {radius: r, duration: 9, intensity: 1.4});
+      turmoil.start(V(p.x + 3, 0, p.z + 2), {radius: r * .7, duration: 9, intensity: 1.4, delay: 2.5});
+    } else if (e.kind === 'deck') {
+      fx.splash(V(e.point.x, .15, e.point.z), 1.6);
+      turmoil.start(V(e.point.x, 0, e.point.z), {radius: 3, duration: 5, intensity: 1.2});
+    }
+  });
   let aaUnits = [];
   function setBroadcast(ids, aa, fallen = 0) {
-    roadFallen = fallen > 0;
+    roadFallen = fallen > 0; fallenLevel = fallen;
     stories = ids;
     shots = ids.map(id => id === 'arch' && fallen ? {...subjects.arch,point:V(0,9.9,-6)} : subjects[id]);
     moored.visible = ids.includes('cruiser'); supply.visible = ids.includes('sam');
     closedRoad = fallen > 0; scars = []; archHits = 0;
     world.setDeckHoles(scars); world.setHits(fallen ? 3 : 0,true); world.setRailHits(fallen >= 2 ? 3 : 0,true); for (const c of cars) c.m.visible = !closedRoad;
+    startRuins(fallen);
     for (const u of aaUnits) u.m.removeFromParent();
     aaUnits = [];
     [0, 1, 2].forEach(i => {
@@ -156,13 +258,13 @@ export function createStage(host) {
     }
     if (R.kind === 'sam') {
       const at = aaUnits.findIndex(u => u.i === 0);
-      if (at >= 0) { const [u] = aaUnits.splice(at,1); if (!silent) fx.breakup(u.m,V(0,1,0)); u.m.removeFromParent() }
+      if (at >= 0) { const [u] = aaUnits.splice(at,1); startCrater(u,silent); if (!silent) fx.breakup(u.m,V(0,1,0)); u.m.removeFromParent() } else startCrater(null,silent);
     }
     if (R.kind === 'truck' && supply.visible) {
       if (!silent) fx.throwCar(supply.clone(),p); supply.visible = false;
     }
     if (R.kind === 'arch' && f.archDamage !== false) {
-      const hits = Math.min(3, ++archHits);
+      const hits = Math.min(3, ++archHits);      if (archHits === 3 && !silent) startSlow();
       if (shots[f.marker].point.z < 0) world.setRailHits(hits,silent);
       else world.setHits(hits,silent);
     }
@@ -184,7 +286,7 @@ export function createStage(host) {
     startBlaze(i, R.E, f.type === 2 ? 1.5 : 1, f.type === 2 ? 9000 : 6500, late);
 
   }
-  function updateFlights(dt, elapsed, report) {
+  function updateFlights(dt, elapsed, report, fxDt = dt) {
     airborne.length = 0;
     const flights = report?.flights ?? [];
     for (let i = 0; i < flights.length; i++) {
@@ -234,15 +336,17 @@ export function createStage(host) {
       }
     }
     for (let j = blazes.length - 1; j >= 0; j--) {
-      const b = blazes[j]; b.age += dt * 1000;
+      const b = blazes[j]; b.age += fxDt * 1000;
       if (b.age >= b.life) { blazes.splice(j, 1); continue }
-      b.k = b.k0 * Math.pow(1 - b.age / b.life, 1.2) + .1; fx.blaze(b, dt);
+      b.k = b.k0 * Math.pow(1 - b.age / b.life, 1.2) + .1; fx.blaze(b, fxDt);
     }
   }
   function resetWave() {
     for (const R of recs) { if (R.mesh) R.mesh.removeFromParent() }
-    sinking.clear(); tankerSink.clear(); fx.clear();
+    sinking.clear(); tankerSink.clear(); fx.clear(); turmoil.clear();
     recs = []; blazes.length = 0; airborne.length = 0;
+    slow = 1; slowOn = false; slowT = 0; world.setCollapseRate(1);
+    ruinFires = []; clearCrater();
 
   }
 
@@ -275,22 +379,50 @@ export function createStage(host) {
     return { position: V(-352, 10.2, 200), target: V(1.5 + .05 * Math.sin(ts), 5.2 + .03 * Math.sin(ts * 1.3), .5), fov: FAR_FOV, roll: 0 };
   }
 
+  /* ---------- victory flyover ---------- */
+  const VICTORY_LENGTH = 32;
+  const WAY = [
+    [-70, 5, -55, 0, 3, -3, 48], [-45, 8, -38, -6, 3, -6, 50], [-28, 12, -22, -12, 3, -2, 52], [-6, 9, -16, 0, 3, -3, 56],
+    [24, 14, -14, 4, 3, -3, 58], [30, 20, 6, 0, 3, -3, 52], [10, 38, 48, 0, 3, -3, 44]
+  ];
+  const cr = (a, b, c, d, u) => .5 * ((2 * b) + (-a + c) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (-a + 3 * b - 3 * c + d) * u * u * u);
+  let ruinCache = null;
+  function victoryPose(t) {
+    t = Math.min(VICTORY_LENGTH, Math.max(0, t));
+    const s = t / VICTORY_LENGTH, param = (WAY.length - 1) * (.7 * s + .3 * ease(s));
+    const i = Math.min(WAY.length - 2, Math.floor(param)), u = param - i;
+    const w = j => WAY[Math.min(WAY.length - 1, Math.max(0, j))];
+    const v = Array.from({length: 7}, (_, c) => cr(w(i - 1)[c], w(i)[c], w(i + 1)[c], w(i + 2)[c], u));
+    ruinCache ??= world.ruinSites();
+    const q = t / 3.5, a = ruinCache[Math.floor(q) % ruinCache.length], b = ruinCache[(Math.floor(q) + 1) % ruinCache.length], f = ease(q - Math.floor(q));
+    const base = V(0, 3, -3);
+    const drift = a.clone().lerp(b, f).sub(base).multiplyScalar(.25);
+    const position = V(v[0], v[1], v[2]);
+    if (Math.abs(position.x) < 55 && position.z > -10 && position.z < 6 && position.y < 4) position.y = 4;
+    position.y = Math.max(2.2, position.y);
+    return {position, target: V(v[3], v[4], v[5]).add(drift), fov: v[6], roll: .015 * Math.sin(t * .4)};
+  }
+  let victoryOn = false, victoryClock = 0;
+
   /* ---------- per-frame ---------- */
   const proj = V();
   let real = 0;
-  function step({ dt, real: realT, elapsed, report, cam, orbital, reverse = false, satelliteSubject }) {
+  function step({ dt, real: realT, elapsed, report, cam, orbital, reverse = false, satelliteSubject, victory = false, victoryT = 0 }) {
     real = realT;
+    const rdt = lastReal == null ? 0 : Math.min(.1, Math.max(0, realT - lastReal)); lastReal = realT;
+    tickSlow(rdt); const sd = dt * slow;
+    victoryOn = victory; victoryClock = victoryT;
     sceneTime += dt;
-    screenSmoke = !!report && report.wave >= 2 && (report.seed?.[0] < .4 || report.wave % 4 === 0) && elapsed >= 1400 && elapsed < Math.min(report.duration,11500);
+    screenSmoke = !victory && !!report && report.wave >= 2 && (report.seed?.[0] < .4 || report.wave % 4 === 0) && elapsed >= 1400 && elapsed < Math.min(report.duration,11500);
     if (!screenSmoke && !closedRoad) trafficTime += dt;
     // camera
     const el = host.clientWidth / Math.max(1, host.clientHeight);
-    const pose = cameraPose(cam, realT, orbital);
-    if (satelliteSubject != null) {
+    const pose = victory ? victoryPose(victoryT) : cameraPose(cam, realT, orbital);
+    if (!victory && satelliteSubject != null) {
       const point = shots[satelliteSubject].point;
       pose.target = point.clone(); pose.position = point.clone().add(V(8*Math.sin(realT*.12),56,23)); pose.fov = 30;
     }
-    if (reverse) {
+    if (!victory && reverse) {
       const point = shots[cam].point;
       pose.target = point.clone(); pose.position = point.clone().add(V(-8, 5, -19)); pose.roll = 0; pose.fov = 49;
       if (report?.wave % 2 === 0) {
@@ -310,9 +442,10 @@ export function createStage(host) {
     const fwd = pose.target.clone().sub(pose.position).normalize();
     state.pitch = Math.asin(fwd.y) * 57.2958; state.roll = pose.roll * 57.2958;
     // world
-    updateFlights(dt, elapsed, report);
-    sinking.tick(dt);
-    tankerSink.tick(dt);
+    updateFlights(dt, elapsed, report, sd);
+    sinking.tick(sd);
+    tankerSink.tick(sd);
+    tickRuins(sd); tickCrater(sd); turmoil.tick(sd);
     for (const c of cars) { if (!screenSmoke && !closedRoad) c.x += c.dir * c.speed * dt; if (Math.abs(c.x) > 130) c.x = -c.dir * 130; c.m.position.set(c.x, world.deckTop(c.x) + .06, c.dir * .8) }
     for (const u of aaUnits) {
       let best = null, bd = 1e9;
@@ -323,11 +456,12 @@ export function createStage(host) {
       if (u.i === 2) { u.m.position.y = u.base + Math.sin(realT * 1.3) * .05; u.m.rotation.z = Math.sin(realT * .9) * .03 }
     }
     beams.update(sceneTime*1000, Math.max(screenSmoke ? .8 : 0, 1-world.daylight()), airborne);
-    fx.tick(dt, []);
+    fx.tick(sd, []);
   }
   function render(gameTime) {
-    tankers.move(trafficTime); tankers.draw(sceneTime); moveTrain(trafficTime);
-    world.draw(sceneTime, trafficTime, screenSmoke, gameTime);
+    tankers.move(trafficTime); tankers.draw(sceneTime);
+    if (fallenLevel >= 2) { for (const c of trainCars) c.visible = false } else moveTrain(trafficTime);
+    world.draw(sceneTime, trafficTime, screenSmoke, victoryOn ? 21.5 + Math.min(victoryClock, 32) * .035 : gameTime);
   }
   const gameTime = t => t * .45;
 
@@ -335,7 +469,7 @@ export function createStage(host) {
   const screen = p => { const s = world.screenPoint(p); return s };
   return {
     world, fx, glCanvas,
-    step, render: () => render(gameTime(real)), setBroadcast, resetWave,
+    step, render: () => render(gameTime(real)), setBroadcast, resetWave, victoryLength: () => VICTORY_LENGTH,
     lessonFinale(on) {
       world.setHits(0, true);
       world.setHits(on || roadFallen ? 3 : Math.min(archHits,3), !on);
