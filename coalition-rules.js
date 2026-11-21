@@ -167,7 +167,12 @@ export function launch(s, random = Math.random) {
   if (s.event === 'committee') report.committee = { at: Math.round((.3 + .3 * random()) * end) };
   // Drawn last so earlier rolls keep their order: EW cuts one drone off for a while.
   if (random() < CFG.ewChance) report.ew = { marker: Math.floor(random() * 3), at: Math.round(random() * .5 * end), dur: CFG.ewDur };
-  assignScenes(cameraSubjects(s), flights, random);
+  report.archStart = s.fallenArches ?? 0;
+  report.archFell = assignScenes(cameraSubjects(s), flights, random);
+  if (report.archFell) {
+    const lastCritical = Math.max(...flights.filter(f => f.archDamage).map(f => f.impact));
+    report.duration = Math.max(report.duration, lastCritical + 6000);
+  }
   report.assignedScenes = true;
   const cruiser = flights.find(f => f.success && !f.decree && !f.extra && cameraSubjects(s)[f.marker] === 'cruiser');
   if (cruiser) report.duration = Math.max(report.duration, cruiser.impact + 3400);
@@ -198,7 +203,8 @@ export function launch(s, random = Math.random) {
 
 // Cast each remaining arcade event into an open camera slot, in playback order.
 function assignScenes(subjects, flights, random) {
-  const remaining = subjects.map(id => id === 'arch' ? 3 : 1);
+  let archDamage = 0;
+  const remaining = subjects.map(id => id === 'arch' ? Infinity : 1);
   const extras = subjects.map(id => id === 'cruiser' ? 'tanker' : id === 'sam' ? 'truck' : null);
   for (const f of [...flights].sort((a,b) => a.impact - b.impact)) {
     if (!remaining[f.marker]) {
@@ -213,9 +219,14 @@ function assignScenes(subjects, flights, random) {
     }
     if (f.success && !f.decree && !f.intercepted) {
       if (f.extra) extras[f.marker] = null;
-      else remaining[f.marker]--;
+      else if (subjects[f.marker] === 'arch') {
+        // Arcade threshold uses flock size only. Damage must land within this wave.
+        f.archDamage = flights.length >= 18 && random() < .45;
+        if (f.archDamage && ++archDamage === 3) remaining[f.marker] = 0;
+      } else remaining[f.marker]--;
     }
   }
+  return archDamage === 3;
 }
 
 // Money and views of one successful impact that was filmed as `kind` ('drone' | 'far' | 'none').
@@ -350,7 +361,7 @@ export function finishWave(s, captures = s.captures, extra = {}, random = Math.r
     const f = r.flights[i], ids = cameraSubjects(s);
     // Archive only this wave's small event script, never its images or previous reports.
     const film = { subjects: [...ids], aa: [...s.aa], wave: r.wave, seed: r.seed,
-      assignedScenes: !!r.assignedScenes, flights: r.flights.filter(g => g.start <= f.impact + 1600),
+      archStart:r.archStart, assignedScenes: !!r.assignedScenes, flights: r.flights.filter(g => g.start <= f.impact + 1600),
       marker: f.marker, subject: f.extra ?? ids[f.marker], time: f.impact, duration: r.duration };
     (s.leaks ??= []).push({ source: s.wave, due: s.wave + 1 + Math.floor(random() * 2),
       film, views: Math.round(40000 + random() * 80000),
@@ -359,6 +370,10 @@ export function finishWave(s, captures = s.captures, extra = {}, random = Math.r
   deliverProduction(s, random);
   s.fatigue *= retentionFor(s);
   drawChance(s,e,random);
+  if (r.archFell) s.fallenArches = r.archStart + 1;
+  if (s.fallenArches === 2) {
+    s.phase = 'over'; s.runId ||= newId(); return;
+  }
   if (e.orderHit != null) {
     r.reward = {cash: waveCash(r, e.money + e.orderPay) - waveCash(r, e.money)};
     s.phase = 'report';

@@ -484,6 +484,7 @@ export function landscape(view) {
  const stormWater = new T.Color(0x2b564c), stormHaze = new T.Color(0x8b9182);
  const rollerAt = (x, z, t) => { const s = .5 + .5 * Math.sin(x * .078 + z * .208 - t * .8); return s * s * s * s; };
  const swellAt = (x, z, t) => Math.sin(x * .21 + z * .13 + t * 1.3) * .5 + Math.sin(x * -.11 + z * .27 + t * 1.7) * .32 + Math.sin(x * .37 + z * -.19 + t * 2.3) * .18;
+ let railFall = -1;
  let collapseAge = 0, splashed = false, ringStart = null, onCollapseSplash = null;
  let collapse = false, prevDist = camera.position.distanceTo(controls.target);
  // Bullet-time: fly in to an impact, sweep around it in slow motion, fly back.
@@ -639,6 +640,11 @@ export function landscape(view) {
    return {y: s * h, roll: s * (surface(x, z + e) - h) / e, pitch: s * (surface(x + e, z) - h) / e, crest: s * rollerAt(x, z, t)};
   },
   daylight: () => daylight,
+  setRailHits(hits, instant = false) {
+   railFall = hits < 3 ? -1 : instant ? 5 : Math.max(0,railFall);
+   railway.scale.y = 1.05 - .035 * hits;
+   if (railFall < 0) { railway.position.y = 0; railway.rotation.z = 0 }
+  },
   setHits(hits, instant = false) {
    if (hits >= 3 && !collapse) { collapseAge = instant ? 30 : 0; splashed = instant; ringStart = null; }
    collapse = hits >= 3;
@@ -669,6 +675,11 @@ export function landscape(view) {
    water.material.uniforms.sunDirection.value.copy(sun.position).normalize();
    water.material.uniforms.sunColor.value.copy(sun.color).multiplyScalar(.38+.5*day);
 
+   if (railFall >= 0) {
+    railFall = Math.min(5,railFall + realDt);
+    const drop = T.MathUtils.smoothstep(railFall,0,5);
+    railway.position.y = -12 * drop; railway.rotation.z = .23 * drop;
+   }
    if (collapse) {
     // sag and groan, then a long slow fall; the deck slaps the water and pushes out a ring wave
     collapseAge += realDt;

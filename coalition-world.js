@@ -61,13 +61,15 @@ export function createStage(host) {
   });
 
   /* ---------- anti-air garrison ---------- */
+  let roadFallen = false;
   let aaUnits = [];
-  function setBroadcast(ids, aa) {
+  function setBroadcast(ids, aa, fallen = 0) {
+    roadFallen = fallen > 0;
     stories = ids;
-    shots = ids.map(id => subjects[id]);
+    shots = ids.map(id => id === 'arch' && fallen ? {...subjects.arch,point:V(0,9.9,-6)} : subjects[id]);
     moored.visible = ids.includes('cruiser'); supply.visible = ids.includes('sam');
-    closedRoad = false; scars = []; archHits = 0;
-    world.setDeckHoles(scars); world.setHits(0); for (const c of cars) c.m.visible = true;
+    closedRoad = fallen > 0; scars = []; archHits = 0;
+    world.setDeckHoles(scars); world.setHits(fallen ? 3 : 0,true); world.setRailHits(fallen >= 2 ? 3 : 0,true); for (const c of cars) c.m.visible = !closedRoad;
     for (const u of aaUnits) u.m.removeFromParent();
     aaUnits = [];
     [0, 1, 2].forEach(i => {
@@ -158,7 +160,11 @@ export function createStage(host) {
     if (R.kind === 'truck' && supply.visible) {
       if (!silent) fx.throwCar(supply.clone(),p); supply.visible = false;
     }
-    if (R.kind === 'arch') world.setHits(Math.min(3, ++archHits), silent);
+    if (R.kind === 'arch' && f.archDamage !== false) {
+      const hits = Math.min(3, ++archHits);
+      if (shots[f.marker].point.z < 0) world.setRailHits(hits,silent);
+      else world.setHits(hits,silent);
+    }
     if (['deck','hole','pier'].includes(R.kind) || archHits >= 3) {
       if (!silent) for (const c of cars) if (c.m.visible && Math.abs(c.x-p.x)<8) fx.throwCar(c.m.clone(),p);
       for (const c of cars) c.m.visible = false;
@@ -286,6 +292,13 @@ export function createStage(host) {
     if (reverse) {
       const point = shots[cam].point;
       pose.target = point.clone(); pose.position = point.clone().add(V(-8, 5, -19)); pose.roll = 0; pose.fov = 49;
+      if (report?.wave % 2 === 0) {
+        const drift = Math.sin(realT * 1.7);
+        pose.position.add(V((elapsed - report.time) * .0008, -2.1, 0));
+        pose.target.y += .12 * drift;
+        pose.roll = .013 * drift;
+        pose.fov = 35;
+      }
     }
     if (el < 1 && pose.fov > 40) pose.fov = Math.min(100, pose.fov + (1 - el) * 45);
     state.fov = pose.fov;
@@ -323,7 +336,7 @@ export function createStage(host) {
     step, render: () => render(gameTime(real)), setBroadcast, resetWave,
     lessonFinale(on) {
       world.setHits(0, true);
-      world.setHits(on ? 3 : Math.min(archHits,3), !on);
+      world.setHits(on || roadFallen ? 3 : Math.min(archHits,3), !on);
       if (on) world.setPose({position:V(-36,20,50),target:V(0,2,0),fov:35,roll:0});
     },
     renderLesson(dt) {
