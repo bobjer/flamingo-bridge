@@ -259,7 +259,6 @@ export function startDeepstrike(){
   const next=document.createElement('button');next.textContent=over?tr('Підсумок кампанії','Campaign result'):tr('Наступна хвиля →','Next wave →');
   next.onclick=()=>{s.reportPending=false;save();render()};title.after(next);
   reportContents(card);
-  if(autoOn)autoTimer=setTimeout(()=>{if(!document.hidden&&root.contains(next))next.click();else{autoOn=false;render()}},8000);
  }
  function render(){
   closeReport?.();closeReport=null;
