@@ -141,6 +141,11 @@ export function startDeepstrike(){
  const droneCount=()=>[...selected.values()].reduce((a,row)=>a+sumRow(row),0);
  const assigned=type=>[...selected.values()].reduce((n,row)=>n+(row[type]??0),0)+Object.values(surveys).reduce((n,row)=>n+(row[type]??0),0);
  const available=type=>s.stock[type]-assigned(type);
+ const repairPrice=amount=>Math.ceil(amount/5);
+ function repairBase(amount){
+  s.base.damage-=amount;
+  s.credits-=repairPrice(amount);
+ }
  const migrateLosses=s.surveyLossMarks===undefined;
  if(migrateLosses)s.surveyLossMarks=surveyLossMarks(s.lastTracks??[],s.wave-1);
  for(const mark of s.surveyLossMarks)mark.wave??=s.wave-1;
@@ -391,8 +396,8 @@ export function startDeepstrike(){
    treasury.append(info);
    const hint=document.createElement('small');hint.textContent=tr('Переїзд скидає бонус і захищає склад на одну хвилю. Удар можливий, поки працює ворожий аеродром або пускова. У парну хвилю переїзду місцеву поставку пропущено. При 100% пошкодження місцеве виробництво зупиняється.','Moving resets the bonus and protects stock for one wave. A working enemy airfield or launcher is required for a counterstrike. Moving on an even wave skips local supply. At 100% damage local production stops.');treasury.append(hint);
    button(treasury,tr('Перемістити базу','Move base'),()=>{base.station=3-base.station;base.established=false;base.moved=true;save();render()},base.moved);
-   const repair=Math.min(25,base.damage),fee=Math.ceil(repair/5);
-   if(repair)button(treasury,tr('Ремонт','Repair')+' '+repair+'% · '+fee+tr(' кр.',' cr.'),()=>{base.damage-=repair;s.credits-=fee;save();render()},fee>s.credits);
+   const repair=Math.min(25,base.damage),fee=repairPrice(repair);
+   if(repair)button(treasury,tr('Ремонт','Repair')+' '+repair+'% · '+fee+tr(' кр.',' cr.'),()=>{repairBase(repair);save();render()},fee>s.credits);
    const heading=document.createElement('div');heading.className='label';heading.textContent=tr('Контракт спонсора · оберіть підтвердження','Sponsor contract · choose the evidence');treasury.append(heading);
    for(const id of [0,1])button(treasury,sponsorName(id)+' · +12',()=>{s.contractSource=id;save();render()},false,(s.contractSource??0)===id,'c-sides');
    if(s.production){const p=document.createElement('p');p.textContent=tr('У виробництві','In production')+' · '+tr(...fleet[s.production.type].name)+' ×'+s.production.remaining;treasury.append(p)}
@@ -751,6 +756,12 @@ export function startDeepstrike(){
   if(marking){const hint=document.createElement('p');hint.className='deep-hint';hint.textContent=tr('Торкніться карти, щоб позначити район.','Tap the map to mark a district.');acts.append(hint)}
   if(autoOn)autoTimer=setTimeout(()=>{
    if(document.hidden||document.querySelector('dialog:modal')){render();return}
+   if(s.base.damage>=75){
+    const strikeCost=minimumLaunch(s.stock.slice(0,-1));
+    const reserve=cost||(strikeCost<=s.credits?strikeCost:minimumLaunch(s.stock));
+    const repair=Math.min(25,Math.max(0,s.credits-reserve)*5);
+    if(repair){repairBase(repair);save()}
+   }
    if(launchTotal){
     if(!launch.disabled&&fleet.every((_,id)=>available(id)>=0)){launchWave();return}
     autoOn=false;render();return;
