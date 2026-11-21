@@ -8,7 +8,7 @@ import {registerSessionSave} from './release-notice.js';
 import {tr} from './language.js';
 import {changeSide,read,write} from './factions.js';
 import './deepstrike.css';
-import {advanceConditions} from './site-condition.js';
+import {advanceConditions,boardImpact} from './site-condition.js';
 import {appendReport,appendSummary,appendEmpty,appendRepairs,conditionText} from './deep-reports.js';
 import {cities,points,district,boardPath,travel} from './deep-atlas.js';
 
@@ -91,6 +91,7 @@ export function startDeepstrike(){
  let marking=false, active=s.plan?.unit??0, timer, city=s.plan?.city??-1;
  s.conditions??={};
  s.base??={station:1,damage:0,moved:false};
+ const repeatLaunch=()=>!s.base.moved&&(s.base.established??(s.wave>1));
  const offline=()=>objectives.filter(id=>s.conditions[id]?.damage===100).length;
  if(offline()===objectives.length)s.won=true;
  s.stock??=[];
@@ -149,27 +150,30 @@ export function startDeepstrike(){
   // One report per site; every surviving drone of a group rolls its own hit.
   const groups=new Map();
   for(const f of s.flights)if(!f.survey)groups.set(f.i,[...(groups.get(f.i)??[]),f]);
+  const accuracy=repeatLaunch()?.90:.60;
+  const damageMultiplier=repeatLaunch()?1.25:1;
   const landed=new Map();
   s.reports=[...groups].filter(()=>Math.random()<.75).map(([i,flights])=>{
-   const hits=flights.filter(f=>!f.lost&&Math.random()<.8).length;
+   const hits=flights.filter(f=>!f.lost&&Math.random()<accuracy).length;
    landed.set(i,hits);
    return {i,source:Math.random()<.5?0:1,hit:hits>0};
   });
   for(const report of s.reports)if(report.i===0&&report.hit){report.fire=Math.random()<.75;if(report.fire)report.fireSeed=crypto.getRandomValues(new Uint32Array(1))[0]}
-  s.repairs=advanceConditions(s.conditions,s.reports,s.wave);
+  s.repairs=advanceConditions(s.conditions,s.reports,s.wave,Math.random,damageMultiplier);
   // advanceConditions applies one impact per report; add one more roll per extra drone that landed.
   for(const report of s.reports){
    const hits=landed.get(report.i)??0;
    if(!report.hit||hits<2||report.damage===undefined)continue;
    let damage=report.damage;
-   for(let n=1;n<hits;n++)damage=Math.min(100,damage+10+Math.floor(Math.random()*76));
+   for(let n=1;n<hits;n++)damage=Math.min(100,damage+boardImpact(damageMultiplier));
    s.conditions[report.i].damage=damage;
    Object.assign(report,{damage,impact:damage-report.previous,hits});
   }
   if(offline()===objectives.length)s.won=true;
   const base=s.base;
   let incident=null;
-  if(!deal&&!s.won&&s.wave>1&&!base.moved&&Math.random()<.18){
+  const responseAvailable=[4,11].some(i=>playable[i]&&(s.conditions[i]?.damage??0)<100);
+  if(responseAvailable&&!deal&&!s.won&&s.wave>1&&!base.moved&&Math.random()<.18){
    const damage=1+Math.floor(Math.random()*100),loss=1+Math.floor(Math.random()*100);
    base.damage=Math.min(100,base.damage+damage);
    let lost=0;
@@ -187,7 +191,8 @@ export function startDeepstrike(){
   const contract=s.contractSource??0;
   const qualified=!deal&&s.reports.some(r=>r.hit&&r.source===contract);
   const invoice=s.invoice;
-  invoice.incident=incident;base.moved=false;
+  invoice.incident=incident;
+  base.established=repeatLaunch()||!deal;base.moved=false;
   invoice.contract=contract;
   invoice.qualified=qualified;
   if(qualified){
@@ -224,7 +229,7 @@ export function startDeepstrike(){
   }
   const note=text=>{const p=document.createElement('p');p.textContent=text;card.append(p)};
   if(s.won)note(tr('Перемога! Промисловість та енергетика зупинені.','Victory! All factories and energy sites are offline.'));
-  if(invoice?.incident){const e=invoice.incident;note(tr('Аварія на базі','Base incident')+' · '+tr('Пошкодження','Damage')+' '+s.base.damage+'% · '+tr('Втрачено зі складу','Stock lost')+' '+e.lost+' ('+e.loss+'%)')}
+  if(invoice?.incident){const e=invoice.incident;note(tr('Удар по базі','Base struck')+' · '+tr('Пошкодження','Damage')+' '+s.base.damage+'% · '+tr('Втрачено зі складу','Stock lost')+' '+e.lost+' ('+e.loss+'%)')}
   if(invoice?.contract!=null)note(sponsorName(invoice.contract)+' · '+(invoice.qualified?tr('Контракт виконано','Contract fulfilled'):tr('Умови не виконано','Terms unmet')));
   const delivery=invoice?.delivery;
   if(delivery)note(tr('Поставка','Delivery')+' · '+tr(...fleet[delivery.type].name)+' ×'+delivery.delivered+' · '+tr('Втрати','Lost')+' '+delivery.lost+' · '+tr('Залишилося','Remaining')+' '+delivery.remaining);
@@ -302,9 +307,10 @@ export function startDeepstrike(){
    treasury.append(status);
    const base=s.base, info=document.createElement('p');
    info.textContent=tr('База №','Base #')+base.station+' · '+tr('Пошкодження ','Damage ')+base.damage+'%';
+   info.textContent+=repeatLaunch()?tr(' · Точність 90% · шкода +25%',' · Accuracy 90% · damage +25%'):tr(' · Точність 60% · базова шкода',' · Accuracy 60% · base damage');
    treasury.append(info);
-   const hint=document.createElement('small');hint.textContent=tr('Переїзд захищає склад на одну хвилю. У парну хвилю переїзду місцеву поставку пропущено. При 100% пошкодження місцеве виробництво зупиняється.','Moving protects stock for one wave. Moving on an even wave skips local supply. At 100% damage local production stops.');treasury.append(hint);
-   button(treasury,tr('Перемістити базу','Move base'),()=>{base.station=3-base.station;base.moved=true;save();render()},base.moved);
+   const hint=document.createElement('small');hint.textContent=tr('Переїзд скидає бонус і захищає склад на одну хвилю. Удар можливий, поки працює ворожий аеродром або пускова. У парну хвилю переїзду місцеву поставку пропущено. При 100% пошкодження місцеве виробництво зупиняється.','Moving resets the bonus and protects stock for one wave. A working enemy airfield or launcher is required for a counterstrike. Moving on an even wave skips local supply. At 100% damage local production stops.');treasury.append(hint);
+   button(treasury,tr('Перемістити базу','Move base'),()=>{base.station=3-base.station;base.established=false;base.moved=true;save();render()},base.moved);
    const repair=Math.min(25,base.damage),fee=Math.ceil(repair/5);
    if(repair)button(treasury,tr('Ремонт','Repair')+' '+repair+'% · '+fee+tr(' кр.',' cr.'),()=>{base.damage-=repair;s.credits-=fee;save();render()},fee>s.credits);
    const heading=document.createElement('div');heading.className='label';heading.textContent=tr('Контракт спонсора · оберіть підтвердження','Sponsor contract · choose the evidence');treasury.append(heading);
