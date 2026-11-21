@@ -25,10 +25,11 @@ export async function changeSide(){
 }
 export async function chooseSide(){
   const remembered=read(sideKey);
-  if(['bridge','coalition'].includes(remembered)) return remembered;
-  if(['bridge','coalition'].includes(remembered?.restart)){
+  if(['bridge','coalition','deepstrike'].includes(remembered)) return remembered;
+  if(['bridge','coalition','deepstrike'].includes(remembered?.restart)){
     localStorage.removeItem('pink-siege:match:v1');
     localStorage.removeItem('pop-coalition-v2');
+    localStorage.removeItem('pop-deepstrike-v1');
     rememberLevel(remembered.level); write(sideKey,remembered.restart);
     return remembered.restart;
   }
@@ -48,10 +49,19 @@ async function pickSide(restart){
       if(selected) card.after(field);
     }
   }
+  let choosingMode=false;
   const render=()=>{
+    if(choosingMode){
+      dialog.innerHTML='<div class="faction-head"><button type="button" data-back>'+tr('Назад','Back')+'</button>'+languageButton()+'</div><h1 id="faction-title">'+tr('Режим коаліції','Coalition mode')+'</h1><div class="faction-options">'+
+        '<button data-mode="coalition"><strong>'+tr('Міст','Bridge')+'</strong><span>'+tr('Зберіть зграю для атаки на міст.','Assemble a flock for the bridge.')+'</span></button>'+
+        '<button data-mode="deepstrike"><strong>'+tr('Діпстрайк','Deepstrike')+'</strong><span>'+tr('Сплануйте хвилю на карті регіонів.','Plan a wave on the regional map.')+'</span></button></div>';
+      dialog.querySelector('[data-mode]').focus();
+      return;
+    }
     dialog.innerHTML='<div class="faction-head"><span>POP SEASON</span><a href="/license.html" target="_blank" rel="noopener">'+tr('Ліцензія','License')+'</a>'+languageButton()+'</div><h1 id="faction-title">'+tr('Оберіть сторону','Choose your side')+'</h1>'+(restart?'<p class="restart-warning">'+tr('Увесь прогрес збережених партій обох сторін буде втрачено. Нова гра почнеться з першої хвилі.','All saved progress for both factions will be lost. The new game starts at wave one.')+'</p>':'')+levelField(level,true)+'<div class="faction-options">'+
       '<button data-side="coalition"><img src="/coalition-koala.svg" alt=""><small>'+tr('НАСТУП','OFFENCE')+'</small><strong>'+tr('Коаліція охочих','Coalition of the Willing')+'</strong><span>'+tr('Зберіть зграю, виконайте контракт і переконайте спонсорів оплатити наступну хвилю.','Build a flock, deliver the contract and convince the sponsors to fund another wave.')+'</span></button>'+
       '<button data-side="bridge">'+paperclip+'<small>'+tr('ОБОРОНА','DEFENCE')+'</small><strong>'+tr('Гарнізон','Garrison')+'</strong><span>'+tr('Тримайте міст, латайте полотно й освоюйте бюджет.','Hold the bridge, patch the road and burn through the budget.')+'</span></button></div>';
+
     if (restart) {
       const body=document.createElement('div'); body.className='faction-body'; body.append(...dialog.children);dialog.append(body);
       dialog.insertAdjacentHTML('beforeend','<footer class="restart-actions"><button type="button" data-cancel>'+tr('Скасувати','Cancel')+'</button><button type="button" data-confirm>'+tr('Почати спочатку','Start over')+'</button></footer>');
@@ -64,6 +74,10 @@ async function pickSide(restart){
   const result=await new Promise(resolve=>{
     dialog.oncancel=e=>{e.preventDefault();if(restart)resolve(null)};
     dialog.onclick=e=>{
+      if(e.target.closest('[data-back]')){choosingMode=false;render();dialog.querySelector('[data-side=coalition]').focus();return}
+      const mode=e.target.closest('[data-mode]');
+      if(mode){resolve({side:mode.dataset.mode,level});return}
+      if(e.target.closest('[data-side=coalition]')){choosingMode=true;render();return}
       if(e.target.closest('[data-language]')){document.querySelector('.lang').click();return}
       if(e.target.closest('[data-cancel]')){resolve(null);return}
       if(e.target.closest('[data-confirm]')){resolve({side,level});return}

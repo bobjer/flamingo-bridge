@@ -4,7 +4,7 @@ import {defenceHelp} from './coach-help.js';
 import {cruiserSinking} from './cruiser-sinking.js';
 import {tankerSinking} from './tanker-sinking.js';
 import {pickGuest} from './guest-roll.js';
-import {watchRelease} from './release-notice.js';
+import {registerSessionSave} from './release-notice.js';
 import {setupGameMenu} from './game-menu.js';
 import {showRecords} from './records.js';
 import {LANDFALL} from './terrain.js';
@@ -1072,11 +1072,10 @@ $('restart').addEventListener('close',()=>{
 });
 reset();
 try{restoreMatch()}catch(err){console.warn('Could not restore match',err);reset()}
-watchRelease(()=>{
+registerSessionSave(()=>{
  if(phase==='live'){paused=true;ui()}
- if(!saveMatch())return false;
- location.reload();return true;
-},()=>true);
+ return saveMatch();
+});
 setInterval(()=>{if(!document.hidden)saveMatch()},2000);
 window.addEventListener('pagehide',saveMatch);
 function pauseAway(){
