@@ -37,3 +37,11 @@ export function chooseCamera(tabs, current, holding) {
   if (tabs.some(tab => tab.id === 4)) return 4;
   return 3;
 }
+
+export function preferredReward(s) {
+  const {reward, orderOffer} = s.report;
+  const batch = orderOffer.remaining / orderOffer.turns;
+  const immediateValue = CFG.costs[orderOffer.type] * batch;
+  return (s.funds < CFG.costs[0] && reward.cash > immediateValue) ||
+    reward.cash >= immediateValue * orderOffer.turns ? 'cash' : 'order';
+}

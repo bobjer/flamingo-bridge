@@ -265,6 +265,7 @@ export function evaluate(s, captures, upTo = Infinity, extra = {}) {
     let pay = reward.pay;
     if (r.orderOffer && out.orderHit == null && pay > 0) {
       out.orderHit = i;
+      out.orderPay = pay;
       pay = 0;
     }
     const hitViews = value * CFG.viewsPer * (1 + CFG.comboStep * out.combo);
@@ -355,14 +356,36 @@ export function finishWave(s, captures = s.captures, extra = {}, random = Math.r
       film, views: Math.round(40000 + random() * 80000),
       funding: Math.max(1, Math.round(CFG.hitOther * r.fatigue * .5)) });
   }
-  if (e.orderHit != null) {
-    s.lastOrderWave = s.wave;
-    r.signedOrder = {...r.orderOffer};
-    s.production = {...r.orderOffer, turnsLeft: r.orderOffer.turns};
-  }
   deliverProduction(s, random);
   s.fatigue *= retentionFor(s);
   drawChance(s,e,random);
+  if (e.orderHit != null) {
+    r.reward = {cash: waveCash(r, e.money + e.orderPay) - waveCash(r, e.money)};
+    s.phase = 'report';
+    return;
+  }
+  settleReport(s, random);
+}
+
+export function chooseReward(s, choice, random = Math.random) {
+  const r = s.report;
+  if (s.phase !== 'report' || !r?.reward || r.reward.choice || !['cash','order'].includes(choice)) return false;
+  r.reward.choice = choice;
+  if (choice === 'cash') {
+    s.funds += r.reward.cash;
+    r.result.money += r.reward.cash;
+  } else {
+    s.lastOrderWave = s.wave;
+    r.signedOrder = {...r.orderOffer};
+    s.production = {...r.orderOffer, turnsLeft: r.orderOffer.turns};
+    deliverProduction(s, random);
+  }
+  settleReport(s, random);
+  return true;
+}
+
+function settleReport(s, random) {
+  const r = s.report;
   if (!total(s) && s.funds < Math.min(...costs)) {
     const reserve = s.reserve ?? 2;
     if (reserve > 0) {
@@ -382,7 +405,7 @@ export function finishWave(s, captures = s.captures, extra = {}, random = Math.r
 }
 
 export function nextWave(s, random = Math.random) {
-  if (s.phase !== 'report') return;
+  if (s.phase !== 'report' || (s.report?.reward && !s.report.reward.choice)) return;
   const newcomer = s.report?.newSponsor;
   s.wave++; s.phase = 'plan'; s.report = null; s.captures = []; s.live = null;
   dealWave(s, random);

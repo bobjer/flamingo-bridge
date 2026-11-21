@@ -1,7 +1,7 @@
 // Balance bot for coalition arcade v2. Plays the real rules from coalition-rules.js.
 // Usage: node coalition-sim.mjs [runs]
-import {openingBudget, CFG, newSeason, launch, finishWave, nextWave} from './coalition-rules.js';
-import {planMoves, applyMove} from './coalition-bot.js';
+import {openingBudget, CFG, newSeason, launch, chooseReward, finishWave, nextWave} from './coalition-rules.js';
+import {preferredReward, planMoves, applyMove} from './coalition-bot.js';
 
 // small seeded PRNG so a table is reproducible
 function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 } }
@@ -27,7 +27,10 @@ export function play(q, random, difficulty = 'normal') {
   while (s.phase !== 'over' && s.wave < 200) {
     if (s.deal === 'pending') { for (const m of planMoves(s, random)) applyMove(s, m); continue }
     if (s.phase === 'plan') bot(s, q, random);
-    if (s.phase === 'report') nextWave(s, random);
+    if (s.phase === 'report') {
+      if (s.report.reward && !s.report.reward.choice) chooseReward(s, preferredReward(s), random);
+      nextWave(s, random);
+    }
   }
   return { waves: s.wave, views: s.views, combo: s.bestCombo };
 }

@@ -3,7 +3,7 @@ import {createCoach} from './coach.js';
 import {coalitionHelp} from './coach-help.js';
 import {tr} from './language.js';
 import {changeSide, languageButton, read, write, levelField, preferredLevel, rememberLevel} from './factions.js';
-import {CFG, costs, openingBudget, retentionFor, offContractRate, newSeason, pickSponsor, purchase, launch, finishWave, nextWave, acceptDeal, declineDeal, evaluate, total, aaChance, cameraSubjects} from './coalition-rules.js';
+import {CFG, costs, openingBudget, retentionFor, offContractRate, newSeason, pickSponsor, purchase, launch, chooseReward, finishWave, nextWave, acceptDeal, declineDeal, evaluate, total, aaChance, cameraSubjects} from './coalition-rules.js';
 import {units, unitHints, subjectName, fmtMoney, fmtViews, sponsor, cameo, donorLines, ending, wavesWord, icon, chanceTitle} from './coalition-copy.js';
 import {createStage} from './coalition-world.js';
 import {signalAt,broadcastOverlay,drawBroadcast} from './broadcast-events.js';
@@ -12,7 +12,7 @@ import {createFeed} from './coalition-video.js';
 import {showCoalitionBoard} from './coalition-leaderboard.js';
 import {shareRun} from './coalition-share.js';
 import {createMusic} from './chiptune.js';
-import {planMoves, applyMove, chooseCamera} from './coalition-bot.js';
+import {preferredReward, planMoves, applyMove, chooseCamera} from './coalition-bot.js';
 
 const saveKey = 'pop-coalition-v2';
 const camNames = () => [tr('ДРОН 1','UAV 1'), tr('ДРОН 2','UAV 2'), tr('ДРОН 3','UAV 3'), tr('ДАЛЬНЯ КАМЕРА','FAR CAM'), tr('ПРЕС','PRESS')];
@@ -171,7 +171,7 @@ export function startCoalition() {
    if (kind === 'drone' && !r.stills?.[s.cam]) pendingFrame = {report:r, cam:s.cam, time:f.impact};
    const score = evaluate(s, s.captures, f.impact);
    const pay = score.payNow[i];
-   const payout = score.orderHit === i ? tr('Передзамовлення','Preorder')+' · '+productionText(r.orderOffer) : (r.sponsor === 'conference' ? tr('Аванс','Advance') : tr('Виплата','Payout')) + ' +' + fmtMoney(pay);
+   const payout = score.orderHit === i ? tr('Пропозиція у звіті','Offer in report')+' · '+productionText(r.orderOffer) : (r.sponsor === 'conference' ? tr('Аванс','Advance') : tr('Виплата','Payout')) + ' +' + fmtMoney(pay);
    if (f.intercepted) { say(tr('ЗБИТО','SHOT DOWN') + (pay ? ' · ' + payout : ''), 'shot', where); continue }
    const hit = score.hits.find(h => h.i === i);
    if (f.decree) say(tr('СКАСОВАНО УКАЗОМ','CANCELLED BY DECREE'), 'decree', where);
@@ -325,6 +325,19 @@ export function startCoalition() {
     (d.lost ? tr(' · зникло при закупівлі: ',' · lost to corruption: ')+d.lost : '')+
     tr(' · залишилось поставити: ',' · still on order: ')+d.remaining+'</p>' : '');
  }
+ function rewardActions(r) {
+  if (!r.reward || r.reward.choice) return '<button type="button" data-action="next">'+tr('Наступна хвиля →','Next wave →')+'</button>';
+  const order = r.orderOffer;
+  return '<div class="c-actions"><button type="button" data-action="reward-cash">'+tr('Забрати ','Take ')+fmtMoney(r.reward.cash)+'</button>'+
+   '<button type="button" data-action="reward-order">'+tr('Підписати: ','Sign: ')+productionText(order)+' · '+order.turns+tr(' хвиль',' waves')+'</button></div>';
+ }
+ function rewardReceipt(r) {
+  if (!r.reward) return '';
+  const choice = r.reward.choice;
+  if (!choice) return '<p>'+tr('Оплата за кадр: гроші зараз або поставки з наступної хвилі. Частина поставки може зникнути при закупівлі.','Payment for the footage: cash now or deliveries starting next wave. Some units may be lost to corruption.')+'</p>';
+  const reason = r.reward.bot ? (choice === 'cash' ? tr('Автогра обрала гроші: цієї суми вистачить на більшу закупівлю зараз.','Autoplay took cash to buy more units immediately.') : tr('Автогра обрала поставки: вони поповнюватимуть склад кілька хвиль.','Autoplay signed for deliveries to restock across several waves.')) : '';
+  return '<p>'+ (choice === 'cash' ? tr('Виплата за кадр: ','Footage payout: ')+fmtMoney(r.reward.cash)+' ' : '')+reason+'</p>';
+ }
  function reportCard() {
   const r = s.report, x = r.result;
   if (r.skipped) return '<section class="c-card" data-tone="report" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('КАМЕО · ТРАМП · ХВИЛЯ ','CAMEO · TRUMP · WAVE ') + r.wave + '</div><h2 id="c-title">' + tr('Угоду підписано','Deal signed') + '</h2>' +
@@ -349,7 +362,7 @@ export function startCoalition() {
   return '<section class="c-card" data-tone="report" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ХВИЛЯ ','DONOR REPORT · WAVE ') + r.wave + '</div><h2 id="c-title">' + tr('Звіт донору','Donor report') + '</h2><small>' + sponsor(r.sponsor).name + '</small>' + chanceCard() + leakReel() +
    '<dl class="c-stats">' + tile(tr('Знято','Filmed'), (x.filmed + x.far) + '/' + x.hits) + tile(tr('Не знято','Not filmed'), x.none) + tile(tr('Збито','Shot down'), x.shot) + '</dl>' +
    '<dl class="c-stats c-stats-2">' + tile(tr('Гроші','Money'), (x.money > 0 ? '+' : '') + fmtMoney(x.money)) + tile(tr('Перегляди','Views'), fmtViews(x.views)) + tile(tr('Комбо','Combo'), '×' + x.combo) + '</dl>' +
-   lines.join('') + droneReel() + '<button type="button" data-action="next">' + tr('Наступна хвиля →','Next wave →') + '</button></section>';
+   rewardReceipt(r) + lines.join('') + droneReel() + rewardActions(r) + '</section>';
  }
  function overCard() {
   return '<section class="c-card" data-tone="lost" role="dialog" aria-labelledby="c-title"><div class="c-kicker">' + tr('ЗВІТ ДОНОРУ · ПІДСУМОК','DONOR REPORT · FINAL') + '</div><h2 id="c-title">' + tr('Спонсори згорнули програму','The sponsors pulled out') + '</h2><p>'+tr('Виплата за хвилю: ','Wave payout: ')+fmtMoney(s.report.result.money)+tr('. У касі ','. Budget: ')+fmtMoney(s.funds)+tr(', найдешевша ракета коштує ',', cheapest missile: ')+fmtMoney(Math.min(...costs))+tr('. Склад порожній. Нового авансу немає.','. No missiles in stock and no new advance.')+'</p>' + chanceCard() + droneReel() + leakReel() +
@@ -518,7 +531,15 @@ export function startCoalition() {
   if (!autoOn || document.hidden || coach.slowing) return;
   if (s.phase === 'over') { autoOn = false; refreshAuto(); return }
   if (s.phase === 'watch' && paused) return;
-  if (s.phase === 'report') return;
+  if (s.phase === 'report') {
+   if (s.report.reward && !s.report.reward.choice) {
+    if (auto.stage !== 'report') { auto.stage = 'report'; auto.t = now + 2200 }
+    if (now >= auto.t && chooseReward(s, preferredReward(s))) {
+     s.report.reward.bot = true; save(); render();
+    }
+   }
+   return;
+  }
   if (auto.stage !== s.phase) { Object.assign(auto, { stage: s.phase, t: now + (s.phase === 'plan' ? 1800 : 0), queue: null, launch: false, stampAt: 0, holdUntil: 0 }) }
   if (s.phase === 'plan') {
    if (now < auto.t) return;
@@ -595,6 +616,7 @@ export function startCoalition() {
   if (action === 'auto') { toggleAuto(); return }
   if (action === 'attack') attack();
   if (action === 'pause') { if (!paused) { pause(); return } paused = false; previous = 0; frame = requestAnimationFrame(tick) }
+  if (action === 'reward') chooseReward(s, key);
   if (action === 'next') nextWave(s);
   if (action === 'deal') acceptDeal(s);
   if (action === 'nodeal') declineDeal(s);
