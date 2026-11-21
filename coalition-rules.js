@@ -180,7 +180,10 @@ export function launch(s, random = Math.random) {
   if (s.wave >= 2 && random() < .16) {
     report.cameraLoss = {camera:Math.floor(random()*3), at:Math.round(CFG.lead+1100+random()*Math.max(0,end-CFG.lead-1100))};
   }
-  if (!s.production && random() < .15) {
+  // Keep offering the first contract from wave 16 until a payable shot earns it.
+  const firstOrderChance = s.wave >= 16 ? 1 : Math.min(.65, .25 + .03 * (s.wave - 1));
+  const orderChance = s.lastOrderWave ? .17 : firstOrderChance;
+  if (!s.production && random() < orderChance) {
     const turns = 5 + Math.floor(random() * 6);
     const type = Math.floor(random() * costs.length);
     const batch = 2 + Math.floor(random() * (type === 0 ? 4 : 2));
@@ -353,6 +356,7 @@ export function finishWave(s, captures = s.captures, extra = {}, random = Math.r
       funding: Math.max(1, Math.round(CFG.hitOther * r.fatigue * .5)) });
   }
   if (e.orderHit != null) {
+    s.lastOrderWave = s.wave;
     r.signedOrder = {...r.orderOffer};
     s.production = {...r.orderOffer, turnsLeft: r.orderOffer.turns};
   }
