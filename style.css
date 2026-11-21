@@ -594,3 +594,7 @@ body[data-phase=buy] .m-dock-btn[data-tab=arsenal]{color:var(--fg)}
 #restart .daily-toggle small{font:500 12px/1.3 var(--body);color:var(--muted)}
 #restart .daily-toggle:has(input:checked){border-style:solid;border-color:var(--accent);background:rgba(255,154,31,.08)}
 @media(prefers-reduced-motion:reduce){.arcade[data-strike=full] #reserve-trend{animation:none}}
+
+.scene-marker.placement{justify-content:center;width:32px;height:32px;padding:0}
+.scene-marker.placement::before,.scene-marker.placement::after,.scene-marker.placement .marker-text{display:none}
+.scene-marker.placement .marker-short{display:block;font-size:18px}

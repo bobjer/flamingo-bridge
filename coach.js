@@ -95,8 +95,6 @@ export function createCoach({isAuto, help, suggest, idleMessage}) {
   activate(enabled);
   return {
     sync, get enabled(){return enabled},
-    get slowing(){return enabled && isAuto() && performance.now()<until},
-    rate(){return this.slowing ? .3 : 1},
     explain(message){
       if (!enabled || !isAuto()) return;
       sync(); notice=message; until=performance.now()+2400; sync();

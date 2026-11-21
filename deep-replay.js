@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {tr} from './language.js';
-import {buildSite} from './deep-sites.js';
+import {buildSite,siteLayoutSeed,siteDamageLevel} from './deep-sites.js';
 
 // Cinematic 3D replay of one Deepstrike site strike. Everything is a pure function of
 // the timeline position u (seconds) and the seed, so a report always replays identically.
@@ -50,10 +50,17 @@ function droneGeometry(){
  return {wingGeo,body,fin};
 }
 
-export function mountStrikeReplay(host,{site=0,seed=1,hit=true,hits=1,impact,wave=1,placeLabel=''}={}){
+export function mountStrikeReplay(host,{site=0,seed=1,hit=true,hits=1,impact,damageBefore=0,damageAfter,wave=1,placeLabel=''}={}){
  const reduced=window.matchMedia?.('(prefers-reduced-motion:reduce)').matches;
  const count=hit?clamp(Math.round(hits)||1,1,5):1+(seed&1);
  const severity=impact===undefined?2:clamp(Math.ceil(impact/28),1,3);
+ const beforeLevel=siteDamageLevel(damageBefore);
+ const afterLevel=hit?Math.max(beforeLevel,siteDamageLevel(damageAfter??(damageBefore+(impact??56)))):beforeLevel;
+ function buildAtLevel(level){
+  const model=buildSite(site,siteLayoutSeed(site));
+  if(level)model.applyDamage(level);
+  return model;
+ }
  const rng=random((Math.imul(seed>>>0,2654435761)^Math.imul(site+1,40503))>>>0);
  const night=rng(),wind=rng()*6.283,approachAngle=rng()*6.283,bank=(rng()-.5)*1.4,orbitDir=rng()>.5?1:-1;
  const caption=tr('Хвиля '+wave+' · '+placeLabel+' · '+(hit?'влучань: '+(Math.round(hits)||1):'перехоплено'),'Wave '+wave+' · '+placeLabel+' · '+(hit?'hits: '+(Math.round(hits)||1):'intercepted'))+' #PopSeason';
@@ -86,7 +93,7 @@ export function mountStrikeReplay(host,{site=0,seed=1,hit=true,hits=1,impact,wav
  const setPlay=()=>{playBtn.textContent=playing?'❚❚ '+tr('Пауза','Pause'):u>=DUR?'⟳ '+tr('Повтор','Replay'):'▶ '+tr('Відтворити','Play')};
 
  // ---- state --------------------------------------------------------------
- let u=0,playing=false,atPoster=false,frameId=0,lastTs=0,disposed=false,recording=null,built=null,damaged=false,observer,fileUrl,file;
+ let u=0,playing=false,atPoster=false,frameId=0,lastTs=0,disposed=false,recording=null,built=null,observer,fileUrl,file;
  const supportsRecord=!!(window.MediaRecorder&&HTMLCanvasElement.prototype.captureStream);
  if(!supportsRecord){share.disabled=true;status.textContent=tr('Браузер не підтримує запис відео.','This browser does not support video recording.')}
 
@@ -132,7 +139,7 @@ export function mountStrikeReplay(host,{site=0,seed=1,hit=true,hits=1,impact,wav
    const a=tr2()*6.283,d=80+Math.pow(tr2(),.7)*420,h=5+tr2()*9,m=new THREE.Mesh(treeGeo,treeMats[i%3]);
    m.scale.set(2.4+tr2()*3,h,2.4+tr2()*3);m.position.set(Math.cos(a)*d,h/2,Math.sin(a)*d);scene.add(m);
   }
-  const model={cur:buildSite(site,seed)};scene.add(model.cur.group);
+  const model={cur:buildAtLevel(beforeLevel),level:beforeLevel};scene.add(model.cur.group);
   // lights
   const fireLight=new THREE.PointLight(0xff7a2a,0,160);scene.add(fireLight);
   const flashLight=new THREE.PointLight(0xfff0d0,0,260);scene.add(flashLight);
@@ -198,12 +205,14 @@ export function mountStrikeReplay(host,{site=0,seed=1,hit=true,hits=1,impact,wav
 
  // ---- per-frame world update ----------------------------------------------
  function updateWorld(s,t){
-  const {model}=s,spots=model.cur.fireSpots?.length?model.cur.fireSpots:[model.cur.aim];
-  const aim=model.cur.aim,since=t-IT,g=hit?smooth(since/3.5):0;
-  if(!damaged&&hit&&t>=IT){model.cur.applyDamage?.(severity);damaged=true}
-  if(damaged&&t<IT){ // seeking backwards: rebuild a pristine site
-   s.scene.remove(model.cur.group);model.cur.dispose?.();model.cur=buildSite(site,seed);s.scene.add(model.cur.group);damaged=false;
+  const {model}=s;
+  const level=t>=IT?afterLevel:beforeLevel;
+  if(model.level!==level){
+   s.scene.remove(model.cur.group);model.cur.dispose?.();
+   model.cur=buildAtLevel(level);model.level=level;s.scene.add(model.cur.group);
   }
+  const spots=model.cur.fireSpots?.length?model.cur.fireSpots:[model.cur.aim];
+  const aim=model.cur.aim,since=t-IT,g=hit?smooth(since/3.5):0;
   // drones, trails
   s.drones.forEach((d,i)=>{
    const alive=t>=START&&dronePose(i,t,v1,v2);

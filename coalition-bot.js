@@ -4,7 +4,7 @@ import {CFG, pickSponsor, purchase, acceptDeal, declineDeal} from './coalition-r
 const worth = (id, q) => ({ fund: 1 + q * .3, defence: .9, conference: .8, tender: .7, analytic: 1 })[id] ?? 1;
 
 // What the bot does in the plan phase, as a list of moves: {do: 'deal' | 'nodeal' | 'pick' | 'buy', i?, id?}.
-// Pending Trump deal: accept when poor. Otherwise: pick a sponsor, spend everything (flamingo, tot, flamingo, loaf; cheapest as fallback).
+// Pending Trump deal: accept when poor. Otherwise: pick a sponsor, buy in the flyer rotation with an affordable fallback.
 // `q` is the skill the sponsor scoring assumes. `random` is accepted for symmetry and unused.
 export function planMoves(s, random = Math.random, q = .8) {
   if (s.deal === 'pending') return [{ do: s.funds < 40 ? 'deal' : 'nodeal' }];
@@ -12,7 +12,7 @@ export function planMoves(s, random = Math.random, q = .8) {
   const moves = [{ do: 'pick', i: score(s.offer.cards[1]) > score(s.offer.cards[0]) ? 1 : 0 }];
   let funds = s.funds; const stock = [...s.stock], pattern = [0, 1, 3, 2];
   const buy = id => { if (funds < CFG.costs[id] || stock[id] >= CFG.cap) return false; funds -= CFG.costs[id]; stock[id]++; moves.push({ do: 'buy', id }); return true };
-  for (let i = 0; ; i++) {
+  for (let i = s.bought.reduce((total, count) => total + count, 0); ; i++) {
     if (!buy(pattern[i % pattern.length])) { let bought = false; for (const id of CFG.costs.keys()) if (buy(id)) { bought = true; break } if (!bought) break }
   }
   return moves;

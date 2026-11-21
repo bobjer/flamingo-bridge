@@ -156,7 +156,8 @@ export function appendReport(panel,r,wave,place){
   let dispose,gone=false;
   import('./deep-replay.js').then(({mountStrikeReplay})=>{
    if(gone||!clip.isConnected)return;
-   dispose=mountStrikeReplay(clip,{site:r.i,seed:r.fireSeed??((wave*2654435761+r.i*40503)>>>0),hit:!!r.hit,hits:r.hits??1,impact:r.impact,wave,placeLabel:place});
+   dispose=mountStrikeReplay(clip,{site:r.i,seed:r.fireSeed??((wave*2654435761+r.i*40503)>>>0),hit:!!r.hit,hits:r.hits??1,impact:r.impact,
+    damageBefore:r.siteDamageBefore??r.previous??0,damageAfter:r.damage,wave,placeLabel:place});
   }).catch(()=>{});
   return ()=>{gone=true;dispose?.()};
  }

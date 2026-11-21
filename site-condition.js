@@ -5,9 +5,10 @@ export function boardImpact(multiplier=1,random=Math.random){
 export function advanceConditions(sites,reports,wave,random=Math.random,multiplier=1){
  const hits=new Set();
  for(const report of reports){
+  const previous=sites[report.i]?.damage??0;
+  report.siteDamageBefore=previous;
   if(!report.hit)continue;
   hits.add(report.i);
-  const previous=sites[report.i]?.damage??0;
   const impact=boardImpact(multiplier,random);
   const damage=Math.min(100,previous+impact);
   sites[report.i]={damage,lastHit:wave};

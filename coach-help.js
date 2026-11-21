@@ -2,6 +2,8 @@ export const defenceHelp = [
   ['#watch-game','Передає закупівлі й рішення боту. Натисніть ще раз, щоб грати самому.','Hand purchases and decisions to the bot. Press again to take over.'],
   ['#order-act','Виконує дію, написану на кнопці. Якщо вона платна, поруч є ціна.','Carries out the action on the button. Paid actions show their price.'],
   ['#shop [data-kind=unit]','Купує поповнення за гроші гарнізону. Ціна вказана на картці.','Buy another unit with garrison funds. The card shows the price.'],
+  ['.scene-marker.striker:not([hidden])','Наводить ППО на видиму ціль.','Lock air defence onto the visible target.'],
+  ['.scene-marker.placement:not([hidden])','Купує й ставить турель на цей майданчик.','Buy and place the turret on this pad.'],
   ['#shop [data-kind=placement]','Відкриває вибір майданчика для покупки.','Choose an available pad to place this purchase.'],
   ['#shop [data-kind=smoke]','Оплачує димову завісу. Рух завмирає, поки вона діє.','Pay for a smoke screen. Traffic stops while it lasts.'],
   ['#shop [data-kind=order]','Оплачує тимчасове вимкнення вказаного сервісу.','Pay to switch off the named service for a short time.'],
@@ -20,6 +22,8 @@ export const coalitionHelp = [
   ['[data-action="attack"]','Запускає хвилю. Після цього ви керуєте камерами.','Start the wave. You take the camera controls from here.'],
   ['.feed-cams button','Відкриває цей канал. Блимаюча вкладка означає, що в кадрі скоро щось станеться.','Open this feed. A flashing tab means something is about to happen on camera.'],
   ['[data-stamp]:not(.done)','Ставить печатку. Зберіть усі три, щоб продовжити ефір.','Add a stamp. Collect all three to continue the broadcast.'],
+  ['[data-action="reward-cash"]','Беріть гроші, коли вони вигідніші або потрібні на закупівлі.','Take cash when it is worth more or you need funds for shopping.'],
+  ['[data-action="reward-order"]','Підпишіть вигідніше замовлення, якщо можете дочекатися поставок.','Choose the better-value order if you can wait for deliveries.'],
   ['[data-action="next"]','Закриває звіт і відкриває закупівлі наступної хвилі.','Close the report and open shopping for the next wave.'],
   ['[data-action="pause"]','Ставить ефір на паузу або продовжує його.','Pause or resume the broadcast.']
 ];

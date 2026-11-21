@@ -16,6 +16,10 @@ import {builders as second} from './deep-sites-b.js';
 
 const builders = [...first, ...second];
 export const siteCount = builders.length;
+
+// Site geometry and the parts affected at each level stay fixed across waves.
+export const siteLayoutSeed = index => Math.imul(index + 1, 2654435761) >>> 0;
+export const siteDamageLevel = damage => Math.min(3, Math.max(0, Math.ceil(damage / 28)));
 export function buildSite(index, seed = 1) {
   return builders[index % builders.length](seed);
 }
