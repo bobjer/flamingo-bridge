@@ -166,8 +166,43 @@ export function startDeepstrike(){
   });
   const result=settleWave(s.trust,s.reports,s.surveyReports.reduce((n,g)=>n+g.count-g.lost,0),deal,s.wave<=s.diplomacy.embargoThrough);
   s.trust=result.trust;s.credits+=result.payout-result.embargoFee;
+  s.reportPending=true;
   s.invoice={...result,wave:s.wave,cost:s.launchCost??0};s.launchCost=0;
   s.lastTracks=s.flights;s.wave++;s.started=0;s.flights=[];s.diplomacy=beginDiplomacy(s.wave,s.diplomacy.embargoThrough);s.partner=partnerTurn(s.partner,s.wave);intelligence();save();
+ }
+ function reportContents(panel){
+   let text='',kind='none';
+   if(s.partner){
+    if(s.partner.blocked){kind='blocked';text=tr('Трамп заблокував партнерську розвідку на цю хвилю.','Trump blocked partner intelligence for this wave.')}
+    else if(s.partner.seen?.wave===s.wave){kind='spotted';text=tr('Партнери помітили ППО. Сектор позначено на шарі розвідки.','Partners spotted air defence. The sector is marked on the intelligence layer.')}
+    else text=tr('Партнери не надіслали нових спостережень.','No new sightings from partners.');
+   }
+   const surveyLines=(s.surveyReports??[]).map(g=>tr('Розвідка','Survey')+' · '+tr(...surveySectors[g.sector].label)+' · '+tr(...fleet[g.type].name)+' ×'+g.count+' · '+tr('Повернулися','Returned')+' '+(g.count-(g.lost??0))+'/'+g.count);
+   appendSummary(panel,{reports:s.reports,repairs:s.repairs,bulletin:text,kind,surveys:surveyLines});
+   for(const report of s.reports)closeReport=appendReport(panel,report,s.wave-1,tr(...cities[report.i])+' · '+tr(...names[report.i]))??closeReport;
+   appendRepairs(panel,s.repairs,r=>tr(...cities[r.i])+' · '+tr(...names[r.i]));
+   if(!s.reports.length&&!s.repairs?.length&&!surveyLines.length)appendEmpty(panel);
+  }
+ function showWaveReport(){
+  const wave=s.invoice?.wave??s.wave-1;
+  const over=s.trust===0||s.credits<minimumLaunch(s.stock);
+  root.innerHTML='<section class="c-card deep-wave-card" data-tone="report" role="dialog" aria-labelledby="deep-report-title"><div class="c-kicker">'+tr('ЗВІТ ДОНОРУ · ХВИЛЯ ','DONOR REPORT · WAVE ')+wave+'</div><h2 id="deep-report-title" tabindex="-1">'+tr('Підсумок хвилі','Wave report')+'</h2></section>';
+  const card=root.firstElementChild,invoice=s.invoice;
+  if(invoice){
+   const line=document.createElement('p');
+   line.textContent=(invoice.deal?tr('Угоду підписано · ','Deal accepted · '):'')+tr('Витрати ','Spent ')+invoice.cost+' · '+tr('Виплата ','Payout ')+invoice.payout+(invoice.embargoFee?' · '+tr('Ембарго −','Embargo −')+invoice.embargoFee:'')+' · '+tr('Баланс ','Balance ')+s.credits+' · '+tr('Довіра ','Trust ')+s.trust+'%';
+   card.append(line);
+  }
+  reportContents(card);
+  const unreported=new Set((s.lastTracks??[]).filter(f=>!f.survey).map(f=>f.i));
+  for(const r of s.reports)unreported.delete(r.i);
+  if(unreported.size){
+   const missing=document.createElement('p');missing.textContent=tr('Немає незалежного звіту: ','No independent report: ')+[...unreported].map(i=>tr(...cities[i])).join(', ');card.append(missing);
+  }
+  const next=document.createElement('button');next.textContent=over?tr('Підсумок кампанії','Campaign result'):tr('Наступна хвиля →','Next wave →');
+  next.onclick=()=>{s.reportPending=false;save();render()};card.append(next);
+  root.scrollTop=0;card.querySelector('h2').focus({preventScroll:true});
+  if(autoOn)autoTimer=setTimeout(()=>{if(!document.hidden&&root.contains(next))next.click();else{autoOn=false;render()}},8000);
  }
  function render(){
   closeReport?.();closeReport=null;
@@ -175,6 +210,7 @@ export function startDeepstrike(){
   if(!root.isConnected)return;
   const elapsed=Date.now()-s.started;
   if(s.started&&s.flights.every(f=>elapsed>=f.duration+1200))finish();
+  if(s.reportPending&&!s.started){showWaveReport();return}
   const flying=!!s.started;
   const phase=flying?tr('У польоті','In flight'):tr('Планування','Planning');
   const autoLabel=autoOn?tr('Грати самому','Take over'):tr('Автогра','Autoplay');
@@ -548,19 +584,8 @@ export function startDeepstrike(){
    if(next>=0){active=next;visible.fill(true)}else autoOn=false;
    render();
   },1800);
-  if(s.wave>1){
-   let text='',kind='none';
-   if(s.partner){
-    if(s.partner.blocked){kind='blocked';text=tr('Трамп заблокував партнерську розвідку на цю хвилю.','Trump blocked partner intelligence for this wave.')}
-    else if(seen?.wave===s.wave){kind='spotted';text=tr('Партнери помітили ППО. Сектор позначено на шарі розвідки.','Partners spotted air defence. The sector is marked on the intelligence layer.')}
-    else text=tr('Партнери не надіслали нових спостережень.','No new sightings from partners.');
-   }
-   const surveyLines=(s.surveyReports??[]).map(g=>tr('Розвідка','Survey')+' · '+tr(...surveySectors[g.sector].label)+' · '+tr(...fleet[g.type].name)+' ×'+g.count+' · '+tr('Повернулися','Returned')+' '+(g.count-(g.lost??0))+'/'+g.count);
-   appendSummary(panel,{reports:s.reports,repairs:s.repairs,bulletin:text,kind,surveys:surveyLines});
-   for(const report of s.reports)closeReport=appendReport(panel,report,s.wave-1,tr(...cities[report.i])+' · '+tr(...names[report.i]))??closeReport;
-   appendRepairs(panel,s.repairs,r=>tr(...cities[r.i])+' · '+tr(...names[r.i]));
-   if(!s.reports.length&&!s.repairs?.length&&!surveyLines.length)appendEmpty(panel);
-  }
+  if(s.wave>1)button(panel,tr('Відкрити звіт минулої хвилі','Open previous wave report'),()=>{s.reportPending=true;save();render()});
+
  }
  document.addEventListener('siege-language',render);
  registerSessionSave(save);
