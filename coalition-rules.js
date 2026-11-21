@@ -366,7 +366,7 @@ export function finishWave(s, captures = s.captures, extra = {}, random = Math.r
     const f = r.flights[i], ids = cameraSubjects(s);
     // Archive only this wave's small event script, never its images or previous reports.
     const film = { subjects: [...ids], aa: [...s.aa], wave: r.wave, seed: r.seed,
-      archStart:r.archStart, assignedScenes: !!r.assignedScenes, flights: r.flights.filter(g => g.start <= f.impact + 1600),
+      lightStart:r.lightStart, archStart:r.archStart, assignedScenes: !!r.assignedScenes, flights: r.flights.filter(g => g.start <= f.impact + 1600),
       marker: f.marker, subject: f.extra ?? ids[f.marker], time: f.impact, duration: r.duration };
     (s.leaks ??= []).push({ source: s.wave, due: s.wave + 1 + Math.floor(random() * 2),
       film, views: Math.round(40000 + random() * 80000),

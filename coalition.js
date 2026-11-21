@@ -688,9 +688,10 @@ export function startCoalition() {
   const cam = s.cam === 4 ? 3 : s.cam, state = linkState(s.cam), quality = linkQuality(s.cam);
   const live = watching(), report = s.phase === 'watch' || s.phase === 'report' ? s.report : null;
   const orbital = !!s.offer.orbital && s.cam === 3;
+  if (s.phase === 'watch' && report) report.lightStart ??= (now - realStart - elapsed) / 1000;
   stage.step({ orbital, dt: live && paused ? 0 : dt * watchRate(), real: (now - realStart) / 1000, elapsed: s.phase === 'watch' ? elapsed : (report?.duration ?? 0), report, cam });
   feedLayer.pre({ orbital, now, cam, state, quality });
-  if ((!feedLayer.frozen || filmFirst || now < holdShotUntil) && state === 'live') { stage.render(); drawnCam=cam; if (filmFirst) recordDroneFrame(s.cam) }
+  if ((!feedLayer.frozen || filmFirst || now < holdShotUntil) && state === 'live') { stage.render(report?.lightStart != null && live ? report.lightStart + elapsed / 1000 : undefined); drawnCam=cam; if (filmFirst) recordDroneFrame(s.cam) }
   else if (state === 'press') stage.render();
   if (filmFirst) { pendingFrame = null; if(now >= holdShotUntil) autoStep(now) }
   feedLayer.post({ orbital, now, dt, cam, state, quality, watching: !!live, paused, stage, gl: stage.glCanvas, show: true,

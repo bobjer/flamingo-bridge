@@ -469,7 +469,7 @@ export function createStage(host) {
   const screen = p => { const s = world.screenPoint(p); return s };
   return {
     world, fx, glCanvas,
-    step, render: () => render(gameTime(real)), setBroadcast, resetWave, victoryLength: () => VICTORY_LENGTH,
+    step, render: (lightClock = real) => render(gameTime(lightClock)), setBroadcast, resetWave, victoryLength: () => VICTORY_LENGTH,
     lessonFinale(on) {
       world.setHits(0, true);
       world.setHits(on || roadFallen ? 3 : Math.min(archHits,3), !on);
