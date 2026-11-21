@@ -446,3 +446,10 @@ button.c-sponsor:hover{border-color:var(--accent)}
  linear-gradient(81deg,rgba(21,18,25,.9),transparent 5%),
  linear-gradient(72deg,transparent 52%,rgba(194,214,225,.13) 53%,rgba(220,231,239,.08) 62%,transparent 63%),
  linear-gradient(2deg,rgba(19,19,26,.8),transparent 9%)}
+
+.c-buy {grid-template-columns:38px minmax(0,1fr);grid-template-areas:"badge name" "hint hint" "undo buy"}
+.c-buy .c-badge {grid-area:badge}
+.c-buy .c-name {grid-area:name}
+.c-buy .c-hint {grid-area:hint}
+.c-buy [data-action^="undo-"] {grid-area:undo}
+.c-buy .c-plus {grid-area:buy}
