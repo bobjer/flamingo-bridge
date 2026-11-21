@@ -1,0 +1,124 @@
+<!doctype html><html lang="uk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Сезон хлопків</title>
+<meta name="robots" content="noindex,nofollow">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Сезон хлопків">
+<meta property="og:title" content="Сезон хлопків">
+<meta property="og:description" content="Фламінго летять, бюджет тане. Скільки хвиль протримається твій міст у цій сатиричній 3D-грі?">
+<meta property="og:url" content="https://pop-season-staging.rustyperch5.chatgpt.site/">
+<meta property="og:locale" content="uk_UA">
+<meta property="og:image" content="https://pop-season-staging.rustyperch5.chatgpt.site/share-uk.jpg?v=2">
+<meta property="og:image:secure_url" content="https://pop-season-staging.rustyperch5.chatgpt.site/share-uk.jpg?v=2">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:alt" content="Фламінго над арками мосту в грі «Сезон хлопків»">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Сезон хлопків">
+<meta name="twitter:description" content="Фламінго летять, бюджет тане. Скільки хвиль протримається твій міст у цій сатиричній 3D-грі?">
+<meta name="twitter:image" content="https://pop-season-staging.rustyperch5.chatgpt.site/share-uk.jpg?v=2">
+<meta name="twitter:image:alt" content="Фламінго над арками мосту в грі «Сезон хлопків»">
+<meta name="description" content="Фламінго летять, бюджет тане. Скільки хвиль протримається твій міст у цій сатиричній 3D-грі?">
+<link rel="canonical" href="https://pop-season-staging.rustyperch5.chatgpt.site/">
+<link rel="icon" type="image/svg+xml" href="/flamingo.svg"><link rel="stylesheet" href="./style.css"></head><body>
+<dialog id="loading-screen" aria-labelledby="loading-title" aria-describedby="loading-status">
+ <strong id="loading-title">Сезон хлопків</strong>
+ <p id="loading-status" role="status" data-error="Не вдалося завантажити гру.">Готуємо міст і завантажуємо 3D-сцену…</p>
+ <progress aria-labelledby="loading-status"></progress>
+ <button type="button" hidden>Спробувати ще раз</button>
+</dialog>
+<script>
+{
+ const screen=document.getElementById('loading-screen');
+ screen.showModal();
+ screen.addEventListener('cancel',event=>event.preventDefault());
+ const status=document.getElementById('loading-status'),retry=screen.querySelector('button');
+ retry.onclick=()=>location.reload();
+ function failed(){
+  if(!screen.open)return;
+  status.textContent=status.dataset.error;screen.querySelector('progress').hidden=true;retry.hidden=false;
+ }
+ function moduleFailed(event){
+  if(event.target instanceof HTMLScriptElement && event.target.type==='module' && event.target.src.startsWith(location.origin+'/'))failed();
+ }
+ window.addEventListener('error',moduleFailed,true);
+ window.addEventListener('game-load-failed',failed,{once:true});
+ window.addEventListener('game-ready',()=>{window.removeEventListener('error',moduleFailed,true);window.removeEventListener('game-load-failed',failed);screen.close();screen.remove()},{once:true});
+}
+</script>
+<header class="top">
+ <div class="top-left"><img src="/flamingo.svg" width="30" height="30" alt=""><span class="label">ОПЕРАТИВНИЙ ШТАБ · СЕКТОР 07</span></div>
+ <div class="top-title"><strong>СЕЗОН ХЛОПКІВ</strong><span>СИМУЛЯТОР ОБОРОНИ МОСТУ</span></div>
+ <div class="top-status"><button class="lang" type="button" lang="en">English</button><span class="label">РЕЖИМ</span><span class="chip"><i class="dot" aria-hidden="true"></i><span id="statusMirror">ЗАКУПІВЛЯ</span></span></div>
+<nav class="panel-toggles"><span class="panel-title" data-uk="Панелі" data-en="Panels">Панелі</span><button aria-controls="hq-panel" aria-expanded="true">Штаб</button><button aria-controls="arsenal-panel" aria-expanded="true">Арсенал</button><button type="button" id="watch-game"></button><button type="button" id="training-toggle" data-coach-toggle></button></nav><button id="new-game" type="button">Нова гра</button></header>
+<main>
+ <aside id="hq-panel" class="col left"><button type="button" class="fold" aria-controls="hq-panel">Згорнути штаб ‹</button>
+  <section class="panel br">
+   <div class="label">ПОТОЧНА ФАЗА</div>
+   <div class="phase-row"><b class="big" id="waveNo" aria-hidden="true">00</b><div><h1>Оборона <i>протоки</i></h1><div id="phase">● ЗАКУПІВЛЯ</div></div></div>
+   <label class="field">Складність <select id="difficulty"><option value="easy">лагідна українизація</option><option value="normal" selected>помиральная яма</option><option value="hard">щекавиця</option></select></label>
+  </section>
+  <section class="panel br">
+   <div class="label">ЗВЕДЕННЯ</div>
+   <div class="stat"><label>У касі</label><b id="cash"></b></div>
+   <div class="stat"><label>Удари по арці</label><b id="hits"></b></div>
+   <div class="stat"><label>Розголос у ЗМІ</label><b id="hype"></b></div>
+   <div class="stat"><label>Втрати</label><b id="victims"></b></div>
+   <div class="stat"><label>НДДКР</label><b id="rp"></b></div>
+   <div class="stat"><label>Утримання / хвиля</label><b id="upkeep"></b></div>
+   <div class="stat"><label>Полотно</label><b id="hp"></b></div>
+   <progress id="bar" max="100" value="100"></progress>
+  </section>
+  <section class="panel br">
+   <div class="label">КПП</div>
+   <label class="field">Огляд <select id="inspection"><option value="0">Лише вручну</option><option value="25" selected>Кожну четверту</option><option value="50">Кожну другу</option><option value="100">Кожну машину</option></select></label>
+   <small id="traffic"></small>
+   <small id="signals"></small>
+  </section>
+  <section class="panel br log">
+   <div class="label">ЖУРНАЛ ПОДІЙ</div>
+   <p id="info" aria-live="polite">Зберіть гарнізон. Збитки компенсують із закритого резерву.</p>
+   <ol id="log" aria-label="Попередні події"></ol>
+  </section>
+  <section class="panel br brief">
+   <div class="label">ІНСТРУКТАЖ</div>
+   <details><summary>Як працює КПП</summary>Натисніть на вантажівку перед КПП. Підозрілі машини частіше розхитуються. Огляд затримує машину, за нею утворюється затор. Затори шкодять економіці й збільшують втрати під час удару.<p>Запас витрачається з кожним пуском. На порожньому складі пуск зупиняється. За тихі хвилі платять менше.</p></details>
+   <details><summary>Баржі та розміщення</summary><p>Баржі затримують малюків. Баржа у фарватері перекриває судноплавство й виснажує скарбницю.</p><p>Турелі можна ставити на обох прольотах. Щоб перемістити крейсер, натисніть на корабель, потім на воду. Третій удар фламінго обвалить арку. Для повної виплати залатайте полотно до кінця хвилі: пошкоджене полотно зменшує її вдвічі, а кожної третьої хвилі інженери повертають арці одне життя. Ціна ремонту залежить від пошкодження.</p></details>
+   <details><summary>Звідки гроші</summary>Усі суми в мільйонах рублів. Пошкодження та розголос впливають на виплати зі скарбниці. Блокада, затори, перебої зв’язку й втрати виснажують її. Гарнізон потребує платні. За збиті цілі отримуєте гроші та ⚙ для досліджень.</details>
+   <details><summary>Перебої зв’язку</summary>Без GPS нападники розвертаються до межі зони. Без інтернету вони рухаються до запам’ятованої точки з похибкою й можуть зіткнутися. Коли зв’язок відновлено, вони знову обирають живу ціль.</details>
+  </section>
+ </aside>
+ <div class="play-column"><section id="view" class="br br-accent">
+  <div class="hud wave-roll" id="wave-roll" hidden></div>
+  <div class="helm"><select id="ship-list"></select><button id="course" type="button"></button><span id="course-hint" role="status"></span></div><button id="resume-game" type="button" hidden></button><div id="break-banner" role="status" hidden></div>
+  <div class="hud hud-bl" id="caption">ОГЛЯД ОБ’ЄКТА</div>
+  <canvas id="arena-radar" role="img" aria-label="Радар нападників"></canvas>
+  <section id="defeat-card" role="status" hidden><h2></h2><p></p><button type="button"></button><div class="coffee-note"><span></span> <a href="https://buymeacoffee.com/bobjer" target="_blank" rel="noopener noreferrer"></a></div></section>
+  <div class="zoom"><button id="minus" aria-label="Віддалити">−</button><button id="plus" aria-label="Наблизити">+</button></div>
+ </section>
+ <section id="arcade" class="arcade">
+  <div class="arcade-status"><b id="arch-life"></b><span id="arcade-cash"></span><span id="reserve-trend"></span></div>
+  <div class="arcade-order"><p id="order-copy" role="status"></p><button id="order-act" type="button" hidden></button></div>
+ </section></div>
+ <aside id="arsenal-panel" class="col right"><button type="button" class="fold" aria-controls="arsenal-panel">Згорнути арсенал ‹</button>
+  <section class="panel br">
+   <div class="label">АРСЕНАЛ</div>
+   <div id="ammo-panel" hidden><div class="stat"><label>Запас ракет</label><b id="ammo-count"></b></div><button id="resupply" type="button"></button></div><div id="shop"></div>
+  </section>
+  <section class="panel br">
+   <div class="label">ТЕХНОЛОГІЇ</div>
+   <div id="tech"></div>
+  </section>
+  <button id="start">Почати облогу →</button>
+ </aside>
+</main>
+<dialog id="restart" aria-labelledby="restart-title"><form method="dialog"><h2 id="restart-title">Почати нову гру?</h2><p>Збережену партію буде замінено. Оберіть складність нової гри.</p><label>Складність <select id="new-difficulty"><option value="easy">лагідна українизація</option><option value="normal" selected>помиральная яма</option><option value="hard">щекавиця</option></select></label><div><button value="cancel" autofocus>Скасувати</button><button value="replace">Почати гру</button></div></form></dialog>
+<footer class="strip">
+ <button id="pause" aria-label="Пауза">Ⅱ</button>
+ <div class="timeline" id="timeline" aria-label="Перебіг облоги"></div>
+ <div class="hints"><span>↔ Тягніть для обертання</span><span>⊕ Коліщатко / щипок — масштаб</span></div>
+ <b id="clock" class="big">00:00</b>
+</footer>
+<p class="legal">© No Sense 2026. Розважальна гра, зроблена just for fun. Усі персонажі, техніка, фламінго, Нептун і мости вигадані, а будь-які збіги з реальними подіями, людьми чи спорудами випадкові. Якщо ви бачите тут політику, це ваші проблеми: ми бачимо тут фламінго.<br><span>Завайбкодив гру за вечір, тож не судіть суворо. Буду радий відгукам про баланс, кращим 3D-моделям юнітів і пулреквестам.</span> <a href="https://github.com/bobjer/flamingo-bridge" target="_blank" rel="noopener noreferrer">GitHub ↗</a></p>
+<script type="module" src="./boot.js"></script>
+<script>/* Cloudflare Insights only on the published site, not on local dev */if(location.hostname==='flamingo-bridge-vhs.rustyperch5.chatgpt.site'){const s=document.createElement('script');s.defer=true;s.src='https://static.cloudflareinsights.com/beacon.min.js';s.dataset.cfBeacon='{"token":"5b9971ecea8b4d9e854b9cf75fa123f0"}';document.head.append(s)}</script>
+</body></html>

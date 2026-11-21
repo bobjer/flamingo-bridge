@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 165">
+<g stroke="#35221d" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round">
+<!-- A bedraggled lookout, clutching his cap after the splash. -->
+<path fill="#30736c" d="M52 122Q11 122 9 80q15 3 23 13Q11 62 23 48q17 13 24 40Q40 56 55 55q10 22 5 52"/>
+<path fill="#ffd054" d="m66 132 2 18-17 5q-2 6 10 3l12-3 10 3q8 0 3-5l-10-4 1-16m16-2 5 15-7 8q-3 6 5 3l9-7 13 3q9 0 3-5l-15-5-2-15"/>
+<path fill="#b86035" d="M42 104q13-25 38-24l21-28 25 13q-3 23-5 39-3 40-39 39-40 1-40-39Z"/>
+<path fill="#e9aa60" d="M80 84q10-20 15-45l37 7q6 13-2 30l-7 21-5-9-9 14-2-12-12 9 1-12-13 5Z"/>
+<path fill="#df5145" d="M96 46Q76 27 88 24l12 8Q89 6 101 9l11 18q1-26 11-20l-1 23q15-14 17-4 0 10-15 22"/>
+<path fill="#cf5741" d="M132 65q19 19 6 23-12 1-10-17"/>
+<path fill="#fff4d7" d="M111 51q0-17 10-16 9 0 9 16 5-14 12-8 7 8-1 20l-19 2Z"/>
+<g fill="#302626" stroke="none"><ellipse cx="123" cy="50" rx="3" ry="5"/><ellipse cx="137" cy="54" rx="3" ry="5"/></g>
+<path fill="#ffba38" d="M125 60q22-8 43 4l-27 5 13 4q-13 8-27-6Z"/>
+<path fill="#855139" d="M52 101q6-13 20-9l21 14-14 8 8 3q-15 7-26-1-13-8-9-15Z"/>
+<path fill="#587470" d="M86 111q5-22 23-20 19 3 18 24l-21 4Z"/><path fill="#354e50" d="M85 111q20 0 39 2l12 5q-20 7-44-1Z"/>
+<path fill="none" d="m113 35 10-4m10 7 9 4"/>
+</g></svg>

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 160">
+ <title>Dashcam braking in front of a road crater</title>
+ <style>.road{transform-origin:243px 59px;animation:brake 3s cubic-bezier(.28,.05,.12,1) both}@keyframes brake{0%,10%{transform:scale(.78)}75%{transform:scale(1.19) translateY(2px)}100%{transform:scale(1.17)}}@media(prefers-reduced-motion:reduce){.road{animation:none}}</style>
+ <rect width="480" height="160" fill="#adbec1"/><path d="M0 65q89-27 180-7t300-6v20H0" fill="#657b7a"/>
+ <g class="road"><path d="m222 58 42 0 200 105H-4z" fill="#666774"/><path d="m0 138 222-80m43 0 215 79" stroke="#c0bab1" fill="none" stroke-width="5"/>
+ <path d="m212 63-73 30m-21 9-71 29m224-67 80 31m19 8 75 30" fill="none" stroke="#394955" stroke-width="2"/>
+ <path d="m241 66 2 0-1 5h-3zm-5 15 4 0-3 13-7 1zm-14 37 10 0-4 27h-20z" fill="#e2ceb1"/>
+ <path d="m171 103 19-10 30-3 19-5 39 4 19-1 24 9 11 9-27 5-17 8-45-1-24 4-22-9-21-2z" fill="#c29e81"/>
+ <path d="m178 104 26-9 36-6 38 4 21-1 24 13-31 6-25 6-37-1-25-8z" fill="#272d36"/>
+ <path d="m178 103-20-8-21-1m167 14 19 6 22-1m-108 6-15 9-18 4" stroke="#343842" fill="none" stroke-width="2"/></g>
+ <path d="M0 140q132-16 244 1t236-3v22H0" fill="#222c33"/><path d="m78 140 97-8 55 4m87 4 78-9" fill="none" stroke="#424f56" stroke-width="3"/>
+</svg>

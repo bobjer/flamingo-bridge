@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 160">
+ <title>Falling span seen from a boat</title>
+ <style>
+ .scene{transform-origin:50% 60%;animation:bob 3s ease-in-out infinite alternate}.span{transform-origin:138px 61px;animation:fall 3.6s ease-in both}.spray{transform-origin:291px 104px;animation:spray 3.6s ease-out both}
+ @keyframes bob{to{transform:rotate(-1deg) translateY(2px)}}@keyframes fall{0%,22%{transform:none}65%,100%{transform:rotate(16deg) translateY(3px)}}@keyframes spray{0%,52%{opacity:0;transform:scale(.1)}66%{opacity:.9;transform:scale(1)}100%{opacity:.25;transform:scale(1.6,.35)}}
+ @media(prefers-reduced-motion:reduce){*{animation-duration:.01s!important;animation-iteration-count:1!important}}
+ </style>
+ <defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#788c9e"/><stop offset="1" stop-color="#ffbf91"/></linearGradient></defs>
+ <rect width="480" height="160" fill="url(#sky)"/><g class="scene"><path d="M-5 91 Q96 74 173 88T485 86V165H-5" fill="#485d63"/><path d="M-5 103Q124 94 233 103T485 99V163H-5" fill="#386378"/>
+ <g fill="#343d47"><path d="M-5 50l143 7v9L-5 58zm315 13 175 4v8l-175-4z"/><path d="M113 61h14l-1 43h-13zm204 7h13v37h-12z"/><path class="span" d="m137 57 171 6-5 9-165-7z"/></g>
+ <path class="spray" d="m263 109 7-14 8 5 4-23 8 18 9-24 3 25 13-9-4 17 13-2-4 8z" fill="#deeeee"/>
+ <path d="m4 116 82-2m247 4 91-2m-283 10 44-1" fill="none" stroke="#a8c7ce" stroke-width="2"/></g>
+ <path d="m-4 143 102-17 47 34H0z" fill="#253238"/><path d="m-4 143 106-15 44 32" stroke="#b98864" fill="none" stroke-width="5"/>
+</svg>
