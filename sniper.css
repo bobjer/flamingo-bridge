@@ -76,6 +76,7 @@
  background: var(--sniper-panel);
 }
 .sniper-instructions, .sniper-result, .sniper-calculator p { margin: 0; }
+.sniper-round-title { margin: 0 0 6px; font-size: 18px; }
 .sniper-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .sniper-settings label { display: grid; gap: 4px; min-width: 0; font-size: 14px; color: var(--sniper-muted); }
 .sniper-board button, .sniper-settings select {
