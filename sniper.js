@@ -62,6 +62,97 @@ export function startSniper(){
  const save=()=>write(saveKey,state);
  let dragging=false,pendingRender=false;
 
+ // Autoplay: a single controller; every timed action goes through schedule() so pause/resume can freeze it.
+ let align=()=>{};
+ const ap={on:false,paused:false,step:0,timer:0,remaining:0,startedAt:0,fn:null};
+ const finalNow=()=>state.tutorialDone===true&&state.round===seriesSize-1;
+ const solved=()=>{const [a,b]=solution(state),t=tolerance[state.distance];return Math.abs(a-state.x)<=t&&Math.abs(b-state.y)<=t};
+ const hold=text=>Math.max(3500,Math.min(9000,1800+45*text.length));
+ const apSteps=()=>{
+  const w=weather[state.weather],c=calibers[state.profile],dk=distances[state.distance],sp=w.flags.map(f=>f*2),wind=windSpeed(w),
+   e=elevation(c,dk),k=drift1(c,dk),[sx,sy]=solution(state),last=finalNow();
+  return [
+   {mark:'weather',text:tr('Читаю прапорці: ','Reading the flags: ')+flagPattern(w)+'. '+tr('Кожна риска — 2 м/с, тож це ','Each mark is 2 m/s, so that is ')+sp.join(', ')+tr(' м/с.',' m/s.')},
+   {mark:'weather',text:tr('Вітер уздовж траси різний, беру середнє: ','Wind varies along the range, so I take the average: ')+'('+sp.join(' + ')+') / 3 = '+wind.toFixed(1)+tr(' м/с.',' m/s.')},
+   {mark:'weather',text:w.east?tr('Вітер дме W → E і зносить кулю праворуч. Щоб компенсувати, X має бути від’ємним — ціль лівіше.','The wind blows W → E and pushes the bullet right. To compensate, X must be negative — aim left.'):
+    tr('Вітер дме E → W і зносить кулю ліворуч. Щоб компенсувати, X має бути додатним — ціль правіше.','The wind blows E → W and pushes the bullet left. To compensate, X must be positive — aim right.')},
+   {mark:'table',text:tr('Таблиця для ','Table for ')+c.name+', '+dk/1000+tr(' км: підйом ',' km: elevation ')+e.toFixed(1)+tr(' міл, знос ',' mil, drift ')+k.toFixed(2)+tr(' міл на кожен 1 м/с бокового вітру.',' mil per 1 m/s of crosswind.')},
+   {mark:'y',text:tr('Куля падає під дією тяжіння (у світі гри g = 10 м/с²), тому ствол піднімаємо: Y = ','The bullet drops under gravity (g = 10 m/s² in the game world), so we raise the barrel: Y = ')+mil(sy)+tr(' міл.',' mil.')},
+   {mark:'x',text:'X = '+k.toFixed(2)+' × '+wind.toFixed(1)+' ≈ '+signedMil(sx)+tr(' міл. Чим довше куля летить, тим більше її зносить.',' mil. The longer the flight, the more the wind carries it.')},
+   {mark:'y',dial:'y',text:tr('Кручу барабан підйому до ','Dialing elevation to ')+mil(sy)+tr(' міл.',' mil.')},
+   {mark:'x',dial:'x',text:tr('Кручу барабан вітру до ','Dialing windage to ')+signedMil(sx)+tr(' міл.',' mil.')},
+   {mark:null,text:tr('Мітка в центрі сітки — постріл влучить. ','Target is under the reticle center — the shot will hit. ')+(last?tr('Серію завершено.','Series complete.'):tr('Переходжу до наступного раунду.','Moving to the next round.'))},
+  ];
+ };
+ const apLabel=()=>ap.on?tr('✋ Грати самому','✋ Take over'):tr('Автогра','Autoplay');
+ const apPanel=()=>`<section class="sniper-autoplay" aria-live="polite"><small></small><p data-narration></p><button type="button" data-autoplay-pause></button></section>`;
+ function paintAutoplay(){
+  const button=root.querySelector('[data-autoplay]'),panel=root.querySelector('.sniper-autoplay');
+  button.textContent=apLabel();button.setAttribute('aria-pressed',String(ap.on));
+  for(const old of root.querySelectorAll('.is-explained'))old.classList.remove('is-explained');
+  if(!ap.on){panel?.remove();return}
+  const steps=apSteps(),s=steps[ap.step];
+  if(panel){
+   panel.querySelector('small').textContent=tr('Крок ','Step ')+(ap.step+1)+'/'+steps.length;
+   panel.querySelector('[data-narration]').textContent=s.text;
+   panel.querySelector('[data-autoplay-pause]').textContent=ap.paused?tr('Далі','Resume'):tr('Пауза','Pause');
+  }
+  if(s.mark==='table')root.querySelector('.sniper-field-table').open=true;
+  const el=s.mark==='x'||s.mark==='y'?root.querySelector('[data-axis="'+s.mark+'"]')?.closest('.sniper-axis'):
+   s.mark==='weather'?root.querySelector('.sniper-weather'):s.mark==='table'?root.querySelector('tr.is-current'):null;
+  el?.classList.add('is-explained');
+ }
+ function schedule(fn,ms){
+  clearTimeout(ap.timer);ap.fn=fn;ap.remaining=ms;ap.startedAt=Date.now();
+  if(!ap.paused)ap.timer=setTimeout(()=>{ap.fn=null;fn()},ms);
+ }
+ function togglePause(){
+  if(ap.paused){ap.paused=false;if(ap.fn)schedule(ap.fn,ap.remaining)}
+  else{ap.paused=true;clearTimeout(ap.timer);ap.remaining=Math.max(0,ap.remaining-(Date.now()-ap.startedAt))}
+  paintAutoplay();
+ }
+ function stopAutoplay(){
+  clearTimeout(ap.timer);
+  Object.assign(ap,{on:false,paused:false,timer:0,fn:null});
+  paintAutoplay();
+ }
+ const takeover=()=>{if(ap.on)stopAutoplay()};
+ // Moves one axis toward the solution in tenths, through the same setAlignment path as user input.
+ function dial(axis,done){
+  const target=solution(state)[axis==='x'?0:1],move=v=>axis==='x'?align(v,state.y,true):align(state.x,v,true);
+  if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches){move(target);done();return}
+  const size=Math.ceil(Math.abs(target-state[axis])/30)||1;
+  const tick=()=>{
+   const rest=target-state[axis];
+   if(!rest){done();return}
+   move(state[axis]+Math.sign(rest)*Math.min(size,Math.abs(rest)));
+   if(target-state[axis]===rest){done();return}
+   schedule(tick,55);
+  };
+  tick();
+ }
+ function runStep(){
+  paintAutoplay();
+  const wait=()=>schedule(advance,hold(apSteps()[ap.step].text));
+  const s=apSteps()[ap.step];
+  if(s.dial)dial(s.dial,wait);else wait();
+ }
+ function advance(){
+  if(ap.step<8){ap.step++;runStep();return}
+  if(finalNow()){stopAutoplay();return}
+  nextRound();
+  if(state.tutorialDone===true){state.series.usedCode=true;save()}
+  ap.step=solved()?8:0;
+  runStep();
+ }
+ function startAutoplay(){
+  ap.on=true;ap.paused=false;ap.fn=null;
+  if(state.tutorialDone===true){state.series.usedCode=true;save()}
+  ap.step=solved()?8:0;
+  render();root.querySelector('[data-autoplay]').focus();
+  runStep();
+ }
+
  function startSeries(){
   const rounds=[];
   let previous=state.weather;
@@ -103,7 +194,7 @@ export function startSniper(){
   const tableRows=distances.map((d,i)=>'<tr'+(i===state.distance?' class="is-current"':'')+'><td>'+d/1000+' '+tr('км','km')+'</td><td>'+elevation(caliber,d).toFixed(1)+'</td><td>'+drift1(caliber,d).toFixed(2)+'</td></tr>').join('');
   root.innerHTML=`
    <header class="sniper-header"><div><small>POP SEASON</small><h1>${tr('Снайпер','Sniper')}</h1></div>
-    <nav>${languageButton()}<button data-exit>${tr('Режими','Modes')}</button></nav>
+    <nav>${languageButton()}<button data-autoplay aria-pressed="${ap.on}">${apLabel()}</button><button data-exit>${tr('Режими','Modes')}</button></nav>
    </header>
    <div class="sniper-layout">
     <section class="sniper-scene" aria-label="${tr('Вид в оптику','Scope view')}">
@@ -133,6 +224,7 @@ export function startSniper(){
       <h2 class="sniper-round-title">${tr('Раунд ','Round ')}${state.round+1}${tr(' з ',' of ')}${seriesSize}</h2>
       <p class="sniper-instructions">${tr('Виставте підйом і поправку на вітер або винесіть точку прицілювання за сіткою.','Dial elevation and windage, or hold over using the reticle.')}</p>
      </div>`}
+     ${ap.on?apPanel():''}
      <div class="sniper-settings">
       <label>${tr('Дистанція','Distance')} <select data-distance aria-label="${tr('Дистанція','Distance')}"></select></label>
       <label>${tr('Сітка','Reticle')} <select data-optic aria-label="${tr('Сітка','Reticle')}"></select></label>
@@ -159,7 +251,7 @@ export function startSniper(){
        <button type="button" data-check-axis>${tr('Перевірити X','Check X')}</button>
        <button type="button" data-code aria-expanded="false" aria-controls="sniper-answer" hidden>${tr('Показати повний код','Show full code')}</button>
       </div>
-      <p class="sniper-hint-note">${tr('«Перевірити X» безкоштовна. Повний код знімає бал за раунд.','Check X is free. The full code costs that round\'s point.')}</p>
+      <p class="sniper-hint-note">${tr('«Перевірити X» безкоштовна. Повний код або автогра знімають бал за раунд.','Check X is free. The full code or autoplay costs that round\'s point.')}</p>
       <p data-axis-feedback role="status" hidden></p>
       <p id="sniper-answer" data-answer hidden></p>`}
      </section>
@@ -181,11 +273,13 @@ export function startSniper(){
    const codeButton=root.querySelector('[data-code]');
    const answer=root.querySelector('[data-answer]');
    root.querySelector('[data-check-axis]').onclick=()=>{
+    takeover();
     feedback.hidden=false;
     feedback.textContent=Math.abs(targetX-state.x)<=tol?tr('X збігається.','X matches.'):tr('X ще не збігається.','X does not match yet.');
     codeButton.hidden=false;
    };
    codeButton.onclick=()=>{
+    takeover();
     answer.hidden=!answer.hidden;
     codeButton.setAttribute('aria-expanded',String(!answer.hidden));
     codeButton.textContent=answer.hidden?tr('Показати повний код','Show full code'):tr('Сховати повний код','Hide full code');
@@ -224,8 +318,8 @@ export function startSniper(){
     tr('Налаштуйте X та Y','Adjust X and Y');
    if(result.textContent!==message)result.textContent=message;
   }
-  function setAlignment(x,y){
-   if(hit())return;
+  function setAlignment(x,y,force){
+   if(!force&&hit())return;
    x=clampAxis('x',x);y=clampAxis('y',y);
    if(x===state.x&&y===state.y)return;
    if(feedback&&x!==state.x){feedback.hidden=true;feedback.textContent=''}
@@ -235,6 +329,7 @@ export function startSniper(){
    if(hit()&&(focused===document.body||focused?.disabled))next.focus();
   }
   for(const slider of sliders)slider.oninput=()=>{
+   takeover();
    const value=Number(slider.value);
    if(slider.dataset.axis==='x')setAlignment(value,state.y);
    else setAlignment(state.x,value);
@@ -243,12 +338,14 @@ export function startSniper(){
    const big=event.key==='PageUp'||event.shiftKey&&(event.key==='ArrowUp'||event.key==='ArrowRight')?10:
     event.key==='PageDown'||event.shiftKey&&(event.key==='ArrowDown'||event.key==='ArrowLeft')?-10:0;
    if(!big||event.ctrlKey||event.altKey||event.metaKey)return;
+   takeover();
    event.preventDefault();
    if(slider.dataset.axis==='x')setAlignment(state.x+big,state.y);
    else setAlignment(state.x,state.y+big);
   };
   for(const number of numbers){
    const commit=()=>{
+    takeover();
     const value=Math.round(parseFloat(number.value.trim().replace(/\s+/g,'').replace(/[−–—]/g,'-').replace(',','.'))*10);
     if(Number.isNaN(value))number.value=(state[number.dataset.number]/10).toFixed(1);
     else if(number.dataset.number==='x')setAlignment(value,state.y);
@@ -259,12 +356,14 @@ export function startSniper(){
    number.onkeydown=event=>{if(event.key==='Enter')commit()};
   }
   for(const step of steps)step.onclick=()=>{
+   takeover();
    const delta=Number(step.dataset.delta);
    if(step.dataset.step==='x')setAlignment(state.x+delta,state.y);
    else setAlignment(state.x,state.y+delta);
   };
   let drag=null;
   canvas.onpointerdown=event=>{
+   takeover();
    if(event.pointerType==='touch'||event.button!==0||hit())return;
    drag={id:event.pointerId,left:event.clientX,top:event.clientY,x:state.x,y:state.y};
    dragging=true;canvas.setPointerCapture(event.pointerId);
@@ -282,15 +381,21 @@ export function startSniper(){
    const select=root.querySelector('[data-'+field+']');
    labels.forEach((label,i)=>select.add(new Option(label,String(i),false,i===state[field])));
    select.onchange=()=>{
+    takeover();
     state[field]=Number(select.value);
     state.x=state.y=0;
     save();render();root.querySelector('[data-'+field+']').focus();
    };
   }
-  next.onclick=()=>{nextRound();root.querySelector('[data-axis="x"]').focus()};
+  next.onclick=()=>{takeover();nextRound();root.querySelector('[data-axis="x"]').focus()};
   root.querySelector('[data-exit]').onclick=changeSide;
+  root.querySelector('[data-autoplay]').onclick=()=>{if(ap.on)stopAutoplay();else startAutoplay()};
+  const pauseButton=root.querySelector('[data-autoplay-pause]');
+  if(pauseButton)pauseButton.onclick=togglePause;
+  align=setAlignment;
   root.querySelector('[data-language]').onclick=()=>document.querySelector('.lang').click();
   paint();
+  paintAutoplay();
  }
  document.addEventListener('siege-language',()=>{if(dragging)pendingRender=true;else render()});
  render();window.dispatchEvent(new Event('game-ready'));

@@ -131,3 +131,10 @@
 .sniper-field-table tr.is-current td { color: var(--sniper-accent); font-weight: 700; }
 .sniper-hints { display: flex; flex-wrap: wrap; gap: 8px; }
 .sniper-calculator .sniper-hint-note { margin: 0; color: var(--sniper-muted); font-size: 13px; }
+.is-explained { outline: 2px solid var(--sniper-accent); outline-offset: 3px; border-radius: 6px; }
+.sniper-weather, .sniper-axis, .sniper-field-table tr { transition: outline-color .25s, outline-offset .25s; }
+.sniper-autoplay { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid #8f9a6a80; border-radius: 10px; background: #1a231d; }
+.sniper-autoplay small { color: var(--sniper-muted); font-size: 13px; }
+.sniper-autoplay p { margin: 0; }
+.sniper-autoplay button { justify-self: start; }
+@media (prefers-reduced-motion: reduce) { .sniper-weather, .sniper-axis, .sniper-field-table tr { transition: none; } }
