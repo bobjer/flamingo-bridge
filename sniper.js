@@ -303,21 +303,37 @@ function drawScope(canvas,state,conditions,dx,dy){
  c.strokeStyle='#172018';c.lineWidth=2;
  if(state.optic===0)drawTree(c,center);
  else if(state.optic===1)drawDot(c,center);
- else{
-  c.beginPath();
-  for(const [x1,y1,x2,y2] of [[55,350,341,350],[359,350,645,350],[350,55,350,341],[350,359,350,645]]){
-   c.moveTo(x1,y1);c.lineTo(x2,y2);
+ else drawGrid(c,center);
+}
+
+function drawGrid(c,center){
+ const u=panStep/2,cx=center,cy=center,col='#172018',w=k=>Math.round(1.5+k*0.95);
+ c.save();c.strokeStyle=col;c.fillStyle=col;c.lineCap='butt';
+ const line=(x1,y1,x2,y2,lw)=>{c.lineWidth=lw;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()};
+ const dot=(x,y,r)=>{c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill()};
+ const text=(t,x,y,align,base)=>{c.font='10px system-ui';c.textAlign=align;c.textBaseline=base;c.fillText(t,x,y)};
+ const len=i=>i%10===0?6:i%2===0?4:2;
+ for(let k=1;k<=10;k++){
+  const y=cy+k*u;
+  for(let i=2;i<=2*w(k);i++)for(const s of [-1,1]){
+   const x=cx+s*i*u/2;
+   if(i===4)line(x,y-3,x,y+3,1);else dot(x,y,1.1);
   }
-  c.stroke();
  }
- if(state.optic===2){
-  c.beginPath();
-  for(let i=1;i<=6;i++)for(const sign of [-1,1]){
-   const offset=center+i*panStep*sign;
-   c.moveTo(offset,344);c.lineTo(offset,356);c.moveTo(344,offset);c.lineTo(356,offset);
-  }
-  c.stroke();
+ line(cx-15*u,cy,cx-3,cy,1);line(cx+3,cy,cx+15*u,cy,1);
+ line(cx,cy-3,cx,cy-10*u,1);line(cx,cy+3,cx,cy+10*u,1);
+ for(let i=1;i<=30;i++)for(const s of [-1,1]){const x=cx+s*i*u/2,l=len(i);line(x,cy-l,x,cy+l,1)}
+ for(let i=1;i<=20;i++)for(const s of [-1,1]){const y=cy+s*i*u/2,l=i%2?2:4;line(cx-l,y,cx+l,y,1)}
+ line(30,cy,cx-15*u,cy,7);line(cx+15*u,cy,670,cy,7);
+ line(cx,30,cx,cy-10.5*u,7);line(cx,cy+10.5*u,cx,670,7);
+ for(let n=2;n<=14;n+=2)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-9,'center','bottom');
+ for(let k=1;k<=10;k++)text(String(k),cx+8,cy-k*u,'left','middle');
+ for(let k=1;k<=10;k++){
+  const y=cy+k*u,x=(w(k)+0.9)*u;
+  text(String(k),cx-x,y,'right','middle');text(String(k),cx+x,y,'left','middle');
  }
+ dot(cx,cy,1.6);
+ c.restore();
 }
 
 function drawDot(c,center){
