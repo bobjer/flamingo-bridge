@@ -64,7 +64,7 @@
  .sniper-scope canvas:active { cursor: grabbing; }
 }
 @media (max-width: 750px), (pointer: coarse) {
- .sniper-pad { display: grid; grid-template-columns: repeat(4, minmax(44px, 1fr)); gap: 8px; width: 100%; max-width: 340px; }
+ .sniper-pad { display: grid; grid-template-columns: repeat(4, minmax(44px, 1fr)); grid-template-rows: repeat(2, auto); gap: 8px; width: 100%; max-width: 340px; }
  .sniper-drag-hint { display: none; }
 }
 .sniper-console {
@@ -77,7 +77,8 @@
 }
 .sniper-instructions, .sniper-result, .sniper-calculator p { margin: 0; }
 .sniper-round-title { margin: 0 0 6px; font-size: 18px; }
-.sniper-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.sniper-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.sniper-settings label:nth-child(3) { grid-column: 1 / -1; }
 .sniper-settings label { display: grid; gap: 4px; min-width: 0; font-size: 14px; color: var(--sniper-muted); }
 .sniper-board button, .sniper-settings select {
  min-height: 42px;
@@ -101,13 +102,13 @@
 .sniper-calculator [data-answer] { color: var(--sniper-accent); }
 .sniper-axis {
  display: grid;
- grid-template-columns: 20px minmax(0, 1fr) 32px;
+ grid-template-columns: 20px minmax(0, 1fr) 76px;
  align-items: center;
  gap: 9px;
  font: 15px var(--mono, monospace);
 }
 .sniper-axis input { width: 100%; margin: 0; accent-color: var(--sniper-accent); min-height: 28px; }
-.sniper-axis output { text-align: right; }
+.sniper-axis input[data-number] { background: #18211b; border: 1px solid #596750; color: var(--sniper-ink); border-radius: 6px; padding: 4px 6px; font: 15px var(--mono, monospace); text-align: right; min-height: 0; }
 .sniper-result { min-height: 1.45em; color: var(--sniper-muted); }
 .sniper-result[data-won="true"] { color: var(--sniper-accent); font-weight: 700; }
 .sniper-next { justify-self: start; }
@@ -127,5 +128,6 @@
 .sniper-field-table table { width: 100%; border-collapse: collapse; font: 14px/1.4 var(--mono, monospace); }
 .sniper-field-table th, .sniper-field-table td { padding: 5px 4px; text-align: left; white-space: nowrap; border-bottom: 1px solid #465042; }
 .sniper-field-table tbody tr:last-child td { border-bottom: 0; }
+.sniper-field-table tr.is-current td { color: var(--sniper-accent); font-weight: 700; }
 .sniper-hints { display: flex; flex-wrap: wrap; gap: 8px; }
 .sniper-calculator .sniper-hint-note { margin: 0; color: var(--sniper-muted); font-size: 13px; }

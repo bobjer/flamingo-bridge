@@ -2,9 +2,19 @@ import {changeSide,languageButton,read,write} from './factions.js';
 import {tr} from './language.js';
 import './sniper.css';
 
-const saveKey='pop-sniper-v1';
+const saveKey='pop-sniper-v2';
 const optics=[['Ялинка','Tree'],['Точка','Dot'],['Сітка','Grid']];
-const profiles=['A','B','C'];
+const gravity=10; // Game-world gravity, deliberately not 9.80665.
+const calibers=[ // v0 m/s, k = velocity decay per metre (v = v0·e^(−k·x))
+ {name:'.338 Lapua Mag',v0:830,k:0.00035},
+ {name:'.375 CheyTac',v0:900,k:0.00028},
+ {name:'.416 Barrett',v0:940,k:0.0003},
+ {name:'.50 BMG',v0:860,k:0.00028},
+];
+const profiles=calibers.map(c=>c.name);
+const distances=[1000,2000,3000];
+const tolerance=[5,3,2]; // hit tolerance in tenths of a mil, by distance index
+// TODO(hard mode): humidity → air density → velocity decay and drift.
 const weather=[
  {humidity:36,east:true,flags:[1,2,1]},
  {humidity:72,east:false,flags:[3,2,3]},
@@ -13,11 +23,13 @@ const weather=[
  {humidity:82,east:true,flags:[3,2,1]},
  {humidity:27,east:false,flags:[2,1,2]},
 ];
-const fieldCodes=[
- [3,1,-2,2,-3,-1],[2,-3,4,-1,1,-4],
- [-2,4,1,-4,3,-1],[1,-2,3,4,-1,-3],
- [4,3,-1,-2,-4,2],[-3,2,-4,1,-2,4],
-];
+const flightTime=(c,x)=>(Math.exp(c.k*x)-1)/(c.k*c.v0);
+const drop=(c,x)=>gravity*flightTime(c,x)**2/2;
+const elevation=(c,x)=>1000*(drop(c,x)/x-drop(c,100)/100); // mil, 100 m zero
+const drift1=(c,x)=>1000*(flightTime(c,x)-x/c.v0)/x; // mil per 1 m/s crosswind
+const windSpeed=w=>w.flags.reduce((a,f)=>a+f*2,0)/3; // m/s, flag strength 1/2/3 = 2/4/6 m/s
+const xMax=Math.ceil(Math.max(...calibers.flatMap(c=>distances.flatMap(d=>weather.map(w=>drift1(c,d)*windSpeed(w)))))/5)*50;
+const yMax=Math.ceil(Math.max(...calibers.flatMap(c=>distances.map(d=>elevation(c,d))))/5)*50;
 const saved=read(saveKey);
 const validIndex=(value,length)=>Number.isInteger(value)&&value>=0&&value<length;
 const validSeries=s=>!!s&&typeof s==='object'&&Array.isArray(s.rounds)&&s.rounds.length===seriesSize&&s.rounds.every(i=>validIndex(i,weather.length))&&
@@ -26,22 +38,22 @@ const viewSize=700;
 const canvasScale=()=>Math.min(2,window.devicePixelRatio||1);
 const panStep=22;
 const seriesSize=3;
-const clampAxis=value=>Math.max(-4,Math.min(4,value));
+const clampAxis=(axis,value)=>axis==='x'?Math.max(-xMax,Math.min(xMax,value)):Math.max(0,Math.min(yMax,value));
 const initial=()=>({distance:0,optic:0,profile:0,weather:0,x:0,y:0});
-const signed=value=>value>0?'+'+value:String(value);
+const mil=value=>(Math.abs(value)/10).toFixed(1);
+const signedMil=value=>value<0?'−'+mil(value):value>0?'+'+mil(value):mil(0);
 
 const compass=conditions=>conditions.east?'W → E':'E → W';
 const flagPattern=conditions=>conditions.flags.map(flag=>(conditions.east?'›':'‹').repeat(flag)).join(' / ');
 
-function signalCode(state,weatherIndex=state.weather){
- // This is a pair of puzzle codes. The table has no relationship to physical optics.
- const row=fieldCodes[weatherIndex];
- return [row[(state.distance+state.profile)%6],row[(3+state.distance+state.optic+2*state.profile)%6]];
+function solution(state,weatherIndex=state.weather){
+ const c=calibers[state.profile],x=distances[state.distance],w=weather[weatherIndex];
+ return [Math.round(-(w.east?1:-1)*drift1(c,x)*windSpeed(w)*10)+0,Math.round(elevation(c,x)*10)];
 }
 
 export function startSniper(){
- const state=saved&&validIndex(saved.distance,3)&&validIndex(saved.optic,3)&&validIndex(saved.profile,3)&&
-  validIndex(saved.weather,weather.length)&&[saved.x,saved.y].every(v=>Number.isInteger(v)&&Math.abs(v)<=4)?{...saved}:initial();
+ const state=saved&&validIndex(saved.distance,3)&&validIndex(saved.optic,optics.length)&&validIndex(saved.profile,profiles.length)&&
+  validIndex(saved.weather,weather.length)&&Number.isInteger(saved.x)&&Math.abs(saved.x)<=xMax&&Number.isInteger(saved.y)&&saved.y>=0&&saved.y<=yMax?{...saved}:initial();
  // Saves from before the round index existed used distance as the round.
  if(state.round===undefined&&validSeries(state.series)&&validIndex(state.distance,seriesSize))state.round=state.distance;
  if(state.best!==undefined&&!(Number.isInteger(state.best)&&state.best>=0&&state.best<=seriesSize))delete state.best;
@@ -87,10 +99,8 @@ export function startSniper(){
   const conditions=weather[state.weather];
   const tutorial=state.tutorialDone!==true;
   const finalRound=!tutorial&&state.round===seriesSize-1;
-  const weatherRows=weather.map((entry,index)=>{
-   const [x,y]=signalCode(state,index);
-   return '<tr><td>'+compass(entry)+'</td><td>'+flagPattern(entry)+'</td><td>'+signed(x)+'</td><td>'+signed(y)+'</td></tr>';
-  }).join('');
+  const caliber=calibers[state.profile];
+  const tableRows=distances.map((d,i)=>'<tr'+(i===state.distance?' class="is-current"':'')+'><td>'+d/1000+' '+tr('км','km')+'</td><td>'+elevation(caliber,d).toFixed(1)+'</td><td>'+drift1(caliber,d).toFixed(2)+'</td></tr>').join('');
   root.innerHTML=`
    <header class="sniper-header"><div><small>POP SEASON</small><h1>${tr('Снайпер','Sniper')}</h1></div>
     <nav>${languageButton()}<button data-exit>${tr('Режими','Modes')}</button></nav>
@@ -99,10 +109,14 @@ export function startSniper(){
     <section class="sniper-scene" aria-label="${tr('Вид в оптику','Scope view')}">
      <div class="sniper-scope"><canvas width="${Math.round(viewSize*canvasScale())}" height="${Math.round(viewSize*canvasScale())}" aria-hidden="true"></canvas></div>
      <div class="sniper-pad" role="group" aria-label="${tr('Налаштування оптики','Scope adjustment')}">
-      <button type="button" data-step="x" data-delta="-1" aria-label="${tr('Ліворуч','Left')}">←</button>
-      <button type="button" data-step="y" data-delta="-1" aria-label="${tr('Вгору','Up')}">↑</button>
-      <button type="button" data-step="y" data-delta="1" aria-label="${tr('Вниз','Down')}">↓</button>
-      <button type="button" data-step="x" data-delta="1" aria-label="${tr('Праворуч','Right')}">→</button>
+      <button type="button" data-step="x" data-delta="-10" aria-label="${tr('X −1 міл','X −1 mil')}">«</button>
+      <button type="button" data-step="x" data-delta="-1" aria-label="${tr('X −0,1 міл','X −0.1 mil')}">‹</button>
+      <button type="button" data-step="x" data-delta="1" aria-label="${tr('X +0,1 міл','X +0.1 mil')}">›</button>
+      <button type="button" data-step="x" data-delta="10" aria-label="${tr('X +1 міл','X +1 mil')}">»</button>
+      <button type="button" data-step="y" data-delta="10" aria-label="${tr('Y +1 міл (підйом вгору)','Y +1 mil (elevation up)')}">⇈</button>
+      <button type="button" data-step="y" data-delta="1" aria-label="${tr('Y +0,1 міл (підйом вгору)','Y +0.1 mil (elevation up)')}">↑</button>
+      <button type="button" data-step="y" data-delta="-1" aria-label="${tr('Y −0,1 міл (підйом вниз)','Y −0.1 mil (elevation down)')}">↓</button>
+      <button type="button" data-step="y" data-delta="-10" aria-label="${tr('Y −1 міл (підйом вниз)','Y −1 mil (elevation down)')}">⇊</button>
      </div>
      <p class="sniper-drag-hint">${tr('Перетягніть зображення, щоб налаштувати X та Y.','Drag the view to adjust X and Y.')}</p>
     </section>
@@ -110,19 +124,19 @@ export function startSniper(){
      ${tutorial?`<section class="sniper-tutorial" aria-labelledby="sniper-lesson-title">
       <h2 id="sniper-lesson-title">${tr('Навчальний раунд','Tutorial round')}</h2>
       <ol>
-       <li>${tr('Прочитайте прапорці зліва направо. Довший прапорець має більше знаків у панелі.','Read the flags left to right. A longer flag has more marks on the panel.')}</li>
-       <li>${tr('У таблиці знайдіть рядок із таким самим напрямком компаса й рисунком прапорців.','Find the row with the same compass direction and flag pattern.')}</li>
-       <li>${tr('Перенесіть X та Y з цього рядка на повзунки.','Set the sliders to the X and Y values in that row.')}</li>
+       <li>${tr('Кожен прапорець: › = 2 м/с, ›› = 4 м/с, ››› = 6 м/с. Вітер — середнє трьох.','Each flag: › = 2 m/s, ›› = 4 m/s, ››› = 6 m/s. Wind is the average of the three.')}</li>
+       <li>${tr('Y = підйом з таблиці для вашої дистанції.','Y = elevation from the table for your distance.')}</li>
+       <li>${tr('X = знос на 1 м/с × вітер. Вітер W → E зносить праворуч, тож X від’ємний.','X = drift per 1 m/s × wind. A W → E wind pushes right, so X is negative.')}</li>
        <li>${tr('Вологість на код не впливає.','Humidity does not affect the code.')}</li>
       </ol>
      </section>`:`<div>
       <h2 class="sniper-round-title">${tr('Раунд ','Round ')}${state.round+1}${tr(' з ',' of ')}${seriesSize}</h2>
-      <p class="sniper-instructions">${tr('Сумістіть центр сітки з мішенню або знайдіть її код у таблиці.','Align the reticle with the target or look up its code in the table.')}</p>
+      <p class="sniper-instructions">${tr('Виставте підйом і поправку на вітер або винесіть точку прицілювання за сіткою.','Dial elevation and windage, or hold over using the reticle.')}</p>
      </div>`}
      <div class="sniper-settings">
       <label>${tr('Дистанція','Distance')} <select data-distance aria-label="${tr('Дистанція','Distance')}"></select></label>
       <label>${tr('Сітка','Reticle')} <select data-optic aria-label="${tr('Сітка','Reticle')}"></select></label>
-      <label>${tr('Профіль','Profile')} <select data-profile aria-label="${tr('Профіль','Profile')}"></select></label>
+      <label>${tr('Калібр','Caliber')} <select data-profile aria-label="${tr('Калібр','Caliber')}"></select></label>
      </div>
      <dl class="sniper-weather">
       <div><dt>${tr('Компас','Compass')}</dt><dd>${compass(conditions)}</dd></div>
@@ -131,16 +145,16 @@ export function startSniper(){
      </dl>
      <details class="sniper-field-table"${tutorial?' open':''}>
       <summary>${tr('Ігрова таблиця','Game table')}</summary>
-      <p>${tr('Коди в таблиці відповідають вибраним дистанції, сітці й профілю.','The table uses your selected distance, reticle and profile.')}</p>
-      <table aria-label="${tr('Ігрові коди за прапорцями','Game codes by flag pattern')}">
-       <thead><tr><th scope="col">${tr('Напрямок','Direction')}</th><th scope="col">${tr('Прапорці','Flags')}</th><th scope="col">X</th><th scope="col">Y</th></tr></thead>
-       <tbody>${weatherRows}</tbody>
+      <p>${tr('Таблиця для вибраного калібру. Ігровий світ: g = 10 м/с².','Table for the selected caliber. Game world: g = 10 m/s².')}</p>
+      <table aria-label="${tr('Балістична таблиця','Ballistic table')}">
+       <thead><tr><th scope="col">${tr('Дистанція','Distance')}</th><th scope="col">${tr('Підйом, міл','Elevation, mil')}</th><th scope="col">${tr('Знос на 1 м/с, міл','Drift per 1 m/s, mil')}</th></tr></thead>
+       <tbody>${tableRows}</tbody>
       </table>
      </details>
      <section class="sniper-calculator">
       <h2>${tr('Калькулятор гри','Game calculator')}</h2>
-      <label class="sniper-axis"><span>X</span><input type="range" min="-4" max="4" step="1" value="${state.x}" data-axis="x" aria-label="${tr('Горизонтальний код X','Horizontal code X')}"><output data-value="x"></output></label>
-      <label class="sniper-axis"><span>Y</span><input type="range" min="-4" max="4" step="1" value="${state.y}" data-axis="y" aria-label="${tr('Вертикальний код Y','Vertical code Y')}"><output data-value="y"></output></label>
+      <label class="sniper-axis"><span>X</span><input type="range" min="${-xMax}" max="${xMax}" step="1" value="${state.x}" data-axis="x" aria-label="${tr('Поправка за вітром X, міл','Windage X, mil')}"><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-number="x" aria-label="${tr('Поправка за вітром X, міл','Windage X, mil')}"></label>
+      <label class="sniper-axis"><span>Y</span><input type="range" min="0" max="${yMax}" step="1" value="${state.y}" data-axis="y" aria-label="${tr('Підйом Y, міл','Elevation Y, mil')}"><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-number="y" aria-label="${tr('Підйом Y, міл','Elevation Y, mil')}"></label>
       ${tutorial?'':`<div class="sniper-hints">
        <button type="button" data-check-axis>${tr('Перевірити X','Check X')}</button>
        <button type="button" data-code aria-expanded="false" aria-controls="sniper-answer" hidden>${tr('Показати повний код','Show full code')}</button>
@@ -155,18 +169,20 @@ export function startSniper(){
    </div>`;
   const canvas=root.querySelector('canvas');
   const sliders=[...root.querySelectorAll('[data-axis]')];
+  const numbers=[...root.querySelectorAll('[data-number]')];
   const steps=[...root.querySelectorAll('[data-step]')];
   const settings=[...root.querySelectorAll('.sniper-settings select')];
   const result=root.querySelector('.sniper-result');
   const next=root.querySelector('[data-next]');
   const feedback=root.querySelector('[data-axis-feedback]');
-  const [targetX,targetY]=signalCode(state);
+  const sol=solution(state),[targetX,targetY]=sol,tol=tolerance[state.distance];
+  const hit=()=>Math.abs(targetX-state.x)<=tol&&Math.abs(targetY-state.y)<=tol;
   if(!tutorial){
    const codeButton=root.querySelector('[data-code]');
    const answer=root.querySelector('[data-answer]');
    root.querySelector('[data-check-axis]').onclick=()=>{
     feedback.hidden=false;
-    feedback.textContent=state.x===targetX?tr('X збігається.','X matches.'):tr('X ще не збігається.','X does not match yet.');
+    feedback.textContent=Math.abs(targetX-state.x)<=tol?tr('X збігається.','X matches.'):tr('X ще не збігається.','X does not match yet.');
     codeButton.hidden=false;
    };
    codeButton.onclick=()=>{
@@ -175,23 +191,25 @@ export function startSniper(){
     codeButton.textContent=answer.hidden?tr('Показати повний код','Show full code'):tr('Сховати повний код','Hide full code');
     if(!answer.hidden){
      state.series.usedCode=true;save();
-     answer.textContent=tr('Код мішені','Target code')+' · X '+signed(targetX)+' / Y '+signed(targetY);
+     answer.textContent=tr('Код мішені','Target code')+' · X '+signedMil(targetX)+' / Y '+mil(targetY);
     }
    };
   }
 
   function paint(){
-   const dx=targetX-state.x,dy=targetY-state.y;
-   const complete=dx===0&&dy===0;
-   drawScope(canvas,state,conditions,dx,dy);
+   const complete=hit();
+   drawScope(canvas,state,conditions,sol);
    for(const slider of sliders){
     slider.value=state[slider.dataset.axis];
-    root.querySelector('[data-value="'+slider.dataset.axis+'"]').textContent=signed(Number(slider.value));
     slider.disabled=complete;
+   }
+   for(const number of numbers){
+    if(document.activeElement!==number)number.value=(state[number.dataset.number]/10).toFixed(1);
+    number.disabled=complete;
    }
    for(const step of steps){
     const value=state[step.dataset.step];
-    step.disabled=complete||clampAxis(value+Number(step.dataset.delta))===value;
+    step.disabled=complete||clampAxis(step.dataset.step,value+Number(step.dataset.delta))===value;
    }
    for(const select of settings)select.disabled=complete||(!tutorial&&select.hasAttribute('data-distance'));
    for(const hint of root.querySelectorAll('[data-check-axis],[data-code]'))hint.disabled=complete;
@@ -207,20 +225,39 @@ export function startSniper(){
    if(result.textContent!==message)result.textContent=message;
   }
   function setAlignment(x,y){
-   if(state.x===targetX&&state.y===targetY)return;
-   x=clampAxis(x);y=clampAxis(y);
+   if(hit())return;
+   x=clampAxis('x',x);y=clampAxis('y',y);
    if(x===state.x&&y===state.y)return;
    if(feedback&&x!==state.x){feedback.hidden=true;feedback.textContent=''}
    state.x=x;state.y=y;
    save();paint();
    const focused=document.activeElement;
-   if(state.x===targetX&&state.y===targetY&&(focused===document.body||focused?.disabled))next.focus();
+   if(hit()&&(focused===document.body||focused?.disabled))next.focus();
   }
   for(const slider of sliders)slider.oninput=()=>{
    const value=Number(slider.value);
    if(slider.dataset.axis==='x')setAlignment(value,state.y);
    else setAlignment(state.x,value);
   };
+  for(const slider of sliders)slider.onkeydown=event=>{
+   const big=event.key==='PageUp'||event.shiftKey&&(event.key==='ArrowUp'||event.key==='ArrowRight')?10:
+    event.key==='PageDown'||event.shiftKey&&(event.key==='ArrowDown'||event.key==='ArrowLeft')?-10:0;
+   if(!big||event.ctrlKey||event.altKey||event.metaKey)return;
+   event.preventDefault();
+   if(slider.dataset.axis==='x')setAlignment(state.x+big,state.y);
+   else setAlignment(state.x,state.y+big);
+  };
+  for(const number of numbers){
+   const commit=()=>{
+    const value=Math.round(parseFloat(number.value.trim().replace(/\s+/g,'').replace(/[−–—]/g,'-').replace(',','.'))*10);
+    if(Number.isNaN(value))number.value=(state[number.dataset.number]/10).toFixed(1);
+    else if(number.dataset.number==='x')setAlignment(value,state.y);
+    else setAlignment(state.x,value);
+    number.value=(state[number.dataset.number]/10).toFixed(1);
+   };
+   number.onchange=commit;
+   number.onkeydown=event=>{if(event.key==='Enter')commit()};
+  }
   for(const step of steps)step.onclick=()=>{
    const delta=Number(step.dataset.delta);
    if(step.dataset.step==='x')setAlignment(state.x+delta,state.y);
@@ -228,14 +265,14 @@ export function startSniper(){
   };
   let drag=null;
   canvas.onpointerdown=event=>{
-   if(event.pointerType==='touch'||event.button!==0||(state.x===targetX&&state.y===targetY))return;
+   if(event.pointerType==='touch'||event.button!==0||hit())return;
    drag={id:event.pointerId,left:event.clientX,top:event.clientY,x:state.x,y:state.y};
    dragging=true;canvas.setPointerCapture(event.pointerId);
   };
   canvas.onpointermove=event=>{
    if(drag?.id!==event.pointerId)return;
-   const step=panStep*canvas.clientWidth/viewSize;
-   setAlignment(drag.x-Math.round((event.clientX-drag.left)/step),drag.y-Math.round((event.clientY-drag.top)/step));
+   const step=panStep/2*canvas.clientWidth/viewSize/10; // px per tenth of a mil
+   setAlignment(drag.x-Math.round((event.clientX-drag.left)/step),drag.y+Math.round((event.clientY-drag.top)/step));
   };
   canvas.onlostpointercapture=()=>{drag=null;dragging=false;if(pendingRender){pendingRender=false;render()}};
   for(const [field,labels] of [
@@ -259,7 +296,7 @@ export function startSniper(){
  render();window.dispatchEvent(new Event('game-ready'));
 }
 
-function drawScope(canvas,state,conditions,dx,dy){
+function drawScope(canvas,state,conditions,[solX,solY]){
  const c=canvas.getContext('2d'),size=viewSize,center=size/2,scale=canvas.width/viewSize;
  c.setTransform(scale,0,0,scale,0,0);c.clearRect(0,0,size,size);
  const polygon=(color,points)=>{
@@ -267,9 +304,9 @@ function drawScope(canvas,state,conditions,dx,dy){
   for(const point of points.slice(1))c.lineTo(...point);
   c.closePath();c.fill();
  };
- const edge=panStep*8,far=size+edge;
+ const edge=360,far=size+edge,u=panStep/2,limit=340;
  c.save();
- c.translate(dx*panStep,dy*panStep);
+ c.translate(Math.max(-limit,Math.min(limit,(solX-state.x)/10*u)),Math.max(-limit,Math.min(limit,(state.y-solY)/10*u)));
  const sky=c.createLinearGradient(0,0,0,440);
  sky.addColorStop(0,'#354f52');sky.addColorStop(1,'#bfbc95');
  c.fillStyle=sky;c.fillRect(-edge,-edge,size+2*edge,size+2*edge);
