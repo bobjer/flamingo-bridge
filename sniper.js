@@ -13,7 +13,7 @@ const calibers=[ // v0 m/s, k = velocity decay per metre (v = v0·e^(−k·x))
 ];
 const profiles=calibers.map(c=>c.name);
 const distances=[300,500,1000,2000,3000];
-const modeDistances=[[0,0,0],[1,1,1],[2,3,4]]; // series mode → distance index per round
+const modeDistances=[[0,0,0,0,0],[1,1,1,1,1],[2,2,3,3,4]]; // series mode → distance index per round
 const tolerance=[12,8,5,3,2]; // hit tolerance in tenths of a mil, by distance index
 const distLabel=d=>d<1000?d+' '+tr('м','m'):d/1000+' '+tr('км','km');
 // TODO(hard mode): humidity → air density → velocity decay and drift.
@@ -34,16 +34,25 @@ const xMax=Math.ceil(Math.max(...calibers.flatMap(c=>distances.flatMap(d=>weathe
 const yMax=Math.ceil(Math.max(...calibers.flatMap(c=>distances.map(d=>elevation(c,d))))/5)*50;
 const saved=read(saveKey);
 const validIndex=(value,length)=>Number.isInteger(value)&&value>=0&&value<length;
+const validShot=s=>!!s&&typeof s==='object'&&Number.isInteger(s.ring)&&s.ring>=0&&s.ring<=10&&typeof s.hit==='boolean'&&Number.isFinite(s.dx)&&Number.isFinite(s.dy)&&Number.isFinite(s.ms)&&s.ms>=0;
 const validSeries=s=>!!s&&typeof s==='object'&&Array.isArray(s.rounds)&&s.rounds.length===seriesSize&&s.rounds.every(i=>validIndex(i,weather.length))&&
  Array.isArray(s.unassisted)&&s.unassisted.length<=seriesSize&&s.unassisted.every(v=>typeof v==='boolean')&&typeof s.usedCode==='boolean'&&
- Array.isArray(s.scores)&&s.scores.length<=seriesSize&&s.scores.every(v=>Number.isInteger(v)&&v>=0&&v<=10);
+ Array.isArray(s.scores)&&s.scores.length<=seriesSize&&s.scores.every(v=>Number.isInteger(v)&&v>=0&&v<=10)&&
+ s.unassisted.length===s.scores.length&&Array.isArray(s.shots)&&s.shots.length===s.scores.length&&s.shots.every(validShot)&&
+ Number.isFinite(s.time)&&s.time>=0&&(s.started===undefined||typeof s.started==='boolean');
 const viewSize=700;
 const canvasScale=()=>Math.min(2,window.devicePixelRatio||1);
 const panStep=22;
-const seriesSize=3;
+const seriesSize=5;
+const zoomMin=4,zoomMax=25,aimLimit=600; // magnification (×); aim clamp in tenths of a mil
+const uOf=zoom=>panStep/2*zoom/10; // px per mil at a magnification
+const clampAim=v=>Math.max(-aimLimit,Math.min(aimLimit,v));
+const randomAim=()=>{const r=3+Math.random()*5,a=Math.random()*Math.PI*2;return{x:Math.round(r*Math.cos(a)*10),y:Math.round(r*Math.sin(a)*10)}};
+const clock2=ms=>{const t=Math.round(ms/100),m=Math.floor(t/600),sec=(t%600)/10;return String(m).padStart(2,'0')+':'+(sec<10?'0':'')+sec.toFixed(1)};
+const clock1=ms=>{const t=Math.floor(ms/1000);return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0')};
 const maxScore=seriesSize*10;
 const clampAxis=(axis,value)=>axis==='x'?Math.max(-xMax,Math.min(xMax,value)):Math.max(0,Math.min(yMax,value));
-const initial=()=>({mode:2,distance:2,optic:0,profile:0,weather:0,x:0,y:0});
+const initial=()=>({mode:2,distance:2,optic:0,profile:0,weather:0,x:0,y:0,aim:randomAim(),zoom:zoomMin});
 const mil=value=>(Math.abs(value)/10).toFixed(1);
 const signedMil=value=>value<0?'−'+mil(value):value>0?'+'+mil(value):mil(0);
 
@@ -63,7 +72,11 @@ export function startSniper(){
  delete state.best;
  if(!validIndex(state.mode,3))state.mode=2;
  if(state.tutorialDone!==true)state.distance=modeDistances[state.mode][0];
+ if(state.series&&Array.isArray(state.series.rounds)&&state.series.rounds.length!==seriesSize)delete state.bestScore; // record from an older series length
  if(state.bestScore!==undefined&&!(Number.isInteger(state.bestScore)&&state.bestScore>=0&&state.bestScore<=maxScore))delete state.bestScore;
+ if(state.bestHpm!==undefined&&!(Number.isFinite(state.bestHpm)&&state.bestHpm>0))delete state.bestHpm;
+ state.zoom=Number.isInteger(state.zoom)&&state.zoom>=zoomMin&&state.zoom<=zoomMax?state.zoom:zoomMin;
+ state.aim=state.aim&&Number.isFinite(state.aim.x)&&Number.isFinite(state.aim.y)?{x:clampAim(Math.round(state.aim.x)),y:clampAim(Math.round(state.aim.y))}:randomAim();
  if(!(Number.isInteger(state.misses)&&state.misses>=0))state.misses=0;
  const shot=state.lastShot;
  if(!(shot&&typeof shot==='object'&&Number.isInteger(shot.ring)&&shot.ring>=0&&shot.ring<=10&&Number.isInteger(shot.score)&&shot.score>=0&&shot.score<=10))delete state.lastShot;
@@ -71,18 +84,40 @@ export function startSniper(){
  const root=document.createElement('main');
  root.className='sniper-board';document.body.append(root);
  const save=()=>write(saveKey,state);
- let dragging=false,pendingRender=false,flying=false,notice='',miss=null;
+ let dragging=false,pendingRender=false,flying=false,notice='',miss=null,mark=0,tabPick=null; // tabPick: reference tab chosen by the player or autoplay (not persisted)
+ const hasResults=()=>state.tutorialDone===true&&!!state.series&&state.series.scores.length===seriesSize;
+ const curTab=()=>tabPick&&(tabPick!=='results'||hasResults())?tabPick:state.tutorialDone!==true?'method':'table';
+ // Aiming clock: runs only while a series shot is open, the page is visible and no flight overlay is up. Call after every state flip.
+ const clockOn=()=>state.tutorialDone===true&&!!state.series&&state.series.started===true&&!state.roundDone&&!flying&&!document.hidden&&root.isConnected;
+ function clock(){
+  const now=performance.now();
+  if(mark&&state.series)state.series.time+=now-mark;
+  mark=clockOn()?now:0;
+ }
+ function begin(){
+  const s=state.series;
+  if(state.tutorialDone!==true||!s||s.started===true||state.roundDone)return;
+  s.started=true;save();clock();
+ }
+ const paintTimer=()=>{const el=root.querySelector('[data-timer]');if(el&&state.series)el.textContent=clock1(state.series.time)};
+ function selectTab(id){
+  tabPick=id;
+  for(const t of root.querySelectorAll('[role="tab"]')){const on=t.dataset.tab===id;t.setAttribute('aria-selected',String(on));t.tabIndex=on?0:-1}
+  for(const p of root.querySelectorAll('[role="tabpanel"]'))p.hidden=p.id!=='sniper-panel-'+id;
+ }
 
  // Autoplay: a single controller; every timed action goes through schedule() so pause/resume can freeze it.
- let align=()=>{};
+ let align=()=>{},aimer=()=>{},zoomer=()=>{};
  const ap={on:false,paused:false,step:0,timer:0,remaining:0,startedAt:0,fn:null};
  const finalNow=()=>state.tutorialDone===true&&state.round===seriesSize-1;
  const solved=()=>{const [a,b]=solution(state),t=tolerance[state.distance];return Math.abs(a-state.x)<=t&&Math.abs(b-state.y)<=t};
+ const aimed=()=>!state.aim.x&&!state.aim.y;
  const hold=text=>Math.max(3500,Math.min(9000,1800+45*text.length));
  const apSteps=()=>{
   const w=weather[state.weather],c=calibers[state.profile],dk=distances[state.distance],sp=w.flags.map(f=>f*2),wind=windSpeed(w),
    e=elevation(c,dk),k=drift1(c,dk),[sx,sy]=solution(state),last=finalNow();
   return [
+   {mark:'zoom',zoom:true,text:tr('Ставлю кратність 4×, щоб знайти мішень, потім 16× для точного наведення.','Setting 4× to find the target, then 16× for precise aiming.')},
    {mark:'weather',text:tr('Читаю прапорці: ','Reading the flags: ')+flagPattern(w)+'. '+tr('Кожна риска — 2 м/с, тож це ','Each mark is 2 m/s, so that is ')+sp.join(', ')+tr(' м/с.',' m/s.')},
    {mark:'weather',text:tr('Вітер уздовж траси різний, беру середнє: ','Wind varies along the range, so I take the average: ')+'('+sp.join(' + ')+') / 3 = '+wind.toFixed(1)+tr(' м/с.',' m/s.')},
    {mark:'weather',text:w.east?tr('Вітер дме W → E і зносить кулю праворуч. Щоб компенсувати, X має бути від’ємним — ціль лівіше.','The wind blows W → E and pushes the bullet right. To compensate, X must be negative — aim left.'):
@@ -92,8 +127,9 @@ export function startSniper(){
    {mark:'x',text:'X = '+k.toFixed(2)+' × '+wind.toFixed(1)+' ≈ '+signedMil(sx)+tr(' міл. Чим довше куля летить, тим більше її зносить.',' mil. The longer the flight, the more the wind carries it.')},
    {mark:'y',dial:'y',text:tr('Кручу барабан підйому до ','Dialing elevation to ')+mil(sy)+tr(' міл.',' mil.')},
    {mark:'x',dial:'x',text:tr('Кручу барабан вітру до ','Dialing windage to ')+signedMil(sx)+tr(' міл.',' mil.')},
+   {mark:'aim',aim:true,text:tr('Наводжу гвинтівку: ставлю мішень у центр сітки, бо поправки виставлені барабанами повністю.','Aiming the rifle: target to the reticle center, since the turrets carry the full correction.')},
    {mark:'fire',text:tr('Приціл виставлено. Тепер ваш постріл — натисніть «Постріл».','Aim is set. Your shot — press Fire.')},
-   {mark:null,text:state.roundDone?tr('Влучання: ','Hit: ')+(state.lastShot?.ring??0)+tr(' очок. ',' pts. ')+(last?tr('Серію завершено.','Series complete.'):tr('Переходжу до наступного раунду.','Moving to the next round.')):
+   {mark:null,text:state.roundDone?(state.lastShot?.ring?tr('Влучання: ','Hit: ')+state.lastShot.ring+tr(' очок. ',' pts. '):tr('Промах: 0 очок. ','Miss: 0 pts. '))+(last?tr('Серію з '+seriesSize+' пострілів завершено.',seriesSize+'-shot series complete.'):tr('Переходжу до наступного раунду.','Moving to the next round.')):
     tr('Промах: ','Miss: ')+'X '+signedMil(miss?.dx??0)+' / Y '+signedMil(miss?.dy??0)+tr(' міл. Перевіряю розрахунок і виправляю.',' mil. Rechecking and correcting.')},
   ];
  };
@@ -110,9 +146,9 @@ export function startSniper(){
    panel.querySelector('[data-narration]').textContent=s.text;
    panel.querySelector('[data-autoplay-pause]').textContent=ap.paused?tr('Далі','Resume'):tr('Пауза','Pause');
   }
-  if(s.mark==='table')root.querySelector('.sniper-field-table').open=true;
+  if(s.mark==='table')selectTab('table');
   const el=s.mark==='x'||s.mark==='y'?root.querySelector('[data-axis="'+s.mark+'"]')?.closest('.sniper-axis'):
-   s.mark==='weather'?root.querySelector('.sniper-weather'):s.mark==='fire'?root.querySelector('[data-fire]'):s.mark==='table'?root.querySelector('tr.is-current'):null;
+   s.mark==='zoom'?root.querySelector('.sniper-zoom'):s.mark==='aim'?root.querySelector('.sniper-scope'):s.mark==='weather'?root.querySelector('.sniper-weather'):s.mark==='fire'?root.querySelector('[data-fire]'):s.mark==='table'?root.querySelector('tr.is-current'):null;
   el?.classList.add('is-explained');
  }
  function schedule(fn,ms){
@@ -129,7 +165,7 @@ export function startSniper(){
   Object.assign(ap,{on:false,paused:false,timer:0,fn:null});
   paintAutoplay();
  }
- const takeover=()=>{if(ap.on)stopAutoplay()};
+ const takeover=()=>{if(ap.on)stopAutoplay();begin()};
 
  // Ballistic calculator: pure arithmetic on what the player types; never reads game state, never affects scoring.
  const calc={open:false,f:['','',''],dir:'',drift:'',elev:'',status:''};
@@ -224,40 +260,64 @@ export function startSniper(){
   };
   tick();
  }
+ const reduced=()=>!!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+ function zoomTo(target,done){
+  const tick=()=>{
+   const d=target-state.zoom;
+   if(!d){done();return}
+   zoomer(reduced()?target:state.zoom+Math.sign(d),false);
+   if(reduced()||state.zoom===target){done();return}
+   schedule(tick,40);
+  };
+  tick();
+ }
+ function aimOut(done){
+  const size=Math.ceil(Math.max(Math.abs(state.aim.x),Math.abs(state.aim.y))/30)||1;
+  const toward=(v)=>v-Math.sign(v)*Math.min(size,Math.abs(v));
+  const tick=()=>{
+   const {x,y}=state.aim;
+   if(!x&&!y){done();return}
+   if(reduced())aimer(0,0,true);else aimer(toward(x),toward(y),true);
+   if(state.aim.x===x&&state.aim.y===y){done();return}
+   schedule(tick,55);
+  };
+  tick();
+ }
  function runStep(){
   paintAutoplay();
   const s=apSteps()[ap.step];
   if(s.mark==='fire')return; // autoplay waits for the player's shot
   const wait=()=>schedule(advance,hold(s.text));
-  if(s.dial)dial(s.dial,wait);else wait();
+  if(s.zoom)zoomTo(4,()=>schedule(()=>zoomTo(16,wait),900));else if(s.aim)aimOut(wait);else if(s.dial)dial(s.dial,wait);else wait();
  }
  function advance(){
-  if(ap.step<9){ap.step++;runStep();return}
-  if(!state.roundDone){ap.step=6;runStep();return}
+  if(ap.step<11){ap.step++;runStep();return}
+  if(!state.roundDone){ap.step=7;runStep();return}
   if(finalNow()){stopAutoplay();return}
   nextRound();
   if(state.tutorialDone===true){state.series.usedCode=true;save()}
-  ap.step=solved()?8:0;
+  ap.step=solved()?(aimed()?10:9):0;
   runStep();
  }
  function startAutoplay(){
   ap.on=true;ap.paused=false;ap.fn=null;
   if(state.tutorialDone===true){state.series.usedCode=true;save()}
-  ap.step=state.roundDone?9:solved()?8:0;
+  ap.step=state.roundDone?11:solved()?(aimed()?10:9):0;
+  begin();
   render();root.querySelector('[data-autoplay]').focus();
   runStep();
  }
 
- function resetShot(){state.misses=0;state.roundDone=false;delete state.lastShot;notice='';miss=null}
+ function resetShot(){state.misses=0;state.roundDone=false;delete state.lastShot;notice='';miss=null;state.aim=randomAim()}
  function startSeries(){
   const rounds=[];
   let previous=state.weather;
   while(rounds.length<seriesSize){
-   const available=weather.flatMap((entry,index)=>entry.east!==weather[previous].east&&!rounds.includes(index)?[index]:[]);
+   const available=weather.flatMap((entry,index)=>entry.east!==weather[previous].east?[index]:[]); // alternate wind side; indices may recur but never back to back
    previous=available[Math.floor(Math.random()*available.length)];
    rounds.push(previous);
   }
-  state.series={rounds,unassisted:[],scores:[],usedCode:false};
+  state.series={rounds,unassisted:[],scores:[],shots:[],usedCode:false,time:0,started:false};
   resetShot();
   state.round=0;
   state.distance=modeDistances[state.mode][0];
@@ -267,15 +327,26 @@ export function startSniper(){
 
  // Restart the series when its saved history is missing, corrupt or out of step with the round.
  if(state.tutorialDone===true&&(!validSeries(state.series)||!validIndex(state.round,seriesSize)||state.distance!==modeDistances[state.mode][state.round]||
-  state.weather!==state.series.rounds[state.round]||state.series.unassisted.length!==state.round+Number(state.roundDone)||state.series.scores.length!==state.series.unassisted.length)){startSeries();save()}
+  state.weather!==state.series.rounds[state.round]||state.series.unassisted.length!==state.round+Number(state.roundDone)||state.series.scores.length!==state.series.unassisted.length||state.series.shots.length!==state.series.scores.length)){startSeries();save()}
+ if(state.series&&typeof state.series.started!=='boolean')state.series.started=state.series.time>0||state.series.scores.length>0;
+ clock();
+ document.addEventListener('visibilitychange',clock);
+ let savedSec=-1;
+ const tickId=setInterval(()=>{
+  if(!root.isConnected){clearInterval(tickId);return}
+  clock();paintTimer();
+  const sec=state.series?Math.floor(state.series.time/1000):-1;
+  if(mark&&sec!==savedSec){savedSec=sec;save()}
+ },250);
 
  // Explicit shot: score by distance from the solution, play the 3D flight, then record the result.
  async function fire(){
   if(state.roundDone||flying)return;
+  begin();
   if(ap.on){clearTimeout(ap.timer);ap.fn=null}
-  const [sx,sy]=solution(state),tol=tolerance[state.distance],dx=state.x-sx,dy=state.y-sy,err=Math.hypot(dx,dy),
+  const [sx,sy]=solution(state),tol=tolerance[state.distance],dx=(state.x-sx)-state.aim.x,dy=(state.y-sy)-state.aim.y,err=Math.hypot(dx,dy),
    ring=err>tol?0:Math.max(1,10-Math.floor(9*err/tol)),w=weather[state.weather],tutorial=state.tutorialDone!==true;
-  flying=true;
+  flying=true;clock();
   const button=root.querySelector('[data-fire]');
   if(button)button.disabled=true;
   try{
@@ -288,27 +359,32 @@ export function startSniper(){
    });
   }catch(error){console.warn(error)}
   flying=false;pendingRender=false;
-  if(ring){
-   const score=Math.max(1,ring-(state.misses||0));
-   state.roundDone=true;state.lastShot={ring,score};state.misses=0;notice='';miss=null;
-   if(!tutorial){
-    const series=state.series;
-    series.scores=[...series.scores,score];
-    series.unassisted=[...series.unassisted,!series.usedCode];
-    if(state.round===seriesSize-1){
-     const total=series.scores.reduce((a,b)=>a+b,0);
-     if(total>(state.bestScore??-1))state.bestScore=total;
-    }
-   }
+  if(tutorial){
+   if(ring){state.roundDone=true;state.lastShot={ring,score:Math.max(1,ring-(state.misses||0))};state.misses=0;notice='';miss=null}
+   else{state.misses=(state.misses||0)+1;miss={dx,dy};notice=tr('Промах · поправте приціл і стріляйте знову','Miss · correct and fire again')}
   }else{
-   state.misses=(state.misses||0)+1;miss={dx,dy};
-   notice=tr('Промах · поправте приціл і стріляйте знову','Miss · correct and fire again');
+   const series=state.series;
+   const before=series.shots.reduce((a,b)=>a+b.ms,0);
+   series.time+=1000*flightTime(calibers[state.profile],distances[state.distance]); // real time of flight replaces the animation time
+   series.scores=[...series.scores,ring];
+   series.unassisted=[...series.unassisted,!series.usedCode];
+   series.shots=[...series.shots,{ring,hit:ring>0,dx,dy,ms:Math.max(0,series.time-before)}];
+   state.roundDone=true;state.lastShot={ring,score:ring};state.misses=0;notice='';miss=null;
+   if(state.round===seriesSize-1){
+    const total=series.scores.reduce((a,b)=>a+b,0),hits=series.shots.filter(v=>v.hit).length,hpm=series.time>0?hits/(series.time/60000):0;
+    series.newRecord={score:total>(state.bestScore??0),hpm:hits>0&&hpm>(state.bestHpm??0)};
+    if(series.newRecord.score)state.bestScore=total;
+    if(series.newRecord.hpm)state.bestHpm=hpm;
+    tabPick='results';
+   }
   }
+  clock();
   save();render();
   if(state.roundDone&&!ap.on)root.querySelector('[data-next]')?.focus();
-  if(ap.on){ap.step=9;runStep()}
+  if(ap.on){ap.step=11;runStep()}
  }
  function nextRound(){
+  if(tabPick==='results')tabPick=null;
   if(state.tutorialDone!==true||state.round===seriesSize-1){
    state.tutorialDone=true;
    startSeries();
@@ -320,27 +396,71 @@ export function startSniper(){
    state.weather=state.series.rounds[state.round];
    state.x=state.y=0;
   }
+  clock();
   save();render();
  }
  function methodSteps(){
- return `<li>${tr('Кожен прапорець: › = 2 м/с, ›› = 4 м/с, ››› = 6 м/с. Вітер — середнє трьох.','Each flag: › = 2 m/s, ›› = 4 m/s, ››› = 6 m/s. Wind is the average of the three.')}</li>
+ return `<li>${tr('Спершу підберіть кратність: на 4× видно всю трасу, щоб знайти мішень; потім збільште, щоб точно навестися.','First set magnification: at 4× you see the whole range to find the target; then zoom in to aim precisely.')}</li>
+  <li>${tr('Кожен прапорець: › = 2 м/с, ›› = 4 м/с, ››› = 6 м/с. Вітер — середнє трьох.','Each flag: › = 2 m/s, ›› = 4 m/s, ››› = 6 m/s. Wind is the average of the three.')}</li>
   <li>${tr('Y = підйом з таблиці для вашої дистанції.','Y = elevation from the table for your distance.')}</li>
   <li>${tr('X = знос на 1 м/с × вітер. Вітер W → E зносить праворуч — X від’ємний; E → W — ліворуч, X додатний.','X = drift per 1 m/s × wind. A W → E wind pushes right, so X is negative; E → W pushes left, so X is positive.')}</li>
-  <li>${tr('Вологість на код не впливає.','Humidity does not affect the code.')}</li>`;
+  <li>${tr('Вологість на код не впливає.','Humidity does not affect the code.')}</li>
+  <li>${tr('Можна не докручувати барабани: якщо бракує поправки, поставте мішень на поділку сітки на цю різницю (винос). Наприклад, бракує 0.7 міл підйому — мішень на поділці 0.7 нижче центру.','You don\'t have to dial everything: if the dial is short, put the target on the reticle mark at that difference (holdover). E.g. 0.7 mil elevation short — put the target on the 0.7 mark below center.')}</li>`;
 }
+ function resultsHtml(){
+  const series=state.series,shots=series.shots,n=shots.length,hits=shots.filter(v=>v.hit).length,total=series.scores.reduce((a,b)=>a+b,0),
+   time=series.time,hpm=time>0?hits/(time/60000):0,rec=series.newRecord||{},R=40,E=54;
+  const pick=(better)=>shots.reduce((b,v,i)=>better(v.ring,shots[b].ring)?i:b,0);
+  const bi=pick((a,b)=>a>b),wi=pick((a,b)=>a<b);
+  const badge=on=>on?` <span class="sniper-badge">${tr('Новий рекорд','New record')}</span>`:'';
+  const cell=(label,value)=>`<div><dt>${label}</dt><dd>${value}</dd></div>`;
+  const marks=shots.map((v,i)=>{
+   const t=tolerance[modeDistances[state.mode][i]],ex=v.dx/t*R,ey=-v.dy/t*R,len=Math.hypot(ex,ey)||1,
+    k=v.hit?1:Math.min(E,Math.max(len,R+4))/len,x=(ex*k).toFixed(1),y=(ey*k).toFixed(1);
+   return v.hit?`<g transform="translate(${x} ${y})"><circle r="5.5" class="hit"/><text>${i+1}</text></g>`:
+    `<g transform="translate(${x} ${y})" class="miss"><path d="M-4-4L4 4M4-4L-4 4"/><text x="8" y="-5">${i+1}</text></g>`;
+  }).join('');
+  const rings=Array.from({length:9},(_,j)=>`<circle r="${(R*(j+1)/9).toFixed(1)}"${j===8?' class="edge"':''}/>`).join('');
+  const rows=shots.map((v,i)=>`<tr><td>${i+1}</td><td>${distLabel(distances[modeDistances[state.mode][i]])}</td><td>${v.ring}${v.hit?'':' ×'}</td><td>${(v.ms/1000).toFixed(1)} ${tr('с','s')}</td></tr>`).join('');
+  return `<dl class="sniper-stats">
+    ${cell(tr('Влучань','Hits'),hits+'/'+n)}${cell(tr('Точність','Accuracy'),Math.round(100*hits/n)+'%')}
+    ${cell(tr('Бали','Score'),total+'/'+maxScore+badge(rec.score))}${cell(tr('Час серії','Series time'),clock2(time))}
+    ${cell(tr('Влучань за хвилину','Hits per minute'),hpm.toFixed(1)+badge(rec.hpm))}${cell(tr('Середній час пострілу','Average per shot'),(time/n/1000).toFixed(1)+' '+tr('с','s'))}
+    ${cell(tr('Найкращий','Best shot'),'#'+(bi+1)+' · '+shots[bi].ring)}${cell(tr('Найгірший','Worst shot'),'#'+(wi+1)+' · '+shots[wi].ring)}
+   </dl>
+   <div class="sniper-results-body">
+    <svg class="sniper-group" viewBox="-60 -60 120 120" width="120" height="120" role="img" aria-label="${tr('Розкид пострілів відносно допуску','Shot group relative to tolerance')}"><g class="rings">${rings}<path d="M-56 0H56M0-56V56"/></g>${marks}</svg>
+    <table aria-label="${tr('Постріли серії','Series shots')}"><thead><tr><th scope="col">#</th><th scope="col">${tr('Дистанція','Distance')}</th><th scope="col">${tr('Кільце','Ring')}</th><th scope="col">${tr('Час','Time')}</th></tr></thead><tbody>${rows}</tbody></table>
+   </div>
+   <p class="sniper-hint-note">${tr('Рекорд','Best')}: ${state.bestScore??0}/${maxScore} · ${(state.bestHpm??0).toFixed(1)} ${tr('влуч./хв','hits/min')}</p>`;
+ }
  function render(){
   const conditions=weather[state.weather];
   const tutorial=state.tutorialDone!==true;
   const finalRound=!tutorial&&state.round===seriesSize-1;
   const caliber=calibers[state.profile];
   const tableRows=distances.map((d,i)=>'<tr'+(i===state.distance?' class="is-current"':'')+'><td>'+distLabel(d)+'</td><td>'+elevation(caliber,d).toFixed(1)+'</td><td>'+drift1(caliber,d).toFixed(2)+'</td></tr>').join('');
+  const cur=curTab(),dragHint=tr('Перетягніть зображення, щоб навести мішень на сітку; колесо миші — кратність.','Drag the view to aim at the target; mouse wheel zooms.');
+  const roundTitle=tutorial?tr('Навчальний раунд — спробуйте без балів','Tutorial round — practice, no score'):tr('Раунд ','Round ')+(state.round+1)+'/'+seriesSize;
+  const pips=tutorial?'':Array.from({length:seriesSize},(_,i)=>{const v=state.series.scores[i];return`<li class="${v===undefined?(i===state.round?'is-now':''):v>0?'is-hit':'is-miss'}">${v??'·'}</li>`}).join('');
+  const results=hasResults();
+  const axisLabel=(axis,text)=>`<label class="sniper-axis"><span>${axis.toUpperCase()}</span><input type="range" min="${axis==='x'?-xMax:0}" max="${axis==='x'?xMax:yMax}" step="1" value="${state[axis]}" data-axis="${axis}" aria-label="${text}"><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-number="${axis}" aria-label="${text}"></label>`;
+  const tabDefs=[...results?[['results',tr('Результати','Results')]]:[],['table',tr('Таблиця','Table')],['method',tr('Як рахувати','How to solve')],['settings',tr('Налаштування','Settings')]];
+  const panelAttrs=id=>`role="tabpanel" id="sniper-panel-${id}" aria-labelledby="sniper-tab-${id}" tabindex="0"${id===cur?'':' hidden'}`;
   root.innerHTML=`
-   <header class="sniper-header"><div><small>POP SEASON</small><h1>${tr('Снайпер','Sniper')}</h1></div>
+   <header class="sniper-header"><div class="sniper-brand"><h1>${tr('Снайпер','Sniper')}</h1><small>POP SEASON</small></div>
     <nav>${languageButton()}<button data-autoplay aria-pressed="${ap.on}">${apLabel()}</button><button data-exit>${tr('Режими','Modes')}</button></nav>
    </header>
    <div class="sniper-layout">
     <section class="sniper-scene" aria-label="${tr('Вид в оптику','Scope view')}">
-     <div class="sniper-scope"><canvas width="${Math.round(viewSize*canvasScale())}" height="${Math.round(viewSize*canvasScale())}" aria-hidden="true"></canvas></div>
+     <div class="sniper-stage">
+      <div class="sniper-scope"><canvas width="${Math.round(viewSize*canvasScale())}" height="${Math.round(viewSize*canvasScale())}" aria-hidden="true" title="${dragHint}" aria-describedby="sniper-drag-desc"></canvas></div>
+      <div class="sniper-hud sniper-hud-wind" aria-hidden="true">${compass(conditions).replace(/ /g,'')} ${flagPattern(conditions).replace(/ \/ /g,'/')}</div>
+      <div class="sniper-hud sniper-hud-turret" aria-hidden="true"></div>
+      ${ap.on?apPanel():''}
+     </div>
+     <div class="sniper-reticle" role="group" aria-label="${tr('Сітка','Reticle')}">${optics.map((label,i)=>`<button type="button" data-optic="${i}" aria-pressed="${i===state.optic}">${tr(...label)}</button>`).join('')}</div>
+     <span id="sniper-drag-desc" class="sniper-sr">${dragHint}</span>
      <div class="sniper-pad" role="group" aria-label="${tr('Налаштування оптики','Scope adjustment')}">
       <button type="button" data-step="x" data-delta="-10" aria-label="${tr('X −1 міл','X −1 mil')}">«</button>
       <button type="button" data-step="x" data-delta="-1" aria-label="${tr('X −0,1 міл','X −0.1 mil')}">‹</button>
@@ -351,63 +471,68 @@ export function startSniper(){
       <button type="button" data-step="y" data-delta="-1" aria-label="${tr('Y −0,1 міл (підйом вниз)','Y −0.1 mil (elevation down)')}">↓</button>
       <button type="button" data-step="y" data-delta="-10" aria-label="${tr('Y −1 міл (підйом вниз)','Y −1 mil (elevation down)')}">⇊</button>
      </div>
-     <p class="sniper-drag-hint">${tr('Перетягніть зображення, щоб налаштувати X та Y.','Drag the view to adjust X and Y.')}</p>
     </section>
     <aside class="sniper-console">
-     ${tutorial?`<section class="sniper-tutorial" aria-labelledby="sniper-lesson-title">
-      <h2 id="sniper-lesson-title">${tr('Навчальний раунд','Tutorial round')}</h2>
-      <ol>${methodSteps()}</ol>
-     </section>`:`<div>
-      <h2 class="sniper-round-title">${tr('Раунд ','Round ')}${state.round+1}${tr(' з ',' of ')}${seriesSize}</h2>
-      <p class="sniper-instructions">${tr('Виставте підйом і поправку на вітер або винесіть точку прицілювання за сіткою.','Dial elevation and windage, or hold over using the reticle.')}</p>
-     </div>`}
-     ${ap.on?apPanel():''}
-     <div class="sniper-settings">
-      <label>${tutorial?tr('Режим','Mode'):tr('Дистанція','Distance')} <select data-distance aria-label="${tutorial?tr('Режим','Mode'):tr('Дистанція','Distance')}"></select></label>
-      <label>${tr('Сітка','Reticle')} <select data-optic aria-label="${tr('Сітка','Reticle')}"></select></label>
-      <label>${tr('Калібр','Caliber')} <select data-profile aria-label="${tr('Калібр','Caliber')}"></select></label>
-     </div>
-     <dl class="sniper-weather">
-      <div><dt>${tr('Компас','Compass')}</dt><dd>${compass(conditions)}</dd></div>
-      <div><dt>${tr('Вологість','Humidity')}</dt><dd>${conditions.humidity}%</dd></div>
-      <div><dt>${tr('Вітер · прапорці','Wind · flags')}</dt><dd>${flagPattern(conditions)}</dd></div>
-     </dl>
-     ${tutorial?'':`<details class="sniper-method">
-      <summary>${tr('Як рахувати','How to solve')}</summary>
-      <ol>${methodSteps()}</ol>
-     </details>`}
-     <details class="sniper-field-table"${tutorial?' open':''}>
-      <summary>${tr('Ігрова таблиця','Game table')}</summary>
-      <p>${tr('Таблиця для вибраного калібру. Ігровий світ: g = 10 м/с².','Table for the selected caliber. Game world: g = 10 m/s².')}</p>
-      <table aria-label="${tr('Балістична таблиця','Ballistic table')}">
-       <thead><tr><th scope="col">${tr('Дистанція','Distance')}</th><th scope="col">${tr('Підйом, міл','Elevation, mil')}</th><th scope="col">${tr('Знос на 1 м/с, міл','Drift per 1 m/s, mil')}</th></tr></thead>
-       <tbody>${tableRows}</tbody>
-      </table>
-     </details>
+     <section class="sniper-status">
+      <div class="sniper-status-row"><h2 class="sniper-round-title">${roundTitle}</h2>
+       <ul class="sniper-chips"><li>${distLabel(distances[state.distance])}</li><li>${caliber.name}</li></ul></div>
+       ${tutorial?'':`<div class="sniper-series-row"><ul class="sniper-pips" aria-label="${tr('Бали за постріли','Shot scores')}">${pips}</ul><span class="sniper-timer" data-timer role="timer" aria-label="${tr('Час серії','Series time')}">00:00</span></div>`}
+      <p class="sniper-result" role="status"></p>
+     </section>
+     <section class="sniper-conditions">
+      <h2 class="sniper-label">${tr('Умови','Conditions')}</h2>
+      <dl class="sniper-weather">
+       <div><dt>${tr('Компас','Compass')}</dt><dd>${compass(conditions)}</dd></div>
+       <div><dt>${tr('Вітер · прапорці','Wind · flags')}</dt><dd>${flagPattern(conditions)}</dd></div>
+       <div><dt>${tr('Вологість','Humidity')}</dt><dd>${conditions.humidity}%</dd></div>
+      </dl>
+     </section>
      <section class="sniper-calculator">
-      <h2>${tr('Калькулятор гри','Game calculator')}</h2>
-      <label class="sniper-axis"><span>X</span><input type="range" min="${-xMax}" max="${xMax}" step="1" value="${state.x}" data-axis="x" aria-label="${tr('Поправка за вітром X, міл','Windage X, mil')}"><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-number="x" aria-label="${tr('Поправка за вітром X, міл','Windage X, mil')}"></label>
-      <label class="sniper-axis"><span>Y</span><input type="range" min="0" max="${yMax}" step="1" value="${state.y}" data-axis="y" aria-label="${tr('Підйом Y, міл','Elevation Y, mil')}"><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-number="y" aria-label="${tr('Підйом Y, міл','Elevation Y, mil')}"></label>
-      <div class="sniper-hints"><button type="button" data-calc-toggle aria-expanded="${calc.open}" aria-controls="sniper-calc">${tr('Калькулятор','Calculator')}</button></div>
-      ${tutorial?'':`<div class="sniper-hints">
-       <button type="button" data-check-axis>${tr('Перевірити X','Check X')}</button>
-       <button type="button" data-code aria-expanded="false" aria-controls="sniper-answer" hidden>${tr('Показати повний код','Show full code')}</button>
+      <h2 class="sniper-label">${tr('Барабани','Turrets')}</h2>
+      <div class="sniper-zoom"><span>${tr('Кратність','Zoom')}</span><button type="button" data-zoom-step="-1" aria-label="${tr('Зменшити кратність','Zoom out')}">−</button><input type="range" min="${zoomMin}" max="${zoomMax}" step="1" value="${state.zoom}" data-zoom aria-label="${tr('Кратність','Magnification')}"><button type="button" data-zoom-step="1" aria-label="${tr('Збільшити кратність','Zoom in')}">+</button><output data-zoom-out></output></div>
+      ${axisLabel('x',tr('Поправка за вітром X, міл','Windage X, mil'))}
+      ${axisLabel('y',tr('Підйом Y, міл','Elevation Y, mil'))}
+      <div class="sniper-hints">
+       ${tutorial?'':`<button type="button" class="sniper-ghost" data-check-axis>${tr('Перевірити X','Check X')}</button>
+       <button type="button" class="sniper-ghost" data-code aria-expanded="false" aria-controls="sniper-answer" hidden>${tr('Показати повний код','Show full code')}</button>`}
+       <button type="button" class="sniper-ghost" data-calc-toggle aria-expanded="${calc.open}" aria-controls="sniper-calc">${tr('Калькулятор','Calculator')}</button>
       </div>
-      <p class="sniper-hint-note">${tr('«Перевірити X» безкоштовна. Повний код або автогра знімають бал за раунд. Промах −1.','Check X is free. The full code or autoplay costs that round\'s point. Each miss −1.')}</p>
-      <p data-axis-feedback role="status" hidden></p>
+      ${tutorial?'':`<p data-axis-feedback role="status" hidden></p>
       <p id="sniper-answer" data-answer hidden></p>`}
      </section>
-     <p class="sniper-result" role="status"></p>
-     <button type="button" class="sniper-fire" data-fire>${tr('Постріл','Fire')}</button>
-     <button class="sniper-next" data-next>${tutorial?tr('Почати серію','Start series'):finalRound?tr('Нова серія','New series'):tr('Наступний раунд','Next round')}</button>
+     <section class="sniper-tabs">
+      <div class="sniper-tablist" role="tablist" aria-label="${tr('Довідка','Reference')}">${tabDefs.map(([id,label])=>`<button type="button" role="tab" id="sniper-tab-${id}" data-tab="${id}" aria-controls="sniper-panel-${id}" aria-selected="${id===cur}" tabindex="${id===cur?0:-1}">${label}</button>`).join('')}</div>
+      ${results?`<div class="sniper-results sniper-tabpanel" ${panelAttrs('results')}>${resultsHtml()}</div>`:''}
+      <div class="sniper-field-table sniper-tabpanel" ${panelAttrs('table')}>
+       <table aria-label="${tr('Балістична таблиця','Ballistic table')}">
+        <thead><tr><th scope="col">${tr('Дистанція','Distance')}</th><th scope="col">${tr('Підйом, міл','Elevation, mil')}</th><th scope="col">${tr('Знос на 1 м/с, міл','Drift per 1 m/s, mil')}</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+       </table>
+       <p>${tr('Таблиця для вибраного калібру. Ігровий світ: g = 10 м/с².','Table for the selected caliber. Game world: g = 10 m/s².')}</p>
+      </div>
+      <div class="sniper-method sniper-tabpanel" ${panelAttrs('method')}>
+       <ol>${methodSteps()}</ol>
+       ${tutorial?'':`<p class="sniper-hint-note">${tr('«Перевірити X» безкоштовна. Повний код або автогра знімають бал за раунд. У серії кожен постріл остаточний.','Check X is free. The full code or autoplay costs that round\'s point. In a series every shot is final.')}</p>`}
+      </div>
+      <div class="sniper-settings sniper-tabpanel" ${panelAttrs('settings')}>
+       <label>${tutorial?tr('Режим','Mode'):tr('Дистанція','Distance')} <select data-distance aria-label="${tutorial?tr('Режим','Mode'):tr('Дистанція','Distance')}"></select></label>
+       <label>${tr('Калібр','Caliber')} <select data-profile aria-label="${tr('Калібр','Caliber')}"></select></label>
+      </div>
+     </section>
+     <div class="sniper-actions">
+      <button type="button" class="sniper-fire" data-fire><span aria-hidden="true">⊕</span> ${tr('Постріл','Fire')}</button>
+      <button type="button" class="sniper-next" data-next>${tutorial?tr('Почати серію','Start series'):finalRound?tr('Нова серія','New series'):tr('Наступний раунд','Next round')}</button>
+     </div>
     </aside>
    </div>
    ${calcDrawer()}`;
   const canvas=root.querySelector('canvas');
+  const turretHud=root.querySelector('.sniper-hud-turret');
   const sliders=[...root.querySelectorAll('[data-axis]')];
   const numbers=[...root.querySelectorAll('[data-number]')];
   const steps=[...root.querySelectorAll('[data-step]')];
   const settings=[...root.querySelectorAll('.sniper-settings select')];
+  const opticButtons=[...root.querySelectorAll('[data-optic]')];
   const result=root.querySelector('.sniper-result');
   const next=root.querySelector('[data-next]');
   const fireButton=root.querySelector('[data-fire]');
@@ -419,7 +544,7 @@ export function startSniper(){
    root.querySelector('[data-check-axis]').onclick=()=>{
     takeover();
     feedback.hidden=false;
-    feedback.textContent=Math.abs(targetX-state.x)<=tol?tr('X збігається.','X matches.'):tr('X ще не збігається.','X does not match yet.');
+    feedback.textContent=Math.abs(targetX-state.x)<=tol?tr('Барабан X збігається.','X dial matches.'):tr('Барабан X ще не збігається.','X dial does not match yet.');
     codeButton.hidden=false;
    };
    codeButton.onclick=()=>{
@@ -436,7 +561,12 @@ export function startSniper(){
 
   function paint(){
    const complete=state.roundDone===true,shot=state.lastShot;
-   drawScope(canvas,state,conditions,sol);
+   drawScope(canvas,state,conditions);
+   const zo=root.querySelector('[data-zoom-out]');if(zo)zo.textContent=state.zoom+'×';
+   const zs=root.querySelector('[data-zoom]');if(zs)zs.value=state.zoom;
+   for(const b of root.querySelectorAll('[data-zoom-step]'))b.disabled=state.zoom+Number(b.dataset.zoomStep)<zoomMin||state.zoom+Number(b.dataset.zoomStep)>zoomMax;
+   paintTimer();
+   if(turretHud)turretHud.innerHTML='X <b>'+signedMil(state.x)+'</b>&nbsp; Y <b>'+mil(state.y)+'</b>';
    for(const slider of sliders){
     slider.value=state[slider.dataset.axis];
     slider.disabled=complete;
@@ -451,16 +581,18 @@ export function startSniper(){
    }
    for(const select of settings)select.disabled=complete||(!tutorial&&select.hasAttribute('data-distance'));
    for(const hint of root.querySelectorAll('[data-check-axis],[data-code]'))hint.disabled=complete;
-   fireButton.disabled=complete||flying;
-   next.disabled=!complete;
+   for(const button of opticButtons)button.disabled=complete;
+   fireButton.disabled=complete||flying;fireButton.hidden=complete;
+   next.disabled=!complete;next.hidden=!complete;
    result.dataset.won=String(complete);
-   let message=notice||tr('Налаштуйте X та Y і стріляйте','Adjust X and Y, then fire');
+   let message=notice||tr('Знайдіть мішень, виставте X та Y, наведіть і стріляйте','Find the target, set X and Y, aim, then fire');
    if(complete&&shot){
     if(finalRound){
      const total=state.series.scores.reduce((a,b)=>a+b,0),n=state.series.unassisted.filter(Boolean).length;
      message=tr('Серію завершено · ','Series complete · ')+total+'/'+maxScore+' · '+tr('без підказок ','unassisted ')+n+'/'+seriesSize+
       (state.bestScore===undefined?'':' · '+tr('Рекорд','Best')+': '+state.bestScore+'/'+maxScore);
-    }else message=tr('Влучання · ','Hit · ')+shot.ring+tr(' очок',' pts')+(shot.ring>shot.score?' − '+(shot.ring-shot.score)+tr(' за промахи',' for misses'):'')+' = '+shot.score;
+    }else if(!tutorial)message=shot.ring?tr('Влучання · ','Hit · ')+shot.ring+tr(' очок',' pts'):tr('Промах · 0 очок','Miss · 0 pts');
+    else message=tr('Влучання · ','Hit · ')+shot.ring+tr(' очок',' pts')+(shot.ring>shot.score?' − '+(shot.ring-shot.score)+tr(' за промахи',' for misses'):'')+' = '+shot.score;
    }
    if(result.textContent!==message)result.textContent=message;
    paintCalc();
@@ -474,6 +606,27 @@ export function startSniper(){
    state.x=x;state.y=y;
    save();paint();
   }
+  function setAim(x,y){
+   if(state.roundDone)return;
+   x=clampAim(Math.round(x));y=clampAim(Math.round(y));
+   if(x===state.aim.x&&y===state.aim.y)return;
+   state.aim={x,y};save();paint();
+  }
+  function setZoom(v,user=true){
+   v=Math.max(zoomMin,Math.min(zoomMax,Math.round(v)));
+   if(v===state.zoom)return;
+   if(user)takeover();
+   state.zoom=v;save();paint();
+  }
+  root.querySelector('[data-zoom]').oninput=event=>setZoom(Number(event.target.value));
+  for(const b of root.querySelectorAll('[data-zoom-step]'))b.onclick=()=>setZoom(state.zoom+Number(b.dataset.zoomStep));
+  let wheelAt=0;
+  canvas.addEventListener('wheel',event=>{
+   event.preventDefault();
+   const now=performance.now();
+   if(now-wheelAt<50||!event.deltaY)return;
+   wheelAt=now;setZoom(state.zoom+(event.deltaY<0?1:-1));
+  },{passive:false});
   for(const slider of sliders)slider.oninput=()=>{
    takeover();
    const value=Number(slider.value);
@@ -510,19 +663,19 @@ export function startSniper(){
   let drag=null;
   canvas.onpointerdown=event=>{
    takeover();
-   if(event.pointerType==='touch'||event.button!==0||state.roundDone)return;
-   drag={id:event.pointerId,left:event.clientX,top:event.clientY,x:state.x,y:state.y};
+   if(event.button!==0||state.roundDone)return;
+   drag={id:event.pointerId,left:event.clientX,top:event.clientY,x:state.aim.x,y:state.aim.y};
    dragging=true;canvas.setPointerCapture(event.pointerId);
   };
   canvas.onpointermove=event=>{
    if(drag?.id!==event.pointerId)return;
-   const step=panStep/2*canvas.clientWidth/viewSize/10; // px per tenth of a mil
-   setAlignment(drag.x-Math.round((event.clientX-drag.left)/step),drag.y+Math.round((event.clientY-drag.top)/step));
+   const step=uOf(state.zoom)*canvas.clientWidth/viewSize/10; // px per tenth of a mil
+   setAim(drag.x+Math.round((event.clientX-drag.left)/step),drag.y-Math.round((event.clientY-drag.top)/step));
   };
   canvas.onlostpointercapture=()=>{drag=null;dragging=false;if(pendingRender){pendingRender=false;render()}};
   for(const [field,labels] of [
    ['distance',tutorial?[tr('300 м','300 m'),tr('500 м','500 m'),tr('1–3 км','1–3 km')]:distances.map(distLabel)],
-   ['optic',optics.map(label=>tr(...label))],['profile',profiles]
+   ['profile',profiles]
   ]){
    const select=root.querySelector('[data-'+field+']');
    const key=field==='distance'&&tutorial?'mode':field;
@@ -535,13 +688,27 @@ export function startSniper(){
     save();render();root.querySelector('[data-'+field+']').focus();
    };
   }
+  opticButtons.forEach((button,i)=>button.onclick=()=>{
+   takeover();
+   state.optic=i;state.x=state.y=0;
+   save();render();root.querySelector('[data-optic="'+i+'"]').focus();
+  });
+  const tabs=[...root.querySelectorAll('[role="tab"]')];
+  tabs.forEach((tab,i)=>{
+   tab.onclick=()=>selectTab(tab.dataset.tab);
+   tab.onkeydown=event=>{
+    const n=event.key==='ArrowRight'?(i+1)%tabs.length:event.key==='ArrowLeft'?(i+tabs.length-1)%tabs.length:event.key==='Home'?0:event.key==='End'?tabs.length-1:-1;
+    if(n<0||event.ctrlKey||event.altKey||event.metaKey)return;
+    event.preventDefault();selectTab(tabs[n].dataset.tab);tabs[n].focus();
+   };
+  });
   fireButton.onclick=()=>fire();
   next.onclick=()=>{takeover();nextRound();root.querySelector('[data-axis="x"]').focus()};
   root.querySelector('[data-exit]').onclick=changeSide;
   root.querySelector('[data-autoplay]').onclick=()=>{if(ap.on)stopAutoplay();else startAutoplay()};
   const pauseButton=root.querySelector('[data-autoplay-pause]');
   if(pauseButton)pauseButton.onclick=togglePause;
-  align=setAlignment;
+  align=setAlignment;aimer=setAim;zoomer=setZoom;
   bindCalc();
   root.querySelector('[data-language]').onclick=()=>document.querySelector('.lang').click();
   paint();
@@ -551,7 +718,7 @@ export function startSniper(){
  render();window.dispatchEvent(new Event('game-ready'));
 }
 
-function drawScope(canvas,state,conditions,[solX,solY]){
+function drawScope(canvas,state,conditions){
  const c=canvas.getContext('2d'),size=viewSize,center=size/2,scale=canvas.width/viewSize;
  c.setTransform(scale,0,0,scale,0,0);c.clearRect(0,0,size,size);
  const polygon=(color,points)=>{
@@ -559,9 +726,9 @@ function drawScope(canvas,state,conditions,[solX,solY]){
   for(const point of points.slice(1))c.lineTo(...point);
   c.closePath();c.fill();
  };
- const edge=360,far=size+edge,u=panStep/2,limit=340;
+ const edge=2000,far=size+edge,u=uOf(state.zoom),k=state.zoom/10,tx=center+state.aim.x/10*u,ty=center-state.aim.y/10*u;
  c.save();
- c.translate(Math.max(-limit,Math.min(limit,(solX-state.x)/10*u)),Math.max(-limit,Math.min(limit,(state.y-solY)/10*u)));
+ c.translate(tx,ty);c.scale(k,k);c.translate(-center,-center); // scene geometry is authored around the target at (350,350)
  const sky=c.createLinearGradient(0,0,0,440);
  sky.addColorStop(0,'#354f52');sky.addColorStop(1,'#bfbc95');
  c.fillStyle=sky;c.fillRect(-edge,-edge,size+2*edge,size+2*edge);
@@ -582,28 +749,32 @@ function drawScope(canvas,state,conditions,[solX,solY]){
   c.beginPath();c.moveTo(x,y);c.lineTo(x,y-55);c.stroke();
   polygon('#f5ad53',[[x,y-55],[x+dir*(14+strength*10),y-53+3*(3-strength)],[x,y-37]]);
  });
- const radius=[36,31,26,20,15][state.distance];
- const x=center,y=center;
- c.fillStyle='#2b3025';c.fillRect(x-3,y+radius,6,30);
- for(const [factor,color] of [[1,'#ded4a6'],[.76,'#3b4c45'],[.48,'#ded4a6'],[.23,'#d87249']]){
-  c.beginPath();c.arc(x,y,radius*factor,0,Math.PI*2);c.fillStyle=color;c.fill();
- }
  c.restore();
+ // The target keeps its true angular size: ring 1 = hit tolerance in mil.
+ const radius=tolerance[state.distance]/10*u,x=tx,y=ty;
+ if(x>-100&&x<size+100&&y>-100&&y<size+100){
+  c.fillStyle='#2b3025';c.fillRect(x-radius*.12,y+radius,radius*.24,radius*1.5);
+  c.beginPath();c.arc(x,y,radius*1.3,0,Math.PI*2);c.fillStyle='#1d241b';c.fill();
+  for(const [factor,color] of [[1,'#ded4a6'],[.76,'#3b4c45'],[.48,'#ded4a6'],[.23,'#d87249']]){
+   c.beginPath();c.arc(x,y,radius*factor,0,Math.PI*2);c.fillStyle=color;c.fill();
+  }
+ }
  const vignette=c.createRadialGradient(center,center,200,center,center,350);
  vignette.addColorStop(0,'#10170c00');vignette.addColorStop(1,'#071009a0');
  c.fillStyle=vignette;c.fillRect(0,0,size,size);
  c.strokeStyle='#172018';c.lineWidth=2;
- if(state.optic===0)drawTree(c,center);
- else if(state.optic===1)drawDot(c,center);
- else drawGrid(c,center);
+ if(state.optic===0)drawTree(c,center,u);
+ else if(state.optic===1)drawDot(c,center,u);
+ else drawGrid(c,center,u);
 }
 
-function drawGrid(c,center){
- const u=panStep/2,cx=center,cy=center,col='#172018',w=k=>Math.round(1.5+k*0.95);
+function drawGrid(c,center,u){
+ const cx=center,cy=center,col='#172018',w=k=>Math.round(1.5+k*0.95);
  c.save();c.strokeStyle=col;c.fillStyle=col;c.lineCap='butt';
- const line=(x1,y1,x2,y2,lw)=>{c.lineWidth=lw;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()};
- const dot=(x,y,r)=>{c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill()};
- const text=(t,x,y,align,base)=>{c.font='10px system-ui';c.textAlign=align;c.textBaseline=base;c.fillText(t,x,y)};
+ const line=(x1,y1,x2,y2,lw)=>{if(Math.max(x1,x2)<-10||Math.min(x1,x2)>710||Math.max(y1,y2)<-10||Math.min(y1,y2)>710)return;c.lineWidth=lw;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()};
+ const dot=(x,y,r)=>{if(x<-5||x>705||y<-5||y>705)return;c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill()};
+ const thickH=(a,b)=>{if(b>a)line(a,cy,b,cy,7)},thickV=(a,b)=>{if(b>a)line(cx,a,cx,b,7)};
+ const text=(t,x,y,align,base)=>{c.font='10px system-ui';c.textAlign=align;c.textBaseline=base;if(x>-40&&x<740&&y>-20&&y<720)c.fillText(t,x,y)};
  const len=i=>i%10===0?6:i%2===0?4:2;
  for(let k=1;k<=10;k++){
   const y=cy+k*u;
@@ -616,8 +787,8 @@ function drawGrid(c,center){
  line(cx,cy-3,cx,cy-10*u,1);line(cx,cy+3,cx,cy+10*u,1);
  for(let i=1;i<=30;i++)for(const s of [-1,1]){const x=cx+s*i*u/2,l=len(i);line(x,cy-l,x,cy+l,1)}
  for(let i=1;i<=20;i++)for(const s of [-1,1]){const y=cy+s*i*u/2,l=i%2?2:4;line(cx-l,y,cx+l,y,1)}
- line(30,cy,cx-15*u,cy,7);line(cx+15*u,cy,670,cy,7);
- line(cx,30,cx,cy-10.5*u,7);line(cx,cy+10.5*u,cx,670,7);
+ thickH(30,cx-15*u);thickH(cx+15*u,670);
+ thickV(30,cy-10.5*u);thickV(cy+10.5*u,670);
  for(let n=2;n<=14;n+=2)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-9,'center','bottom');
  for(let k=2;k<=10;k++)text(String(k),cx+8,cy-k*u,'left','middle');
  for(let k=1;k<=10;k++){
@@ -628,12 +799,13 @@ function drawGrid(c,center){
  c.restore();
 }
 
-function drawDot(c,center){
- const u=panStep/2,cx=center,cy=center,col='#172018',w=k=>Math.round(3+k*0.7);
+function drawDot(c,center,u){
+ const cx=center,cy=center,col='#172018',w=k=>Math.round(3+k*0.7);
  c.save();c.strokeStyle=col;c.fillStyle=col;c.lineCap='butt';
- const line=(x1,y1,x2,y2,lw)=>{c.lineWidth=lw;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()};
- const dot=(x,y,r)=>{c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill()};
- const text=(t,x,y,align,base)=>{c.font='11px system-ui';c.textAlign=align;c.textBaseline=base;c.fillText(t,x,y)};
+ const line=(x1,y1,x2,y2,lw)=>{if(Math.max(x1,x2)<-10||Math.min(x1,x2)>710||Math.max(y1,y2)<-10||Math.min(y1,y2)>710)return;c.lineWidth=lw;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()};
+ const dot=(x,y,r)=>{if(x<-5||x>705||y<-5||y>705)return;c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill()};
+ const thickH=(a,b)=>{if(b>a)line(a,cy,b,cy,7)},thickV=(a,b)=>{if(b>a)line(cx,a,cx,b,7)};
+ const text=(t,x,y,align,base)=>{c.font='11px system-ui';c.textAlign=align;c.textBaseline=base;if(x>-40&&x<740&&y>-20&&y<720)c.fillText(t,x,y)};
  for(let k=1;k<=20;k++){
   const n=Math.round(w(k)*(k%2?1:2))-(k%2?1:2)+1,st=k%2?u:u/2;
   for(let j=0;j<n;j++)for(const s of [-1,1])dot(cx+s*(u+j*st),cy+k*u,j>=n-2?1.8:1.1);
@@ -648,19 +820,20 @@ function drawDot(c,center){
  for(let n=2;n<=10;n+=2)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-8,'center','bottom');
  text('MIL',cx+11*u,cy+8,'left','top');
  for(let k=2;k<=20;k+=2)text(String(k),cx+(w(k)+1.2)*u,cy+k*u,'left','middle');
- line(30,cy,cx-16*u,cy,7);line(cx+16*u,cy,670,cy,7);
- line(cx,30,cx,cy-18*u,7);line(cx,cy+20*u,cx,670,7);
+ thickH(30,cx-16*u);thickH(cx+16*u,670);
+ thickV(30,cy-18*u);thickV(cy+20*u,670);
  dot(cx,cy,1.8);
  c.restore();
 }
 
-function drawTree(c,center){
- const u=panStep/2,cx=center,cy=center,col='#172018',w=k=>Math.round(2+1.6*k);
+function drawTree(c,center,u){
+ const cx=center,cy=center,col='#172018',w=k=>Math.round(2+1.6*k);
  c.save();c.strokeStyle=col;c.fillStyle=col;c.lineCap='butt';
- const line=(x1,y1,x2,y2,lw)=>{c.lineWidth=lw;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()};
- const dot=(x,y)=>{c.beginPath();c.arc(x,y,1.6,0,Math.PI*2);c.fill()};
- const text=(t,x,y,font,align,base='middle')=>{c.font=font;c.textAlign=align;c.textBaseline=base;c.fillText(t,x,y)};
- line(55-25,cy,cx-21*u,cy,7);line(cx+21*u,cy,645+25,cy,7);
+ const line=(x1,y1,x2,y2,lw)=>{if(Math.max(x1,x2)<-10||Math.min(x1,x2)>710||Math.max(y1,y2)<-10||Math.min(y1,y2)>710)return;c.lineWidth=lw;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()};
+ const dot=(x,y)=>{if(x<-5||x>705||y<-5||y>705)return;c.beginPath();c.arc(x,y,1.6,0,Math.PI*2);c.fill()};
+ const thickH=(a,b)=>{if(b>a)line(a,cy,b,cy,7)},thickV=(a,b)=>{if(b>a)line(cx,a,cx,b,7)};
+ const text=(t,x,y,font,align,base='middle')=>{c.font=font;c.textAlign=align;c.textBaseline=base;if(x>-40&&x<740&&y>-20&&y<720)c.fillText(t,x,y)};
+ thickH(30,cx-21*u);thickH(cx+21*u,670);
  line(cx-21*u,cy,cx+21*u,cy,1.2);
  for(let i=-20;i<=20;i++){
   if(!i)continue;
@@ -703,7 +876,7 @@ function drawTree(c,center){
   text('H'+k,cx+(wk+1.2)*u,y,'11px system-ui','left');
  }
  for(const s of [-1,1])for(let m=2;m<=w(8);m++)dot(cx+s*m*u,cy+16*u);
- line(cx,cy+17.5*u,cx,670,7);
+ thickV(cy+17.5*u,670);
  text('MRAD',cx-16*u,cy+3.5*u,'11px system-ui','center');
  c.restore();
 }
