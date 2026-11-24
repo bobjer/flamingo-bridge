@@ -20,6 +20,9 @@ const fieldCodes=[
 ];
 const saved=read(saveKey);
 const validIndex=(value,length)=>Number.isInteger(value)&&value>=0&&value<length;
+const viewSize=700;
+const panStep=22;
+const clampAxis=value=>Math.max(-4,Math.min(4,value));
 const initial=()=>({distance:0,optic:0,profile:0,weather:0,x:0,y:0});
 const signed=value=>value>0?'+'+value:String(value);
 
@@ -58,7 +61,14 @@ export function startSniper(){
    </header>
    <div class="sniper-layout">
     <section class="sniper-scene" aria-label="${tr('Вид в оптику','Scope view')}">
-     <div class="sniper-scope"><canvas width="700" height="700" aria-hidden="true"></canvas></div>
+     <div class="sniper-scope"><canvas width="${viewSize}" height="${viewSize}" aria-hidden="true"></canvas></div>
+     <div class="sniper-pad" role="group" aria-label="${tr('Налаштування оптики','Scope adjustment')}">
+      <button type="button" data-step="x" data-delta="-1" aria-label="${tr('Ліворуч','Left')}">←</button>
+      <button type="button" data-step="y" data-delta="-1" aria-label="${tr('Вгору','Up')}">↑</button>
+      <button type="button" data-step="y" data-delta="1" aria-label="${tr('Вниз','Down')}">↓</button>
+      <button type="button" data-step="x" data-delta="1" aria-label="${tr('Праворуч','Right')}">→</button>
+     </div>
+     <p class="sniper-drag-hint">${tr('Перетягніть зображення, щоб налаштувати X та Y.','Drag the view to adjust X and Y.')}</p>
     </section>
     <aside class="sniper-console">
      ${tutorial?`<section class="sniper-tutorial" aria-labelledby="sniper-lesson-title">
@@ -104,6 +114,7 @@ export function startSniper(){
    </div>`;
   const canvas=root.querySelector('canvas');
   const sliders=[...root.querySelectorAll('[data-axis]')];
+  const steps=[...root.querySelectorAll('[data-step]')];
   const result=root.querySelector('.sniper-result');
   const next=root.querySelector('[data-next]');
   const feedback=root.querySelector('[data-axis-feedback]');
@@ -129,8 +140,13 @@ export function startSniper(){
    const complete=dx===0&&dy===0;
    drawScope(canvas,state,conditions,dx,dy);
    for(const slider of sliders){
+    slider.value=state[slider.dataset.axis];
     root.querySelector('[data-value="'+slider.dataset.axis+'"]').textContent=signed(Number(slider.value));
     slider.disabled=complete;
+   }
+   for(const step of steps){
+    const value=state[step.dataset.step];
+    step.disabled=complete||clampAxis(value+Number(step.dataset.delta))===value;
    }
    next.disabled=tutorial&&!complete;
    result.dataset.won=String(complete);
@@ -138,11 +154,36 @@ export function startSniper(){
     tr('Налаштуйте X та Y','Adjust X and Y');
    if(result.textContent!==message)result.textContent=message;
   }
-  for(const slider of sliders)slider.oninput=()=>{
-   state[slider.dataset.axis]=Number(slider.value);
-   if(feedback&&slider.dataset.axis==='x'){feedback.hidden=true;feedback.textContent=''}
+  function setAlignment(x,y){
+   if(state.x===targetX&&state.y===targetY)return;
+   x=clampAxis(x);y=clampAxis(y);
+   if(x===state.x&&y===state.y)return;
+   if(feedback&&x!==state.x){feedback.hidden=true;feedback.textContent=''}
+   state.x=x;state.y=y;
    save();paint();
+  }
+  for(const slider of sliders)slider.oninput=()=>{
+   const value=Number(slider.value);
+   if(slider.dataset.axis==='x')setAlignment(value,state.y);
+   else setAlignment(state.x,value);
   };
+  for(const step of steps)step.onclick=()=>{
+   const delta=Number(step.dataset.delta);
+   if(step.dataset.step==='x')setAlignment(state.x+delta,state.y);
+   else setAlignment(state.x,state.y+delta);
+  };
+  let drag=null;
+  canvas.onpointerdown=event=>{
+   if(event.pointerType==='touch'||event.button!==0||(state.x===targetX&&state.y===targetY))return;
+   drag={id:event.pointerId,left:event.clientX,top:event.clientY,x:state.x,y:state.y};
+   canvas.setPointerCapture(event.pointerId);
+  };
+  canvas.onpointermove=event=>{
+   if(drag?.id!==event.pointerId)return;
+   const step=panStep*canvas.clientWidth/viewSize;
+   setAlignment(drag.x-Math.round((event.clientX-drag.left)/step),drag.y-Math.round((event.clientY-drag.top)/step));
+  };
+  canvas.onlostpointercapture=()=>{drag=null};
   for(const [field,labels] of [
    ['distance',[1,2,3].map(n=>n+' '+tr('км','km'))],
    ['optic',optics.map(label=>tr(...label))],['profile',profiles]
@@ -165,20 +206,23 @@ export function startSniper(){
 }
 
 function drawScope(canvas,state,conditions,dx,dy){
- const c=canvas.getContext('2d'),size=700,center=size/2;
+ const c=canvas.getContext('2d'),size=viewSize,center=size/2;
  const polygon=(color,points)=>{
   c.fillStyle=color;c.beginPath();c.moveTo(...points[0]);
   for(const point of points.slice(1))c.lineTo(...point);
   c.closePath();c.fill();
  };
+ const edge=panStep*8,far=size+edge;
+ c.save();
+ c.translate(dx*panStep,dy*panStep);
  const sky=c.createLinearGradient(0,0,0,440);
  sky.addColorStop(0,'#354f52');sky.addColorStop(1,'#bfbc95');
- c.fillStyle=sky;c.fillRect(0,0,size,size);
- polygon('#83907b',[[0,317],[120,249],[198,264],[309,222],[448,268],[574,218],[700,250],[700,460],[0,460]]);
- polygon('#5a6e55',[[0,357],[115,305],[211,320],[312,286],[437,323],[550,284],[700,320],[700,490],[0,490]]);
- polygon('#536145',[[0,401],[127,375],[287,391],[462,361],[602,379],[700,373],[700,700],[0,700]]);
- polygon('#8d8057',[[322,385],[371,385],[595,700],[70,700]]);
- polygon('#75724f',[[339,388],[353,388],[475,700],[206,700]]);
+ c.fillStyle=sky;c.fillRect(-edge,-edge,size+2*edge,size+2*edge);
+ polygon('#83907b',[[-edge,317],[0,317],[120,249],[198,264],[309,222],[448,268],[574,218],[700,250],[far,250],[far,460],[-edge,460]]);
+ polygon('#5a6e55',[[-edge,357],[0,357],[115,305],[211,320],[312,286],[437,323],[550,284],[700,320],[far,320],[far,490],[-edge,490]]);
+ polygon('#536145',[[-edge,401],[0,401],[127,375],[287,391],[462,361],[602,379],[700,373],[far,373],[far,far],[-edge,far]]);
+ polygon('#8d8057',[[322,385],[371,385],[595+edge*.71,far],[70-edge*.8,far]]);
+ polygon('#75724f',[[339,388],[353,388],[475+edge*.39,far],[206-edge*.43,far]]);
  c.strokeStyle='#d7c99466';c.lineWidth=2;
  for(let i=0;i<4;i++){
   const y=416+i*i*19;
@@ -192,11 +236,12 @@ function drawScope(canvas,state,conditions,dx,dy){
   polygon('#f5ad53',[[x,y-55],[x+dir*(14+strength*10),y-53+3*(3-strength)],[x,y-37]]);
  });
  const radius=[26,20,15][state.distance];
- const x=center+dx*22,y=center+dy*22;
+ const x=center,y=center;
  c.fillStyle='#2b3025';c.fillRect(x-3,y+radius,6,30);
  for(const [factor,color] of [[1,'#ded4a6'],[.76,'#3b4c45'],[.48,'#ded4a6'],[.23,'#d87249']]){
   c.beginPath();c.arc(x,y,radius*factor,0,Math.PI*2);c.fillStyle=color;c.fill();
  }
+ c.restore();
  const vignette=c.createRadialGradient(center,center,200,center,center,350);
  vignette.addColorStop(0,'#10170c00');vignette.addColorStop(1,'#071009a0');
  c.fillStyle=vignette;c.fillRect(0,0,size,size);
@@ -212,7 +257,7 @@ function drawScope(canvas,state,conditions,dx,dy){
  if(state.optic===2){
   c.beginPath();
   for(let i=1;i<=6;i++)for(const sign of [-1,1]){
-   const offset=center+i*22*sign;
+   const offset=center+i*panStep*sign;
    c.moveTo(offset,344);c.lineTo(offset,356);c.moveTo(344,offset);c.lineTo(356,offset);
   }
   c.stroke();

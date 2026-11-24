@@ -41,7 +41,7 @@
  display: grid;
  place-items: center;
  min-width: 0;
- aspect-ratio: 1;
+ gap: 12px;
  padding: clamp(6px, 2vw, 24px);
  border: 1px solid #3e4a3b;
  border-radius: 15px;
@@ -56,7 +56,17 @@
  outline: 1px solid #626c56;
  box-shadow: 0 0 0 clamp(3px, .5vw, 7px) #282e25;
 }
-.sniper-scope canvas { display: block; position: static; width: 100%; height: 100%; }
+.sniper-scope canvas { display: block; position: static; width: 100%; height: 100%; touch-action: pan-y; }
+.sniper-pad { display: none; }
+.sniper-drag-hint { margin: 0; color: var(--sniper-muted); font-size: 14px; text-align: center; }
+@media (pointer: fine) {
+ .sniper-scope canvas { cursor: grab; }
+ .sniper-scope canvas:active { cursor: grabbing; }
+}
+@media (max-width: 750px), (pointer: coarse) {
+ .sniper-pad { display: grid; grid-template-columns: repeat(4, minmax(44px, 1fr)); gap: 8px; width: 100%; max-width: 340px; }
+ .sniper-drag-hint { display: none; }
+}
 .sniper-console {
  display: grid;
  gap: 16px;
@@ -79,6 +89,7 @@
  font: 14px var(--body, system-ui);
 }
 .sniper-board button { cursor: pointer; }
+.sniper-board .sniper-pad button { min-height: 54px; font-size: 24px; }
 .sniper-board :is(button, select, input):focus-visible { outline: 2px solid var(--sniper-accent); outline-offset: 2px; }
 .sniper-weather { display: grid; gap: 6px; margin: 0; padding-block: 13px; border-block: 1px solid #465042; }
 .sniper-weather div { display: flex; justify-content: space-between; gap: 12px; }
