@@ -7,7 +7,7 @@ export const moundOf=(D,R1)=>({a:Math.max(2.5,2*R1+2),b:3.5,h:3.5,cz:D+5});
 /** Builds the range. Returns scene + handles; the caller owns the renderer and camera. */
 export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1}){
  const V=(x=0,y=0,z=0)=>new T.Vector3(x,y,z),fl=W.flags||[1,1,1],HS=clamp(D,600,1200); // HS scales hills / fog so short ranges still get depth
- const scene=new T.Scene();scene.fog=new T.Fog(0xbfbc95,HS*.15,HS+D*.5+600);
+ const scene=new T.Scene();scene.fog=new T.Fog(0xbfbc95,Math.max(150,D*.35),D*2.4+600); // scaled to the real distance: target is only ~13-29% hazed at 300-3000 m
  const cc=new T.Color(),mound=moundOf(D,R1);
  const lam=(c,x={})=>{const m=new T.MeshLambertMaterial({color:c,...x});return m};
  const add=(par,geo,mat,x=0,y=0,z=0)=>{const m=new T.Mesh(geo,mat);m.position.set(x,y,z);par.add(m);return m};
@@ -50,9 +50,10 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1}){
  {
   const fp=[.25,.5,.75].map((f,i)=>[i%2?4.5:-4.5,D*f]),o3=new T.Object3D();
   const scatter=(geo,n,y0,sMin,sMax,cols,flat)=>{
-   const im=new T.InstancedMesh(geo,lam(0xffffff,{flatShading:true}),n);
+   geo.computeBoundingBox();const ext=geo.boundingBox.max.y,im=new T.InstancedMesh(geo,lam(0xffffff,{flatShading:true}),n);
    for(let i=0;i<n;i++){let x,z,t=0;do{x=(Math.random()<.5?-1:1)*(3.6+Math.pow(Math.random(),2)*(flat?10:16));z=rnd(6,D+6)}while(fp.some(p=>Math.hypot(x-p[0],z-p[1])<1.5)&&t++<9);
-    const sc=rnd(sMin,sMax);o3.position.set(x,y0*sc,z);o3.rotation.set(0,rnd(0,TAU),0);o3.scale.set(sc*rnd(.8,1.3),sc*(flat?rnd(.5,.9):rnd(.8,1.2)),sc*rnd(.8,1.3));o3.updateMatrix();im.setMatrixAt(i,o3.matrix);
+    let sc=rnd(sMin,sMax),sy=sc*(flat?rnd(.5,.9):rnd(.8,1.2));if(z<60&&Math.abs(x)<6){const k=Math.min(1,1.2/(y0*sc+sy*ext));sc*=k;sy*=k} // keep near-shooter scatter <=1.2 m, clear of the sight line
+    o3.position.set(x,y0*sc,z);o3.rotation.set(0,rnd(0,TAU),0);o3.scale.set(sc*rnd(.8,1.3),sy,sc*rnd(.8,1.3));o3.updateMatrix();im.setMatrixAt(i,o3.matrix);
     im.setColorAt(i,cc.setHex(cols[i%cols.length]).multiplyScalar(rnd(.85,1.15)))}
    scene.add(im)};
   scatter(new T.IcosahedronGeometry(1,0),clamp(Math.round(D*.15),60,300),.45,.5,1.3,[0x4a5f3a,0x5a6e45,0x6b7a45,0x3f5236],false);
@@ -104,8 +105,14 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1}){
   for(let n=1;n<=9;n++){const f=(10.5-n)/10;c.fillStyle=f>.76||(f>.23&&f<=.48)||f<=.23?'#1b241f':'#e9ebda';
    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([a,b])=>c.fillText(String(n),a*r*f,b*r*f))}
  }));
- add(pl,new T.CircleGeometry(R1,64).rotateY(Math.PI),new T.MeshLambertMaterial({map:plTex}),0,-R1,-.021);
+ add(pl,new T.CircleGeometry(R1,64).rotateY(Math.PI),new T.MeshBasicMaterial({map:plTex,fog:false}),0,-R1,-.021);
  add(pl,new T.CylinderGeometry(R1,R1,.04,48).rotateX(Math.PI/2),lam(0x2b3025),0,-R1,0);
+ // light backer board 5 cm behind the plate + high-visibility marker pole with flag (unfogged so they stay findable at long range)
+ {const bs=4.4*R1,bt=.02,bz=.05+bt/2+.02,sD=Math.max(1,D/1000),ph=1.5*Math.max(1,D/1500),pw=.04*sD,top=R1*2.2;
+  add(pl,new T.BoxGeometry(bs,bs,bt),new T.MeshBasicMaterial({color:0xe9e4cf,fog:false}),0,-R1,bz);
+  const om=new T.MeshBasicMaterial({color:0xff8a1f,fog:false,side:T.DoubleSide});
+  add(pl,new T.BoxGeometry(pw,ph,pw),om,0,-R1+top+ph/2,bz+bt/2+pw/2);
+  add(pl,new T.PlaneGeometry(.5*sD,.3*sD),om,.25*sD+pw/2,-R1+top+ph-.15*sD,bz+bt/2+pw/2)}
  let clock=0;
  return{scene,sky,plate:pl,flags,mound,R1,HS,clearColor:0xbfbc95,targetCenter:V(0,Y0,D),lam,add,tex,
   update(dt){clock+=dt;for(const f of flags)f.upd(clock)},
