@@ -3,7 +3,7 @@ import {tr} from './language.js';
 import './sniper.css';
 
 const saveKey='pop-sniper-v1';
-const optics=[['Перехрестя','Cross'],['Коло','Ring'],['Сітка','Grid']];
+const optics=[['Ялинка','Tree'],['Коло','Ring'],['Сітка','Grid']];
 const profiles=['A','B','C'];
 const weather=[
  {humidity:36,east:true,flags:[1,2,1]},
@@ -301,11 +301,14 @@ function drawScope(canvas,state,conditions,dx,dy){
  vignette.addColorStop(0,'#10170c00');vignette.addColorStop(1,'#071009a0');
  c.fillStyle=vignette;c.fillRect(0,0,size,size);
  c.strokeStyle='#172018';c.lineWidth=2;
- c.beginPath();
- for(const [x1,y1,x2,y2] of [[55,350,341,350],[359,350,645,350],[350,55,350,341],[350,359,350,645]]){
-  c.moveTo(x1,y1);c.lineTo(x2,y2);
+ if(state.optic===0)drawTree(c,center);
+ else{
+  c.beginPath();
+  for(const [x1,y1,x2,y2] of [[55,350,341,350],[359,350,645,350],[350,55,350,341],[350,359,350,645]]){
+   c.moveTo(x1,y1);c.lineTo(x2,y2);
+  }
+  c.stroke();
  }
- c.stroke();
  if(state.optic===1){
   c.beginPath();c.arc(center,center,68,0,Math.PI*2);c.stroke();
  }
@@ -317,4 +320,58 @@ function drawScope(canvas,state,conditions,dx,dy){
   }
   c.stroke();
  }
+}
+
+function drawTree(c,center){
+ const u=panStep/2,cx=center,cy=center,col='#172018',w=k=>Math.round(2+1.6*k);
+ c.save();c.strokeStyle=col;c.fillStyle=col;c.lineCap='butt';
+ const line=(x1,y1,x2,y2,lw)=>{c.lineWidth=lw;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()};
+ const dot=(x,y)=>{c.beginPath();c.arc(x,y,1.6,0,Math.PI*2);c.fill()};
+ const text=(t,x,y,font,align,base='middle')=>{c.font=font;c.textAlign=align;c.textBaseline=base;c.fillText(t,x,y)};
+ line(55-25,cy,cx-21*u,cy,7);line(cx+21*u,cy,645+25,cy,7);
+ line(cx-21*u,cy,cx+21*u,cy,1.2);
+ for(let i=-20;i<=20;i++){
+  if(!i)continue;
+  const x=cx+i*u,l=i%5?2:5;
+  line(x,cy-l,x,cy+l,1.2);
+  if(!(i%5))text(String(Math.abs(i)),x,cy-10,'600 12px system-ui','center');
+  if(!(i%2))dot(x,cy+1.5*u);
+ }
+ line(cx,cy,cx,cy-14*u,1.2);
+ for(let i=1;i<=14;i++){
+  const y=cy-i*u,l=i%5?2:5;
+  line(cx-l,y,cx+l,y,1.2);
+  if(!(i%5))text(String(i),cx+8,y,'600 12px system-ui','left');
+ }
+ for(const s of [-1,1]){
+  for(const m of [5,10]){
+   const x=cx+s*m*u;
+   line(x,cy-5*u,x,cy-2*u,4);
+   text(String(m),x,cy-5.6*u,'11px system-ui','center','bottom');
+  }
+  for(let m=5.5;m<10;m+=.5){
+   if(m===10)continue;
+   const x=cx+s*m*u;line(x,cy-3.5*u,x,cy-2*u,1.2);
+  }
+ }
+ for(let m=2;m<=14;m+=2){
+  let deep=0;
+  for(let k=1;k<=7;k++)if(w(k)>=m)deep=k;
+  if(deep)for(const s of [-1,1])line(cx+s*m*u,cy+2*u,cx+s*m*u,cy+deep*2*u,1.2);
+ }
+ for(let k=1;k<=7;k++){
+  const y=cy+k*2*u,wk=w(k);
+  for(const s of [-1,1]){
+   line(cx+s*2*u,y,cx+s*wk*u,y,1.2);
+   for(let m=2;m<=wk;m++)dot(cx+s*m*u,y);
+  }
+  text(String(k*2),cx,y,'600 12px system-ui','center');
+  if(k<7)line(cx-3,y+u,cx+3,y+u,1.2);
+  text('H'+k,cx-(wk+1.2)*u,y,'11px system-ui','right');
+  text('H'+k,cx+(wk+1.2)*u,y,'11px system-ui','left');
+ }
+ for(const s of [-1,1])for(let m=2;m<=w(8);m++)dot(cx+s*m*u,cy+16*u);
+ line(cx,cy+17.5*u,cx,670,7);
+ text('MRAD',cx-16*u,cy+3.5*u,'11px system-ui','center');
+ c.restore();
 }
