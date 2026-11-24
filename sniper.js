@@ -20,7 +20,10 @@ const fieldCodes=[
 ];
 const saved=read(saveKey);
 const validIndex=(value,length)=>Number.isInteger(value)&&value>=0&&value<length;
+const validSeries=s=>!!s&&typeof s==='object'&&Array.isArray(s.rounds)&&s.rounds.length===seriesSize&&s.rounds.every(i=>validIndex(i,weather.length))&&
+ Array.isArray(s.unassisted)&&s.unassisted.length<=seriesSize&&s.unassisted.every(v=>typeof v==='boolean')&&typeof s.usedCode==='boolean';
 const viewSize=700;
+const canvasScale=()=>Math.min(2,window.devicePixelRatio||1);
 const panStep=22;
 const seriesSize=3;
 const clampAxis=value=>Math.max(-4,Math.min(4,value));
@@ -38,10 +41,14 @@ function signalCode(state,weatherIndex=state.weather){
 
 export function startSniper(){
  const state=saved&&validIndex(saved.distance,3)&&validIndex(saved.optic,3)&&validIndex(saved.profile,3)&&
-  validIndex(saved.weather,weather.length)&&[saved.x,saved.y].every(v=>Number.isInteger(v)&&Math.abs(v)<=4)?saved:initial();
+  validIndex(saved.weather,weather.length)&&[saved.x,saved.y].every(v=>Number.isInteger(v)&&Math.abs(v)<=4)?{...saved}:initial();
+ // Saves from before the round index existed used distance as the round.
+ if(state.round===undefined&&validSeries(state.series)&&validIndex(state.distance,seriesSize))state.round=state.distance;
+ if(state.best!==undefined&&!(Number.isInteger(state.best)&&state.best>=0&&state.best<=seriesSize))delete state.best;
  const root=document.createElement('main');
  root.className='sniper-board';document.body.append(root);
  const save=()=>write(saveKey,state);
+ let dragging=false,pendingRender=false;
 
  function startSeries(){
   const rounds=[];
@@ -52,23 +59,26 @@ export function startSniper(){
    rounds.push(previous);
   }
   state.series={rounds,unassisted:[],usedCode:false};
+  state.round=0;
   state.distance=0;
   state.weather=rounds[0];
   state.x=state.y=0;
  }
 
- // Earlier saves have a tutorial flag but no series history.
- if(state.tutorialDone===true&&!state.series){startSeries();save()}
+ // Restart the series when its saved history is missing, corrupt or out of step with the round.
+ if(state.tutorialDone===true&&(!validSeries(state.series)||!validIndex(state.round,seriesSize)||state.distance!==Math.min(state.round,2)||
+  state.weather!==state.series.rounds[state.round]||state.series.unassisted.length!==state.round)){startSeries();save()}
 
  function nextRound(){
-  if(state.tutorialDone!==true||state.distance===seriesSize-1){
+  if(state.tutorialDone!==true||state.round===seriesSize-1){
    state.tutorialDone=true;
    startSeries();
   }else{
    state.series.unassisted.push(!state.series.usedCode);
    state.series.usedCode=false;
-   state.distance++;
-   state.weather=state.series.rounds[state.distance];
+   state.round++;
+   state.distance=Math.min(state.round,2);
+   state.weather=state.series.rounds[state.round];
    state.x=state.y=0;
   }
   save();render();
@@ -76,7 +86,7 @@ export function startSniper(){
  function render(){
   const conditions=weather[state.weather];
   const tutorial=state.tutorialDone!==true;
-  const finalRound=!tutorial&&state.distance===seriesSize-1;
+  const finalRound=!tutorial&&state.round===seriesSize-1;
   const weatherRows=weather.map((entry,index)=>{
    const [x,y]=signalCode(state,index);
    return '<tr><td>'+compass(entry)+'</td><td>'+flagPattern(entry)+'</td><td>'+signed(x)+'</td><td>'+signed(y)+'</td></tr>';
@@ -87,7 +97,7 @@ export function startSniper(){
    </header>
    <div class="sniper-layout">
     <section class="sniper-scene" aria-label="${tr('Вид в оптику','Scope view')}">
-     <div class="sniper-scope"><canvas width="${viewSize}" height="${viewSize}" aria-hidden="true"></canvas></div>
+     <div class="sniper-scope"><canvas width="${Math.round(viewSize*canvasScale())}" height="${Math.round(viewSize*canvasScale())}" aria-hidden="true"></canvas></div>
      <div class="sniper-pad" role="group" aria-label="${tr('Налаштування оптики','Scope adjustment')}">
       <button type="button" data-step="x" data-delta="-1" aria-label="${tr('Ліворуч','Left')}">←</button>
       <button type="button" data-step="y" data-delta="-1" aria-label="${tr('Вгору','Up')}">↑</button>
@@ -103,9 +113,10 @@ export function startSniper(){
        <li>${tr('Прочитайте прапорці зліва направо. Довший прапорець має більше знаків у панелі.','Read the flags left to right. A longer flag has more marks on the panel.')}</li>
        <li>${tr('У таблиці знайдіть рядок із таким самим напрямком компаса й рисунком прапорців.','Find the row with the same compass direction and flag pattern.')}</li>
        <li>${tr('Перенесіть X та Y з цього рядка на повзунки.','Set the sliders to the X and Y values in that row.')}</li>
+       <li>${tr('Вологість на код не впливає.','Humidity does not affect the code.')}</li>
       </ol>
      </section>`:`<div>
-      <h2 class="sniper-round-title">${tr('Раунд ','Round ')}${state.distance+1}${tr(' з ',' of ')}${seriesSize}</h2>
+      <h2 class="sniper-round-title">${tr('Раунд ','Round ')}${state.round+1}${tr(' з ',' of ')}${seriesSize}</h2>
       <p class="sniper-instructions">${tr('Сумістіть центр сітки з мішенню або знайдіть її код у таблиці.','Align the reticle with the target or look up its code in the table.')}</p>
      </div>`}
      <div class="sniper-settings">
@@ -134,6 +145,7 @@ export function startSniper(){
        <button type="button" data-check-axis>${tr('Перевірити X','Check X')}</button>
        <button type="button" data-code aria-expanded="false" aria-controls="sniper-answer" hidden>${tr('Показати повний код','Show full code')}</button>
       </div>
+      <p class="sniper-hint-note">${tr('«Перевірити X» безкоштовна. Повний код знімає бал за раунд.','Check X is free. The full code costs that round\'s point.')}</p>
       <p data-axis-feedback role="status" hidden></p>
       <p id="sniper-answer" data-answer hidden></p>`}
      </section>
@@ -186,8 +198,10 @@ export function startSniper(){
    next.disabled=!complete;
    result.dataset.won=String(complete);
    const unassisted=finalRound&&complete?state.series.unassisted.filter(Boolean).length+Number(!state.series.usedCode):0;
+   if(complete&&finalRound&&unassisted>(state.best??-1)){state.best=unassisted;save()}
    const message=complete&&finalRound?
-    tr('Серію завершено · без повного коду: ','Series complete · solved without the full code: ')+unassisted+'/'+seriesSize:
+    tr('Серію завершено · без повного коду: ','Series complete · solved without the full code: ')+unassisted+'/'+seriesSize+
+    (state.best===undefined?'':' · '+tr('Рекорд','Best')+': '+state.best+'/'+seriesSize):
     complete?tr('Перемога · мішень у центрі','Victory · target aligned'):
     tr('Налаштуйте X та Y','Adjust X and Y');
    if(result.textContent!==message)result.textContent=message;
@@ -199,6 +213,8 @@ export function startSniper(){
    if(feedback&&x!==state.x){feedback.hidden=true;feedback.textContent=''}
    state.x=x;state.y=y;
    save();paint();
+   const focused=document.activeElement;
+   if(state.x===targetX&&state.y===targetY&&(focused===document.body||focused?.disabled))next.focus();
   }
   for(const slider of sliders)slider.oninput=()=>{
    const value=Number(slider.value);
@@ -214,14 +230,14 @@ export function startSniper(){
   canvas.onpointerdown=event=>{
    if(event.pointerType==='touch'||event.button!==0||(state.x===targetX&&state.y===targetY))return;
    drag={id:event.pointerId,left:event.clientX,top:event.clientY,x:state.x,y:state.y};
-   canvas.setPointerCapture(event.pointerId);
+   dragging=true;canvas.setPointerCapture(event.pointerId);
   };
   canvas.onpointermove=event=>{
    if(drag?.id!==event.pointerId)return;
    const step=panStep*canvas.clientWidth/viewSize;
    setAlignment(drag.x-Math.round((event.clientX-drag.left)/step),drag.y-Math.round((event.clientY-drag.top)/step));
   };
-  canvas.onlostpointercapture=()=>{drag=null};
+  canvas.onlostpointercapture=()=>{drag=null;dragging=false;if(pendingRender){pendingRender=false;render()}};
   for(const [field,labels] of [
    ['distance',[1,2,3].map(n=>n+' '+tr('км','km'))],
    ['optic',optics.map(label=>tr(...label))],['profile',profiles]
@@ -239,12 +255,13 @@ export function startSniper(){
   root.querySelector('[data-language]').onclick=()=>document.querySelector('.lang').click();
   paint();
  }
- document.addEventListener('siege-language',render);
+ document.addEventListener('siege-language',()=>{if(dragging)pendingRender=true;else render()});
  render();window.dispatchEvent(new Event('game-ready'));
 }
 
 function drawScope(canvas,state,conditions,dx,dy){
- const c=canvas.getContext('2d'),size=viewSize,center=size/2;
+ const c=canvas.getContext('2d'),size=viewSize,center=size/2,scale=canvas.width/viewSize;
+ c.setTransform(scale,0,0,scale,0,0);c.clearRect(0,0,size,size);
  const polygon=(color,points)=>{
   c.fillStyle=color;c.beginPath();c.moveTo(...points[0]);
   for(const point of points.slice(1))c.lineTo(...point);

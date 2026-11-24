@@ -478,4 +478,4 @@ button.c-sponsor:hover{border-color:var(--accent)}
 .replay-export[hidden],.replay-export [hidden]{display:none}
 .replay-screen .export-preview{position:absolute;inset:0;z-index:5;background:#030609}
 
-.faction-options .faction-optics{grid-column:1;grid-row:1/span 2;display:grid;place-items:center;width:48px;height:48px;border-radius:11px;background:#263a30;color:#b9d998;font:30px/1 system-ui}
+.faction-options .faction-optics{grid-column:1;grid-row:1/span 3;display:grid;place-items:center;width:48px;height:48px;border-radius:11px;background:#263a30;color:#b9d998;font:30px/1 system-ui}

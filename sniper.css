@@ -97,7 +97,6 @@
 .sniper-weather dt { color: var(--sniper-muted); }
 .sniper-weather dd { margin: 0; color: var(--sniper-accent); font: 15px var(--mono, monospace); white-space: pre; }
 .sniper-calculator { display: grid; gap: 10px; }
-.sniper-calculator header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .sniper-calculator h2 { margin: 0; font-size: 16px; }
 .sniper-calculator [data-answer] { color: var(--sniper-accent); }
 .sniper-axis {
@@ -129,3 +128,4 @@
 .sniper-field-table th, .sniper-field-table td { padding: 5px 4px; text-align: left; white-space: nowrap; border-bottom: 1px solid #465042; }
 .sniper-field-table tbody tr:last-child td { border-bottom: 0; }
 .sniper-hints { display: flex; flex-wrap: wrap; gap: 8px; }
+.sniper-calculator .sniper-hint-note { margin: 0; color: var(--sniper-muted); font-size: 13px; }
