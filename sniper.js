@@ -3,7 +3,7 @@ import {tr} from './language.js';
 import './sniper.css';
 
 const saveKey='pop-sniper-v1';
-const optics=[['Ялинка','Tree'],['Коло','Ring'],['Сітка','Grid']];
+const optics=[['Ялинка','Tree'],['Точка','Dot'],['Сітка','Grid']];
 const profiles=['A','B','C'];
 const weather=[
  {humidity:36,east:true,flags:[1,2,1]},
@@ -302,15 +302,13 @@ function drawScope(canvas,state,conditions,dx,dy){
  c.fillStyle=vignette;c.fillRect(0,0,size,size);
  c.strokeStyle='#172018';c.lineWidth=2;
  if(state.optic===0)drawTree(c,center);
+ else if(state.optic===1)drawDot(c,center);
  else{
   c.beginPath();
   for(const [x1,y1,x2,y2] of [[55,350,341,350],[359,350,645,350],[350,55,350,341],[350,359,350,645]]){
    c.moveTo(x1,y1);c.lineTo(x2,y2);
   }
   c.stroke();
- }
- if(state.optic===1){
-  c.beginPath();c.arc(center,center,68,0,Math.PI*2);c.stroke();
  }
  if(state.optic===2){
   c.beginPath();
@@ -320,6 +318,32 @@ function drawScope(canvas,state,conditions,dx,dy){
   }
   c.stroke();
  }
+}
+
+function drawDot(c,center){
+ const u=panStep/2,cx=center,cy=center,col='#172018',w=k=>Math.round(3+k*0.7);
+ c.save();c.strokeStyle=col;c.fillStyle=col;c.lineCap='butt';
+ const line=(x1,y1,x2,y2,lw)=>{c.lineWidth=lw;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()};
+ const dot=(x,y,r)=>{c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill()};
+ const text=(t,x,y,align,base)=>{c.font='11px system-ui';c.textAlign=align;c.textBaseline=base;c.fillText(t,x,y)};
+ for(let k=1;k<=20;k++){
+  const n=Math.round(w(k)*(k%2?1:2))-(k%2?1:2)+1,st=k%2?u:u/2;
+  for(let j=0;j<n;j++)for(const s of [-1,1])dot(cx+s*(u+j*st),cy+k*u,j>=n-2?1.8:1.1);
+ }
+ line(cx-16*u,cy,cx-4,cy,1);line(cx+4,cy,cx+16*u,cy,1);
+ line(cx,cy-4,cx,cy-18*u,1);line(cx,cy+4,cx,cy+20*u,1);
+ for(let i=1;i<=20;i++){
+  const x=i*u/2,l=i%2?2:4;
+  if(i<=20)for(const s of [-1,1])line(cx+s*x,cy-l,cx+s*x,cy+l,1);
+ }
+ for(let i=1;i<=40;i++){const y=cy+i*u/2,l=i%2?2:4;line(cx-l,y,cx+l,y,1)}
+ for(let n=2;n<=10;n+=2)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-8,'center','bottom');
+ text('MIL',cx+11*u,cy+8,'left','top');
+ for(let k=2;k<=20;k+=2)text(String(k),cx+(w(k)+1.2)*u,cy+k*u,'left','middle');
+ line(30,cy,cx-16*u,cy,7);line(cx+16*u,cy,670,cy,7);
+ line(cx,30,cx,cy-18*u,7);line(cx,cy+20*u,cx,670,7);
+ dot(cx,cy,1.8);
+ c.restore();
 }
 
 function drawTree(c,center){
