@@ -84,7 +84,7 @@ export function startSniper(){
  const root=document.createElement('main');
  root.className='sniper-board';document.body.append(root);
  const save=()=>write(saveKey,state);
- let dragging=false,pendingRender=false,flying=false,notice='',miss=null,mark=0,tabPick=null; // tabPick: reference tab chosen by the player or autoplay (not persisted)
+ let gl=null,glLoop=0,scopeRO=null,dragging=false,pendingRender=false,flying=false,notice='',miss=null,mark=0,tabPick=null; // tabPick: reference tab chosen by the player or autoplay (not persisted)
  const hasResults=()=>state.tutorialDone===true&&!!state.series&&state.series.scores.length===seriesSize;
  const curTab=()=>tabPick&&(tabPick!=='results'||hasResults())?tabPick:state.tutorialDone!==true?'method':'table';
  // Aiming clock: runs only while a series shot is open, the page is visible and no flight overlay is up. Call after every state flip.
@@ -99,6 +99,33 @@ export function startSniper(){
   if(state.tutorialDone!==true||!s||s.started===true||state.roundDone)return;
   s.started=true;save();clock();
  }
+ // ---- WebGL scope view lifecycle ----
+ const glOn=()=>!!gl&&root.isConnected&&!flying&&!document.hidden;
+ function glStop(){cancelAnimationFrame(glLoop);glLoop=0}
+ function glStart(){ // light ~20 fps loop for the flags; runs only while the scope is visible
+  if(glLoop||!glOn()||reduced())return;
+  let last=0;
+  const f=t=>{
+   glLoop=0;if(!glOn())return;
+   glLoop=requestAnimationFrame(f);
+   if(t-last<48)return;
+   try{gl.update(Math.min(.1,last?(t-last)/1000:.05));last=t;gl.draw(state)}catch(error){glFail(error)}
+  };
+  glLoop=requestAnimationFrame(f);
+ }
+ function glDrop(){glStop();scopeRO?.disconnect();scopeRO=null;gl?.canvas.remove();try{gl?.dispose()}catch{}gl=null}
+ function glFail(error){console.warn('sniper: WebGL view failed, using 2D view',error);glDrop();render()}
+ async function glLoad(){
+  try{
+   const [T,{buildWorld}]=await Promise.all([import('three'),import('./sniper-world.js')]);
+   if(!root.isConnected)return;
+   gl=createGL(T,buildWorld);
+   gl.canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();glDrop();render()});
+  }catch(error){console.warn('sniper: WebGL unavailable, using 2D view',error);gl=null;return}
+  if(dragging||flying)pendingRender=true;else render();
+ }
+ const scopeTop=()=>{if(window.matchMedia?.('(max-width: 750px)').matches)root.querySelector('.sniper-scope')?.scrollIntoView({block:'start',behavior:reduced()?'auto':'smooth'})};
+ document.addEventListener('visibilitychange',glStart);
  const paintTimer=()=>{const el=root.querySelector('[data-timer]');if(el&&state.series)el.textContent=clock1(state.series.time)};
  function selectTab(id){
   tabPick=id;
@@ -333,7 +360,7 @@ export function startSniper(){
  document.addEventListener('visibilitychange',clock);
  let savedSec=-1;
  const tickId=setInterval(()=>{
-  if(!root.isConnected){clearInterval(tickId);return}
+  if(!root.isConnected){clearInterval(tickId);document.removeEventListener('visibilitychange',glStart);glDrop();return}
   clock();paintTimer();
   const sec=state.series?Math.floor(state.series.time/1000):-1;
   if(mark&&sec!==savedSec){savedSec=sec;save()}
@@ -379,7 +406,7 @@ export function startSniper(){
    }
   }
   clock();
-  save();render();
+  save();render();scopeTop();
   if(state.roundDone&&!ap.on)root.querySelector('[data-next]')?.focus();
   if(ap.on){ap.step=11;runStep()}
  }
@@ -397,7 +424,7 @@ export function startSniper(){
    state.x=state.y=0;
   }
   clock();
-  save();render();
+  save();render();scopeTop();
  }
  function methodSteps(){
  return `<li>${tr('Спершу підберіть кратність: на 4× видно всю трасу, щоб знайти мішень; потім збільште, щоб точно навестися.','First set magnification: at 4× you see the whole range to find the target; then zoom in to aim precisely.')}</li>
@@ -526,7 +553,13 @@ export function startSniper(){
     </aside>
    </div>
    ${calcDrawer()}`;
-  const canvas=root.querySelector('canvas');
+  const scope=root.querySelector('.sniper-scope'),canvas=scope.querySelector('canvas');
+  scopeRO?.disconnect();scopeRO=null;
+  if(gl){
+   scope.prepend(gl.canvas);
+   const fit=()=>{try{gl.size(scope.clientWidth,scope.clientHeight);gl.draw(state)}catch(error){glFail(error)}};
+   scopeRO=new ResizeObserver(fit);scopeRO.observe(scope);gl.size(scope.clientWidth,scope.clientHeight);
+  }
   const turretHud=root.querySelector('.sniper-hud-turret');
   const sliders=[...root.querySelectorAll('[data-axis]')];
   const numbers=[...root.querySelectorAll('[data-number]')];
@@ -561,7 +594,8 @@ export function startSniper(){
 
   function paint(){
    const complete=state.roundDone===true,shot=state.lastShot;
-   drawScope(canvas,state,conditions);
+   drawScope(canvas,state,conditions,!!gl);
+   if(gl){try{gl.draw(state);glStart()}catch(error){glFail(error)}}
    const zo=root.querySelector('[data-zoom-out]');if(zo)zo.textContent=state.zoom+'×';
    const zs=root.querySelector('[data-zoom]');if(zs)zs.value=state.zoom;
    for(const b of root.querySelectorAll('[data-zoom-step]'))b.disabled=state.zoom+Number(b.dataset.zoomStep)<zoomMin||state.zoom+Number(b.dataset.zoomStep)>zoomMax;
@@ -703,7 +737,7 @@ export function startSniper(){
    };
   });
   fireButton.onclick=()=>fire();
-  next.onclick=()=>{takeover();nextRound();root.querySelector('[data-axis="x"]').focus()};
+  next.onclick=()=>{takeover();nextRound();root.querySelector('[data-axis="x"]').focus({preventScroll:true})};
   root.querySelector('[data-exit]').onclick=changeSide;
   root.querySelector('[data-autoplay]').onclick=()=>{if(ap.on)stopAutoplay();else startAutoplay()};
   const pauseButton=root.querySelector('[data-autoplay-pause]');
@@ -716,17 +750,32 @@ export function startSniper(){
  }
  document.addEventListener('siege-language',()=>{if(dragging||flying)pendingRender=true;else render()});
  render();window.dispatchEvent(new Event('game-ready'));
+ glLoad();
 }
 
-function drawScope(canvas,state,conditions){
- const c=canvas.getContext('2d'),size=viewSize,center=size/2,scale=canvas.width/viewSize;
+
+function drawScope(canvas,state,conditions,glMode){
+ const c=canvas.getContext('2d'),size=viewSize,center=size/2,scale=canvas.width/viewSize,u=uOf(state.zoom);
+ cssK=canvas.clientWidth>0?canvas.clientWidth/viewSize:1;
  c.setTransform(scale,0,0,scale,0,0);c.clearRect(0,0,size,size);
+ if(!glMode)drawFallback(c,state,conditions,size,center,u);
+ const vignette=c.createRadialGradient(center,center,200,center,center,350);
+ vignette.addColorStop(0,'#10170c00');vignette.addColorStop(1,'#071009a0');
+ c.fillStyle=vignette;c.fillRect(0,0,size,size);
+ c.globalAlpha=1;c.globalCompositeOperation='source-over';
+ if(state.optic===0)drawTree(c,center,u);
+ else if(state.optic===1)drawDot(c,center,u);
+ else drawGrid(c,center,u);
+}
+
+// 2D painting of the range: only used until the WebGL view loads or when WebGL is unavailable.
+function drawFallback(c,state,conditions,size,center,u){
  const polygon=(color,points)=>{
   c.fillStyle=color;c.beginPath();c.moveTo(...points[0]);
   for(const point of points.slice(1))c.lineTo(...point);
   c.closePath();c.fill();
  };
- const edge=2000,far=size+edge,u=uOf(state.zoom),k=state.zoom/10,tx=center+state.aim.x/10*u,ty=center-state.aim.y/10*u;
+ const edge=2000,far=size+edge,k=state.zoom/10,tx=center+state.aim.x/10*u,ty=center-state.aim.y/10*u;
  c.save();
  c.translate(tx,ty);c.scale(k,k);c.translate(-center,-center); // scene geometry is authored around the target at (350,350)
  const sky=c.createLinearGradient(0,0,0,440);
@@ -759,105 +808,124 @@ function drawScope(canvas,state,conditions){
    c.beginPath();c.arc(x,y,radius*factor,0,Math.PI*2);c.fillStyle=color;c.fill();
   }
  }
- const vignette=c.createRadialGradient(center,center,200,center,center,350);
- vignette.addColorStop(0,'#10170c00');vignette.addColorStop(1,'#071009a0');
- c.fillStyle=vignette;c.fillRect(0,0,size,size);
- c.strokeStyle='#172018';c.lineWidth=2;
- if(state.optic===0)drawTree(c,center,u);
- else if(state.optic===1)drawDot(c,center,u);
- else drawGrid(c,center,u);
+}
+
+// ---- reticle level of detail: thresholds are on-screen px so marks never crowd or overlap ----
+const skip=(spacing,u)=>{let m=1;while(spacing*m*u<6&&m<64)m*=2;return m}; // keep every m-th dot so dots stay >= 6 px apart
+const lstep=(base,u)=>{for(const s of [1,2,4,5,10,20])if(s>=base&&s*u>=21.9)return s;return 0}; // mil step between labels, 0 = no labels
+const lidx=spacing=>{for(const m of [1,2,3,4,5])if(m*spacing>=21.9)return m;return 0}; // every m-th labeled mark, 0 = none
+const halo='#e8e4c81f',tHalo='#e8e4c840',ink='#0b100c',pTau=Math.PI*2;
+let cssK=1; // CSS px per view unit (scope is CSS-scaled; canvas DPR is already in the context transform)
+// Collects the reticle, then paints every halo first and the dark ink on top, so halos never cover neighbouring lines.
+function pen(c){
+ const lines=new Map(),dots=new Map(),texts=[];
+ const out=(x,y,r)=>Math.hypot(x-viewSize/2,y-viewSize/2)>viewSize/2+r;
+ return{
+  line(x1,y1,x2,y2,lw=1){
+   if(Math.max(x1,x2)<-10||Math.min(x1,x2)>710||Math.max(y1,y2)<-10||Math.min(y1,y2)>710)return;
+   if(lw<=1.4)lw=1.4/cssK;
+   let p=lines.get(lw);if(!p)lines.set(lw,p=new Path2D());p.moveTo(x1,y1);p.lineTo(x2,y2);
+  },
+  dot(x,y,r=1.1){
+   if(out(x,y,5))return;
+   r=Math.max(r,1.4/cssK);
+   let d=dots.get(r);if(!d)dots.set(r,d={ink:new Path2D(),halo:new Path2D()});
+   d.ink.moveTo(x+r,y);d.ink.arc(x,y,r,0,pTau);d.halo.moveTo(x+r+.5/cssK,y);d.halo.arc(x,y,r+.5/cssK,0,pTau);
+  },
+  text(t,x,y,font,align='center',base='middle'){if(!out(x,y,20))texts.push([t,x,y,font.startsWith('600')?font:'600 '+font,align,base])},
+  flush(){
+   c.save();c.globalAlpha=1;c.globalCompositeOperation='source-over';c.lineCap='butt';c.lineJoin='round';
+   c.strokeStyle=halo;for(const [lw,p] of lines){c.lineWidth=lw+1/cssK;c.stroke(p)}
+   c.fillStyle=halo;for(const d of dots.values())c.fill(d.halo);
+   c.strokeStyle=ink;for(const [lw,p] of lines){c.lineWidth=lw;c.stroke(p)}
+   c.fillStyle=ink;for(const d of dots.values())c.fill(d.ink);
+   c.lineWidth=2/cssK;
+   for(const [t,x,y,font,align,base] of texts){c.font=font;c.textAlign=align;c.textBaseline=base;c.strokeStyle=tHalo;c.strokeText(t,x,y);c.fillStyle=ink;c.fillText(t,x,y)}
+   c.restore();
+  }
+ };
 }
 
 function drawGrid(c,center,u){
- const cx=center,cy=center,col='#172018',w=k=>Math.round(1.5+k*0.95);
- c.save();c.strokeStyle=col;c.fillStyle=col;c.lineCap='butt';
- const line=(x1,y1,x2,y2,lw)=>{if(Math.max(x1,x2)<-10||Math.min(x1,x2)>710||Math.max(y1,y2)<-10||Math.min(y1,y2)>710)return;c.lineWidth=lw;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()};
- const dot=(x,y,r)=>{if(x<-5||x>705||y<-5||y>705)return;c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill()};
+ const cx=center,cy=center,p=pen(c),{line,dot,text}=p,w=k=>Math.round(1.5+k*0.95);
+ const half=u/2>=5,one=u>=4,dm=skip(.5,u),rm=skip(1,u),lx=lstep(2,u),ly=lstep(1,u),font='10px system-ui';
  const thickH=(a,b)=>{if(b>a)line(a,cy,b,cy,7)},thickV=(a,b)=>{if(b>a)line(cx,a,cx,b,7)};
- const text=(t,x,y,align,base)=>{c.font='10px system-ui';c.textAlign=align;c.textBaseline=base;if(x>-40&&x<740&&y>-20&&y<720)c.fillText(t,x,y)};
- const len=i=>i%10===0?6:i%2===0?4:2;
+ const len=i=>i%10===0?6:i%2===0?4:2,shown=i=>i%10===0||(i%2?half:one);
  for(let k=1;k<=10;k++){
+  if(k%rm&&!(ly&&k%ly===0))continue;
   const y=cy+k*u;
   for(let i=2;i<=2*w(k);i++)for(const s of [-1,1]){
    const x=cx+s*i*u/2;
-   if(i===4)line(x,y-3,x,y+3,1);else dot(x,y,1.1);
+   if(i===4)line(x,y-3,x,y+3,1);else if(i%dm===0)dot(x,y,1.1);
   }
  }
- line(cx-15*u,cy,cx-3,cy,1);line(cx+3,cy,cx+15*u,cy,1);
- line(cx,cy-3,cx,cy-10*u,1);line(cx,cy+3,cx,cy+10*u,1);
- for(let i=1;i<=30;i++)for(const s of [-1,1]){const x=cx+s*i*u/2,l=len(i);line(x,cy-l,x,cy+l,1)}
- for(let i=1;i<=20;i++)for(const s of [-1,1]){const y=cy+s*i*u/2,l=i%2?2:4;line(cx-l,y,cx+l,y,1)}
+ line(cx-15*u,cy,cx-3,cy);line(cx+3,cy,cx+15*u,cy);
+ line(cx,cy-3,cx,cy-10*u);line(cx,cy+3,cx,cy+10*u);
+ for(let i=1;i<=30;i++)if(shown(i))for(const s of [-1,1]){const x=cx+s*i*u/2,l=len(i);line(x,cy-l,x,cy+l)}
+ for(let i=1;i<=20;i++)if(i%2?half:one)for(const s of [-1,1]){const y=cy+s*i*u/2,l=i%2?2:4;line(cx-l,y,cx+l,y)}
  thickH(30,cx-15*u);thickH(cx+15*u,670);
  thickV(30,cy-10.5*u);thickV(cy+10.5*u,670);
- for(let n=2;n<=14;n+=2)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-9,'center','bottom');
- for(let k=2;k<=10;k++)text(String(k),cx+8,cy-k*u,'left','middle');
- for(let k=1;k<=10;k++){
+ if(lx)for(let n=1;n<=14;n++)if(n%lx===0)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-9,font,'center','bottom');
+ if(ly)for(let k=2;k<=10;k++)if(k%ly===0)text(String(k),cx+8,cy-k*u,font,'left');
+ if(ly)for(let k=1;k<=10;k++){
+  if(k%ly)continue;
   const y=cy+k*u,x=(w(k)+0.9)*u;
-  text(String(k),cx-x,y,'right','middle');text(String(k),cx+x,y,'left','middle');
+  text(String(k),cx-x,y,font,'right');text(String(k),cx+x,y,font,'left');
  }
  dot(cx,cy,1.6);
- c.restore();
+ p.flush();
 }
 
 function drawDot(c,center,u){
- const cx=center,cy=center,col='#172018',w=k=>Math.round(3+k*0.7);
- c.save();c.strokeStyle=col;c.fillStyle=col;c.lineCap='butt';
- const line=(x1,y1,x2,y2,lw)=>{if(Math.max(x1,x2)<-10||Math.min(x1,x2)>710||Math.max(y1,y2)<-10||Math.min(y1,y2)>710)return;c.lineWidth=lw;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()};
- const dot=(x,y,r)=>{if(x<-5||x>705||y<-5||y>705)return;c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill()};
+ const cx=center,cy=center,p=pen(c),{line,dot,text}=p,w=k=>Math.round(3+k*0.7);
+ const half=u/2>=5,one=u>=4,rm=skip(1,u),lx=lstep(2,u),font='11px system-ui';
  const thickH=(a,b)=>{if(b>a)line(a,cy,b,cy,7)},thickV=(a,b)=>{if(b>a)line(cx,a,cx,b,7)};
- const text=(t,x,y,align,base)=>{c.font='11px system-ui';c.textAlign=align;c.textBaseline=base;if(x>-40&&x<740&&y>-20&&y<720)c.fillText(t,x,y)};
  for(let k=1;k<=20;k++){
-  const n=Math.round(w(k)*(k%2?1:2))-(k%2?1:2)+1,st=k%2?u:u/2;
-  for(let j=0;j<n;j++)for(const s of [-1,1])dot(cx+s*(u+j*st),cy+k*u,j>=n-2?1.8:1.1);
+  if(k%rm&&!(lx&&k%lx===0))continue;
+  const n=Math.round(w(k)*(k%2?1:2))-(k%2?1:2)+1,st=k%2?u:u/2,m=skip(st/u,u);
+  for(let j=0;j<n;j++)if(j%m===0||j===n-1)for(const s of [-1,1])dot(cx+s*(u+j*st),cy+k*u,j>=n-2?1.8:1.1);
  }
- line(cx-16*u,cy,cx-4,cy,1);line(cx+4,cy,cx+16*u,cy,1);
- line(cx,cy-4,cx,cy-18*u,1);line(cx,cy+4,cx,cy+20*u,1);
- for(let i=1;i<=20;i++){
-  const x=i*u/2,l=i%2?2:4;
-  if(i<=20)for(const s of [-1,1])line(cx+s*x,cy-l,cx+s*x,cy+l,1);
+ line(cx-16*u,cy,cx-4,cy);line(cx+4,cy,cx+16*u,cy);
+ line(cx,cy-4,cx,cy-18*u);line(cx,cy+4,cx,cy+20*u);
+ for(let i=1;i<=20;i++)if(i%10===0||(i%2?half:one))for(const s of [-1,1]){const x=i*u/2,l=i%2?2:4;line(cx+s*x,cy-l,cx+s*x,cy+l)}
+ for(let i=1;i<=40;i++)if(i%10===0||(i%2?half:one)){const y=cy+i*u/2,l=i%2?2:4;line(cx-l,y,cx+l,y)}
+ if(lx){
+  for(let n=1;n<=10;n++)if(n%lx===0)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-8,font,'center','bottom');
+  for(let k=1;k<=20;k++)if(k%lx===0)text(String(k),cx+(w(k)+1.2)*u,cy+k*u,font,'left');
  }
- for(let i=1;i<=40;i++){const y=cy+i*u/2,l=i%2?2:4;line(cx-l,y,cx+l,y,1)}
- for(let n=2;n<=10;n+=2)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-8,'center','bottom');
- text('MIL',cx+11*u,cy+8,'left','top');
- for(let k=2;k<=20;k+=2)text(String(k),cx+(w(k)+1.2)*u,cy+k*u,'left','middle');
+ if(u>=8)text('MIL',cx+11*u,cy+8,font,'left','top');
  thickH(30,cx-16*u);thickH(cx+16*u,670);
  thickV(30,cy-18*u);thickV(cy+20*u,670);
  dot(cx,cy,1.8);
- c.restore();
+ p.flush();
 }
 
 function drawTree(c,center,u){
- const cx=center,cy=center,col='#172018',w=k=>Math.round(2+1.6*k);
- c.save();c.strokeStyle=col;c.fillStyle=col;c.lineCap='butt';
- const line=(x1,y1,x2,y2,lw)=>{if(Math.max(x1,x2)<-10||Math.min(x1,x2)>710||Math.max(y1,y2)<-10||Math.min(y1,y2)>710)return;c.lineWidth=lw;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke()};
- const dot=(x,y)=>{if(x<-5||x>705||y<-5||y>705)return;c.beginPath();c.arc(x,y,1.6,0,Math.PI*2);c.fill()};
+ const cx=center,cy=center,p=pen(c),{line,dot,text}=p,w=k=>Math.round(2+1.6*k);
+ const half=u/2>=5,one=u>=4,dm=skip(1,u),dm2=skip(2,u),lx=lstep(5,u),lm=lidx(2*u);
  const thickH=(a,b)=>{if(b>a)line(a,cy,b,cy,7)},thickV=(a,b)=>{if(b>a)line(cx,a,cx,b,7)};
- const text=(t,x,y,font,align,base='middle')=>{c.font=font;c.textAlign=align;c.textBaseline=base;if(x>-40&&x<740&&y>-20&&y<720)c.fillText(t,x,y)};
  thickH(30,cx-21*u);thickH(cx+21*u,670);
  line(cx-21*u,cy,cx+21*u,cy,1.2);
  for(let i=-20;i<=20;i++){
   if(!i)continue;
-  const x=cx+i*u,l=i%5?2:5;
-  line(x,cy-l,x,cy+l,1.2);
-  if(!(i%5))text(String(Math.abs(i)),x,cy-10,'600 12px system-ui','center');
-  if(!(i%2))dot(x,cy+1.5*u);
+  const x=cx+i*u,five=!(i%5),l=five?5:2;
+  if(five||one)line(x,cy-l,x,cy+l,1.2);
+  if(five&&lx&&Math.abs(i)%lx===0)text(String(Math.abs(i)),x,cy-10,'600 12px system-ui');
+  if(!(i%2)&&Math.abs(i/2)%dm2===0)dot(x,cy+1.5*u,1.6);
  }
  line(cx,cy,cx,cy-14*u,1.2);
  for(let i=1;i<=14;i++){
-  const y=cy-i*u,l=i%5?2:5;
-  line(cx-l,y,cx+l,y,1.2);
-  if(!(i%5))text(String(i),cx+8,y,'600 12px system-ui','left');
+  const y=cy-i*u,five=!(i%5),l=five?5:2;
+  if(five||one)line(cx-l,y,cx+l,y,1.2);
+  if(five&&lx&&i%lx===0)text(String(i),cx+8,y,'600 12px system-ui','left');
  }
  for(const s of [-1,1]){
   for(const m of [5,10]){
    const x=cx+s*m*u;
    line(x,cy-5*u,x,cy-2*u,4);
-   text(String(m),x,cy-5.6*u,'11px system-ui','center','bottom');
+   if(lx&&m%lx===0)text(String(m),x,cy-5.6*u,'11px system-ui','center','bottom');
   }
-  for(let m=5.5;m<10;m+=.5){
-   if(m===10)continue;
-   const x=cx+s*m*u;line(x,cy-3.5*u,x,cy-2*u,1.2);
-  }
+  for(let m=5.5;m<10;m+=.5)if(m%1?half:one){const x=cx+s*m*u;line(x,cy-3.5*u,x,cy-2*u,1.2)}
  }
  for(let m=2;m<=14;m+=2){
   let deep=0;
@@ -868,15 +936,49 @@ function drawTree(c,center,u){
   const y=cy+k*2*u,wk=w(k);
   for(const s of [-1,1]){
    line(cx+s*2*u,y,cx+s*wk*u,y,1.2);
-   for(let m=2;m<=wk;m++)dot(cx+s*m*u,y);
+   for(let m=2;m<=wk;m++)if(m%dm===0)dot(cx+s*m*u,y,1.6);
   }
-  text(String(k*2),cx,y,'600 12px system-ui','center');
-  if(k<7)line(cx-3,y+u,cx+3,y+u,1.2);
-  text('H'+k,cx-(wk+1.2)*u,y,'11px system-ui','right');
-  text('H'+k,cx+(wk+1.2)*u,y,'11px system-ui','left');
+  if(lm&&k%lm===0){
+   text(String(k*2),cx,y,'600 12px system-ui');
+   text('H'+k,cx-(wk+1.2)*u,y,'11px system-ui','right');
+   text('H'+k,cx+(wk+1.2)*u,y,'11px system-ui','left');
+  }
+  if(k<7&&one)line(cx-3,y+u,cx+3,y+u,1.2);
  }
- for(const s of [-1,1])for(let m=2;m<=w(8);m++)dot(cx+s*m*u,cy+16*u);
+ for(const s of [-1,1])for(let m=2;m<=w(8);m++)if(m%dm===0)dot(cx+s*m*u,cy+16*u,1.6);
  thickV(cy+17.5*u,670);
- text('MRAD',cx-16*u,cy+3.5*u,'11px system-ui','center');
- c.restore();
+ if(u>=8)text('MRAD',cx-16*u,cy+3.5*u,'11px system-ui');
+ p.flush();
+}
+
+// WebGL range view. Magnification = vertical field of view (so the reticle mil scale is exact), aim = camera rotation.
+function createGL(T,buildWorld){
+ const canvas=document.createElement('canvas');canvas.className='sniper-gl';canvas.setAttribute('aria-hidden','true');
+ const renderer=new T.WebGLRenderer({canvas,antialias:true,alpha:false,logarithmicDepthBuffer:true});
+ if(!renderer.getContext())throw new Error('no gl');
+ renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+ const camera=new T.PerspectiveCamera(10,1,.5,4500),aimAt=new T.Vector3(),right=new T.Vector3(),up=new T.Vector3();
+ camera.position.set(0,1.5,0);
+ let world=null,key='';
+ return{canvas,
+  size(w,h){if(w>0&&h>0)renderer.setSize(w,h,false)},
+  draw(state){
+   const D=distances[state.distance],w=weather[state.weather],tol=tolerance[state.distance],next=D+'|'+state.weather+'|'+tol;
+   if(next!==key){ // distance, weather or target size changed
+    world?.dispose();world=null;
+    world=buildWorld(T,{distance:D,wind:{east:w.east,flags:w.flags},targetRadiusM:tol/10*D/1000});key=next;
+    renderer.setClearColor(world.clearColor);
+   }
+   camera.fov=2*Math.atan(viewSize/2/uOf(state.zoom)/1000)*180/Math.PI;camera.updateProjectionMatrix();
+   camera.lookAt(world.targetCenter);camera.updateMatrixWorld();
+   right.setFromMatrixColumn(camera.matrixWorld,0);up.setFromMatrixColumn(camera.matrixWorld,1);
+   // the target must sit at +aim from the reticle centre, so the camera looks at -aim from the target (metres per tenth mil at D)
+   const m=D/10000;
+   aimAt.copy(world.targetCenter).addScaledVector(right,-state.aim.x*m).addScaledVector(up,-state.aim.y*m);
+   camera.lookAt(aimAt);
+   renderer.render(world.scene,camera);
+  },
+  update(dt){world?.update(dt)},
+  dispose(){world?.dispose();world=null;renderer.dispose();renderer.forceContextLoss()}
+ };
 }

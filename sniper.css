@@ -77,7 +77,9 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
  outline: 1px solid #626c56;
  box-shadow: 0 0 0 clamp(3px, .5vw, 7px) #282e25;
 }
-.sniper-scope canvas { display: block; position: static; width: 100%; height: 100%; touch-action: none; }
+.sniper-scope { position: relative; background: #bfbc95; }
+.sniper-scope canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.sniper-scope canvas.sniper-gl { pointer-events: none; }
 .sniper-pad { display: none; }
 .sniper-reticle { position: absolute; left: 12px; bottom: 12px; z-index: 1; display: flex; border: 1px solid #8f9a6a; border-radius: 10px; background: #101712e6; overflow: hidden; }
 .sniper-scene:has(.sniper-autoplay) .sniper-reticle { bottom: 112px; }

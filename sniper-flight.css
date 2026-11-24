@@ -17,3 +17,6 @@
 .sniper-flight.sf-nogl .sf-score{left:50%;bottom:auto;top:50%;transform:translate(-50%,-50%)}
 @media (max-width:560px){.sniper-flight .sf-score{width:calc(100% - 24px);bottom:64px}.sniper-flight .sf-hud div{min-width:52px}}
 @media (prefers-reduced-motion:reduce){.sniper-flight *{transition:none!important;animation:none!important}}
+
+.sniper-flight .sf-edge{position:absolute;left:0;top:0;z-index:2;font-size:34px;line-height:1;color:#f5ad53;text-shadow:0 0 6px #000a;pointer-events:none}
+.sniper-flight .sf-edge[hidden]{display:none}
