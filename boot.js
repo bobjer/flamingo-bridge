@@ -10,7 +10,10 @@ async function startGame(){
    window.dispatchEvent(new Event('game-ready'));return;
   }
   const side=await chooseSide();
-  if(side==='deepstrike'){
+  if(side==='sniper'){
+   const {startSniper}=await import('./sniper.js');
+   startSniper();
+  }else if(side==='deepstrike'){
    const {startDeepstrike}=await import('./deepstrike.js');
    startDeepstrike();
   }else if(side==='coalition'){
