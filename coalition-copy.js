@@ -1,9 +1,13 @@
 import {tr} from './language.js';
+import {specLine} from './unit-specs.js';
 
 export const fmtMoney = amount => tr(amount + ' млн €', '€' + amount + 'M');
 
 export const units = () => [tr('Фламінго', 'Flamingo'), tr('Малюк', 'Maliuk'), tr('Паляниця', 'Palianytsia'), tr('Нептун', 'Neptune')];
-export const unitHints = () => [tr('базовий', 'basic'), tr('швидкий, ППО збиває вдвічі рідше', 'fast, anti-air hits it half as often'), tr('оплата ×2, дальня камера дає 50%', 'pays ×2, far camera gets 50%'), tr('великий реактивний тризуб', 'giant jet-powered trident')];
+// Coalition order: Фламінго, Малюк, Паляниця, Нептун (base R-360 sea-skimmer). Real ТТХ are claimed figures.
+export const unitSpecIds = ['flamingo', 'maliuk', 'palianytsia', 'neptuneBase'];
+export const unitSpecLine = i => specLine(unitSpecIds[i]);
+export const unitHints = () => [tr('базовий', 'basic'), tr('низькопрофільний морський дрон: ППО збиває вдвічі рідше', 'low-profile naval drone: air defence hits it half as often'), tr('оплата ×2, дальня камера дає 50%', 'pays ×2, far camera gets 50%'), tr('протикорабельна, летить низько над водою', 'anti-ship, sea-skimming')];
 export function subjectName(id) {
   return ({arch: tr('Арка', 'Arch'), pier: tr('Опора', 'Pier'), cruiser: tr('Крейсер', 'Cruiser'),
     sam: tr('ЗРК', 'SAM'), tanker: tr('Танкер','Tanker'), truck: tr('Вантажівка','Truck'), hole: tr('Діра в покритті', 'Road crater')})[id];

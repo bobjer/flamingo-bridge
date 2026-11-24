@@ -7,6 +7,7 @@ import {partnerTurn,patrolSectors} from './deep-partners.js';
 import {defenses,interceptionChance,rollInterception} from './deep-interception.js';
 import {registerSessionSave} from './release-notice.js';
 import {tr} from './language.js';
+import {specLine,specNote,warheadScale} from './unit-specs.js';
 import {changeSide,read,write} from './factions.js';
 import './deepstrike.css';
 import {advanceConditions,boardImpact} from './site-condition.js';
@@ -23,12 +24,14 @@ const names=[
 const layers=[0,1,2,0,0,2,0,0,2,0,1,2];
 const sources=[['Власна розвідка','Field intelligence'],['Партнери','Partners'],['Супутник','Satellite']];
 const layerNames=[['Підприємства','Industry'],['Енергетика','Energy'],['Розвідка','Intelligence']];
-// Ranges and delivery intervals are board-game units.
+// Ranges and delivery intervals are board-game units. `spec` links a unit to its real-world figures in unit-specs.js:
+// range (km) -> limit, speed (km/h) -> cycle, warhead -> damage per hit. Real figures are softened toward the old balance:
+// limits keep the real range order (Фламінго longest, then Нептун Long, Малюк, Паляниця) but are compressed, the ~90 km/h naval drone is never faster than the missiles.
 const fleet=[
- {name:['Шурхіт','Rustle'],baseChance:24,weakTo:'net',limit:77,cycle:1,batch:2},
- {name:['Буревійник','Squallwing'],baseChance:18,weakTo:'guard',limit:103,cycle:3},
- {name:['Міднокрил','Copperwing'],baseChance:20,weakTo:'guard',limit:116,cycle:4},
- {name:['Тіньолист','Shadeleaf'],baseChance:22,weakTo:'net',limit:91,cycle:2},
+ {name:['Фламінго','Flamingo'],spec:'flamingo',baseChance:24,weakTo:'net',limit:100,cycle:1,batch:2},
+ {name:['Нептун','Neptune'],spec:'neptuneLong',baseChance:18,weakTo:'guard',limit:104,cycle:2},
+ {name:['Паляниця','Palianytsia'],spec:'palianytsia',baseChance:20,weakTo:'guard',limit:98,cycle:3},
+ {name:['Малюк','Maliuk'],spec:'maliuk',baseChance:22,weakTo:'net',limit:96,cycle:3},
  {name:['Зорескок','Starbound'],baseChance:8,weakTo:'dome',limit:69,partner:true,restrictedChance:0,cycle:2},
  {name:['Присмерк','Gloaming'],baseChance:16,weakTo:'guard',limit:84,partner:true,restrictedChance:.35,cycle:3},
  {name:['Пустушки','Dummies'],surveyOnly:true,surveyLoss:.05,limit:69,cycle:1,batch:4,start:12}
@@ -98,6 +101,40 @@ function surveyLossMarks(flights,wave){
 const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
 const bridgeReach=Math.hypot((43.5+50)/2-7,(89.7+90.7)/2-48);
 const initial=()=>({wave:1,credits:openingFunds,trust:openingTrust,intel:{},reports:[],flights:[],started:0,marks:[]});
+const smooth=pts=>{
+ if(pts.length<3)return 'M'+pts.map(p=>p.join(' ')).join('L');
+ let d='M'+pts[0].join(' ');
+ for(let i=0;i<pts.length-1;i++){
+  const p0=pts[i-1]??pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]??p2;
+  d+='C'+(p1[0]+(p2[0]-p0[0])/6).toFixed(2)+' '+(p1[1]+(p2[1]-p0[1])/6).toFixed(2)+' '+(p2[0]-(p3[0]-p1[0])/6).toFixed(2)+' '+(p2[1]-(p3[1]-p1[1])/6).toFixed(2)+' '+p2.join(' ');
+ }
+ return d;
+};
+// Closed Catmull-Rom for polygons (drops a repeated closing point first).
+const smoothClosed=pts=>{
+ const q=pts.length>1&&pts[0][0]===pts.at(-1)[0]&&pts[0][1]===pts.at(-1)[1]?pts.slice(0,-1):pts,n=q.length;
+ let d='M'+q[0].join(' ');
+ for(let i=0;i<n;i++){
+  const p0=q[(i+n-1)%n],p1=q[i],p2=q[(i+1)%n],p3=q[(i+2)%n];
+  d+='C'+(p1[0]+(p2[0]-p0[0])/6).toFixed(2)+' '+(p1[1]+(p2[1]-p0[1])/6).toFixed(2)+' '+(p2[0]-(p3[0]-p1[0])/6).toFixed(2)+' '+(p2[1]-(p3[1]-p1[1])/6).toFixed(2)+' '+p2.join(' ');
+ }
+ return d+'Z';
+};
+// Deterministic organic S-wobble + fan spread for a route polyline (ends stay fixed).
+const wobble=(path,seed,sign=seed%2?1:-1)=>{
+ const total=travel(path,0).total;
+ if(!(total>4))return path;
+ const n=Math.max(18,Math.min(56,Math.round(total/1.4))),
+  a1=total*(.07+((seed*37)%6)/100),a2=total*(.02+((seed*11)%3)/200),f=1.5+((seed*13)%3)*.5,ph=(seed*1.7)%3.14;
+ return Array.from({length:n+1},(_,k)=>{
+  const t=k/n,c=travel(path,t),th=c.angle*Math.PI/180,env=Math.sin(Math.PI*t),
+   off=sign*a1*Math.sin(Math.PI*t**.75)+a2*env*Math.sin(2*Math.PI*f*t+ph);
+  const x=c.x-Math.sin(th)*off,y=c.y+Math.cos(th)*off;
+  return k===0||k===n?[c.x,c.y]:[Math.min(98,Math.max(2,x)),Math.min(98,Math.max(2,y))];
+ });
+};
+const bowedPath=(end,i,number)=>wobble([[7,48],end],i*5+(number??0),i%2?1:-1);
+const parsePts=str=>str.split(' ').map(p=>p.split(',').map(Number));
 export function startDeepstrike(){
  const s=read(key)||initial(),visible=s.plan?.layers??[true,true,true];
  // Plan targets are site -> {type:count}. Older saves stored [site,type] pairs (or a type list).
@@ -228,18 +265,23 @@ export function startDeepstrike(){
   const damageMultiplier=repeatLaunch()?1.25:1;
   const landed=new Map();
   s.reports=[...groups].filter(()=>Math.random()<.75).map(([i,flights])=>{
-   const hits=flights.filter(f=>!f.lost&&Math.random()<accuracy).length;
-   landed.set(i,hits);
+   const hitFlights=flights.filter(f=>!f.lost&&Math.random()<accuracy),hits=hitFlights.length;
+   landed.set(i,hitFlights.map(f=>fleet[f.type].spec?warheadScale(fleet[f.type].spec):1));
    return {i,source:Math.random()<.5?0:1,hit:hits>0};
   });
   for(const report of s.reports)if(report.i===0&&report.hit){report.fire=Math.random()<.75;if(report.fire)report.fireSeed=crypto.getRandomValues(new Uint32Array(1))[0]}
   s.repairs=advanceConditions(s.conditions,s.reports,s.wave,Math.random,damageMultiplier);
-  // advanceConditions applies one impact per report; add one more roll per extra drone that landed.
+  // advanceConditions applies one impact per report (scaled here by the first landed warhead); add one more roll per extra drone that landed.
   for(const report of s.reports){
-   const hits=landed.get(report.i)??0;
-   if(!report.hit||hits<2||report.damage===undefined)continue;
-   let damage=report.damage;
-   for(let n=1;n<hits;n++)damage=Math.min(100,damage+boardImpact(damageMultiplier));
+   const weights=landed.get(report.i)??[],hits=weights.length;
+   if(!report.hit||report.damage===undefined)continue;
+   let damage=Math.min(100,report.previous+Math.round(report.impact*weights[0]));
+   if(hits<2){
+    s.conditions[report.i].damage=damage;
+    Object.assign(report,{damage,impact:damage-report.previous});
+    continue;
+   }
+   for(let n=1;n<hits;n++)damage=Math.min(100,damage+boardImpact(damageMultiplier*weights[n]));
    s.conditions[report.i].damage=damage;
    Object.assign(report,{damage,impact:damage-report.previous,hits});
   }
@@ -391,9 +433,14 @@ export function startDeepstrike(){
   if(!flying&&campaignOver()){showCampaignResult();return}
   const phase=flying?tr('У польоті','In flight'):tr('Планування','Planning');
   const autoLabel=autoOn?tr('Грати самому','Take over'):tr('Автогра','Autoplay');
+  const star=(n,a,b)=>'M'+Array.from({length:n*2},(_,i)=>{const r=i%2?b:a,t=Math.PI*i/n;return (r*Math.sin(t)).toFixed(2)+' '+(-r*Math.cos(t)).toFixed(2)}).join('L')+'Z';
+  const hitStar=star(8,2.3,1.15),adStar=star(8,2.2,1.05);
   const legend='<details class="deep-legend"'+(legendOpen?' open':'')+'><summary>'+tr('Легенда','Legend')+'</summary><ul>'+
    [0,1,2].map(l=>'<li>'+glyphSvg(l)+tr(...layerNames[l])+'</li>').join('')+
-   '<li><i class="lg lg-base"></i>'+tr('База запуску','Launch base')+'</li><li><i class="lg lg-range"></i>'+tr('Радіус дальності','Range ring')+'</li><li><i class="lg lg-alert"></i>'+tr('Імовірна ППО','Suspected air defence')+'</li><li><i class="lg lg-sel"></i>'+tr('Обрана ціль','Selected target')+'</li><li><i class="lg lg-survey"></i>'+tr('Сектор розвідки','Survey sector')+'</li><li><i class="lg lg-ad"></i>'+tr('ППО? (за втратами)','AD? (from losses)')+'</li><li><i class="lg lg-ew"></i>'+tr('РЕБ? (за втратами)','EW? (from losses)')+'</li><li><i class="lg lg-loss"></i>'+tr('Збито / заглушено','Shot / jammed')+'</li></ul></details>';
+   '<li><i class="lg lg-base"></i>'+tr('База запуску','Launch base')+'</li><li><i class="lg lg-range"></i>'+tr('Радіус дальності','Range ring')+'</li><li><i class="lg lg-alert"></i>'+tr('Імовірна ППО','Suspected air defence')+'</li><li><i class="lg lg-sel"></i>'+tr('Обрана ціль','Selected target')+'</li><li><i class="lg lg-survey"></i>'+tr('Сектор розвідки','Survey sector')+'</li><li><i class="lg lg-ad"></i>'+tr('ППО? (за втратами)','AD? (from losses)')+'</li><li><i class="lg lg-ew"></i>'+tr('РЕБ? (за втратами)','EW? (from losses)')+'</li><li><i class="lg lg-loss"></i>'+tr('Збито / заглушено','Shot / jammed')+'</li>'+
+   '<li><svg class="lg-svg" viewBox="-2.6 -2.6 5.2 5.2" width="14" height="14" aria-hidden="true"><path d="'+hitStar+'" fill="#ff3b30" stroke="#ffb4a8" stroke-width=".15" stroke-linejoin="round"/></svg>'+tr('Влучання','Hit')+'</li>'+
+   '<li><svg class="lg-svg" viewBox="-2.6 -2.6 5.2 5.2" width="14" height="14" aria-hidden="true"><path d="'+adStar+'" fill="#ffe600" stroke="#2a2500" stroke-width=".2" stroke-linejoin="round"/></svg>'+tr('ППО','Air defence')+'</li>'+
+   '<li><svg class="lg-svg lg-track" viewBox="0 -2 8 4" width="22" height="11" aria-hidden="true"><path d="M0 0H5.4" stroke="#ff9a2e" stroke-width=".5" stroke-linecap="round"/><path transform="translate(7 0) scale(1.6)" fill="#ff9a2e" d="M.7 0L-1.1-.75L-.7 0L-1.1.75Z"/></svg>'+tr('Трек БпЛА','UAV track')+'</li></ul></details>';
   root.innerHTML=coalitionHeader('<button class="c-sides c-auto" data-auto aria-pressed="'+autoOn+'">'+autoLabel+'</button><span class="chip"><i class="dot"></i>'+phase+'</span><button class="c-sides" data-exit>'+tr('Сторони','Factions')+'</button>')+
    '<section class="c-main deep-layout"><aside class="col c-left"><section class="panel br deep-phase"><div class="label">'+tr('Поточна фаза','Current phase')+'</div><div class="phase-row"><b class="big">'+String(s.wave).padStart(2,'0')+'</b><div><h1>'+tr('Діпстрайк','Deepstrike')+'</h1><div class="c-phase"><span class="deep-phase-chip" data-flying="'+flying+'">'+phase+'</span></div></div></div><div class="deep-credits"><span>'+tr('Кредити','Credits')+'</span><b>'+s.credits+'</b></div></section><section class="panel br" data-supply></section></aside>'+
    '<section class="c-play panel br"><div class="label">'+tr('Карта секторів','Sector map')+'</div><div class="deep-layers c-toggles"></div><svg viewBox="0 0 100 100" aria-label="'+tr('Карта секторів','Sector map')+'"></svg>'+legend+'</section>'+
@@ -483,6 +530,7 @@ export function startDeepstrike(){
      (unit.surveyOnly?'<span class="deep-chips"><small class="deep-chip survey" title="'+tr('Розвідка · ризик перехоплення','Survey · interception chance')+' '+Math.round(unit.surveyLoss*100)+'%">'+tr('Розвідка · ризик перехоплення','Survey · interception chance')+' <b>'+Math.round(unit.surveyLoss*100)+'%</b></small></span>':
      '<span class="deep-chips"><small class="deep-chip" title="'+tr(...defense.profile)+' · '+tr('Шанс перехоплення','Intercept chance')+' '+unit.baseChance+'%">'+tr('Перехоплення','Intercept')+' <b>'+unit.baseChance+'%</b></small>'+
      '<small class="deep-chip weak" title="'+tr('Проти ППО','Against')+' «'+tr(...defense.name)+'» · '+interceptionChance(unit,unit.weakTo)+'%">'+tr('Слабкий проти','Weak to')+' «'+tr(...defense.name)+'» <b>'+interceptionChance(unit,unit.weakTo)+'%</b></small></span>')+
+     (unit.spec?'<small class="deep-spec" title="'+specNote(unit.spec)+'">'+tr('ТТХ','Specs')+' · '+specLine(unit.spec)+'</small>':'')+
      '<small class="deep-prod">'+tr('Ціна борта','Unit cost')+' '+launchPrices[id]+' · '+(unit.partner?tr('Шанс поставки','Delivery chance')+' '+Math.round(deliveryChance(unit,s.wave,s.diplomacy)*100)+'%':tr('Виробництво','Production'))+' +'+(unit.batch??1)+' / '+unit.cycle+' '+tr('хв. гри','game waves')+'</small>';
     card.onclick=()=>{active=id;render();root.querySelector('[data-unit="'+id+'"]').focus({preventScroll:true})};
     const group=document.createElement('div');group.className='deep-unit-group';group.append(card);
@@ -536,24 +584,32 @@ export function startDeepstrike(){
   const coast='0,88 8,87 14,88 19,90 26,87 30,89 35,92 40,92 44,90 43,88 48,87 50,90 52,93 62,94 70,91 83,94 92,90 100,91';
   const reverse=line=>line.split(' ').reverse().join(' ');
   const occ=outer+' 44,90 40,92 35,92 30,89 '+reverse(inner);
+  const homeD=smoothClosed(parsePts(homeOutline)),occD=smoothClosed(parsePts(occ)),coastD=smooth(parsePts(coast));
   const sea=tr('Море','Sea'),bridge=tr('Міст','Bridge');
-  const ticks=[0,20,40,60,80].map(v=>'<path class="ds-tick-line" d="M0 '+v+'H1.1M'+v+' 100V98.9"/><text class="ds-tick" x="1.5" y="'+(v+(v?.7:2.4))+'">'+Math.round(54-v*.125)+tr('°пн','°N')+'</text><text class="ds-tick" x="'+(v+.8)+'" y="98.2" '+(v?'':'dx="2.5"')+'>'+Math.round(20+v*.2)+tr('°сх','°E')+'</text>').join('');
+  const terrain=(id,seed,lo,hi,fine=.33,ridge=.35)=>'<filter id="'+id+'" filterUnits="userSpaceOnUse" x="0" y="0" width="100" height="100" color-interpolation-filters="sRGB">'+
+   '<feTurbulence type="fractalNoise" baseFrequency=".03 .045" numOctaves="5" seed="'+seed+'" result="a"/>'+
+   '<feTurbulence type="fractalNoise" baseFrequency=".21" numOctaves="4" seed="'+(seed+7)+'" result="b"/>'+
+   '<feColorMatrix in="a" type="matrix" values="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1" result="ga"/>'+
+   '<feColorMatrix in="b" type="matrix" values="1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 0 0 0 0 1" result="gb"/>'+
+   '<feComponentTransfer in="gb" result="rb"><feFuncR type="table" tableValues="0 .9 0"/><feFuncG type="table" tableValues="0 .9 0"/><feFuncB type="table" tableValues="0 .9 0"/></feComponentTransfer>'+
+   '<feComposite in="ga" in2="gb" operator="arithmetic" k1="0" k2="1" k3="'+fine+'" k4="'+(-fine/2)+'" result="m"/>'+
+   '<feComposite in="m" in2="rb" operator="arithmetic" k1="0" k2="1" k3="'+ridge+'" k4="'+(-ridge*.3)+'" result="m2"/>'+
+   '<feComponentTransfer in="m2" result="c"><feFuncR type="linear" slope="2.6" intercept="-.8"/><feFuncG type="linear" slope="2.6" intercept="-.8"/><feFuncB type="linear" slope="2.6" intercept="-.8"/></feComponentTransfer>'+
+   '<feColorMatrix in="c" type="matrix" values="'+[0,1,2].map(k=>[hi[k]-lo[k],0,0,0,lo[k]].join(' ')).join(' ')+' 0 0 0 0 1"/></filter>';
   const wave=y=>'<path class="ds-wave" d="M0 '+y+' q1.5-.7 3 0'+' t3 0'.repeat(33)+'"/>';
   map.innerHTML='<defs><linearGradient id="wake" gradientUnits="userSpaceOnUse" x1="-7" x2="0"><stop stop-color="white" stop-opacity="0"/><stop offset="1" stop-color="white" stop-opacity=".8"/></linearGradient>'+
-   '<pattern id="sector-grid" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="#6f8f95" stroke-width=".14"/></pattern>'+
-   '<linearGradient id="ds-sea" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#27506a"/><stop offset="1" stop-color="#0b1c29"/></linearGradient>'+
-   '<linearGradient id="ds-home" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2f4d4a"/><stop offset="1" stop-color="#1f3533"/></linearGradient>'+
-   '<linearGradient id="ds-occ" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#5a4c33"/><stop offset="1" stop-color="#3d3325"/></linearGradient>'+
-   '<linearGradient id="ds-foe" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#51393f"/><stop offset="1" stop-color="#34252b"/></linearGradient>'+
-   '<pattern id="ds-hatch-occ" width="1.7" height="1.7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0V1.7" stroke="#e4c98f" stroke-opacity=".2" stroke-width=".45"/></pattern>'+
+   terrain('ds-t-foe',3,[.015,.017,.014],[.085,.088,.075])+terrain('ds-t-home',11,[.06,.135,.08],[.2,.38,.24],.3,.3)+terrain('ds-t-occ',23,[.13,.055,.045],[.32,.15,.115],.34,.3)+terrain('ds-t-sea',41,[.008,.012,.017],[.04,.05,.062],.2,.1)+
+   '<filter id="ds-glow" filterUnits="userSpaceOnUse" x="-10" y="-10" width="120" height="120"><feGaussianBlur stdDeviation=".45"/></filter>'+
+   '<filter id="ds-halo" filterUnits="userSpaceOnUse" x="-10" y="-10" width="120" height="120"><feGaussianBlur stdDeviation=".9"/></filter>'+
    '<pattern id="ds-hatch-alert" width="1.5" height="1.5" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)"><path d="M0 0V1.5" stroke="#ff6b5e" stroke-opacity=".6" stroke-width=".55"/></pattern>'+
-   '<radialGradient id="ds-range"><stop stop-color="#7fcfa6" stop-opacity=".02"/><stop offset=".7" stop-color="#7fcfa6" stop-opacity=".06"/><stop offset="1" stop-color="#7fcfa6" stop-opacity=".2"/></radialGradient>'+
-   '<clipPath id="ds-clip-home"><polygon points="'+homeOutline+'"/></clipPath><clipPath id="ds-clip-occ"><polygon points="'+occ+'"/></clipPath></defs>'+
-   '<rect class="atlas-land land-2" width="100" height="100"/>'+
-   '<polygon class="atlas-land land-1" points="'+occ+'"/><polygon fill="url(#ds-hatch-occ)" points="'+occ+'" pointer-events="none"/><polygon class="ds-shade" clip-path="url(#ds-clip-occ)" points="'+occ+'"/>'+
-   '<polygon class="atlas-land land-0" points="'+homeOutline+'"/><polygon class="ds-shade" clip-path="url(#ds-clip-home)" points="'+homeOutline+'"/>'+
-   '<polygon fill="url(#ds-sea)" points="'+coast+' 100,100 0,100"/>'+wave(97.6)+wave(99.5)+
-   '<rect width="100" height="100" fill="url(#sector-grid)" opacity=".55" pointer-events="none"/>'+ticks+
+   '<radialGradient id="ds-range"><stop stop-color="#7fcfa6" stop-opacity="0"/><stop offset=".85" stop-color="#7fcfa6" stop-opacity=".02"/><stop offset="1" stop-color="#7fcfa6" stop-opacity=".1"/></radialGradient>'+
+   '<clipPath id="ds-clip-home"><path d="'+homeD+'"/></clipPath><clipPath id="ds-clip-occ"><path d="'+occD+'"/></clipPath><clipPath id="ds-clip-sea"><path d="'+coastD+'L100 100L0 100Z"/></clipPath><radialGradient id="ds-vignette" cx=".5" cy=".5" r=".75"><stop offset=".5" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".6"/></radialGradient></defs>'+
+   '<rect class="atlas-land land-2" width="100" height="100" filter="url(#ds-t-foe)"/>'+
+   '<rect class="atlas-land land-1" width="100" height="100" filter="url(#ds-t-occ)" clip-path="url(#ds-clip-occ)"/>'+
+   '<path class="ds-shade" clip-path="url(#ds-clip-occ)" d="'+occD+'"/>'+
+   '<rect class="atlas-land land-0" width="100" height="100" filter="url(#ds-t-home)" clip-path="url(#ds-clip-home)"/>'+
+   '<path class="ds-shade" clip-path="url(#ds-clip-home)" d="'+homeD+'"/>'+
+   '<rect class="ds-sea" width="100" height="100" filter="url(#ds-t-sea)" clip-path="url(#ds-clip-sea)"/>'+
    '<circle class="ds-range" cx="7" cy="48" r="'+R+'" fill="url(#ds-range)"/>'+
    '<text class="ds-range-label" x="12" y="57.6">'+tr('дальність ','range ')+Math.round(R)+'</text>'+
    '<path class="atlas-river-bank" d="M48 1 Q46 15 49 24 T46 45 Q39 55 43 65 T40 86"/><path class="atlas-river" d="M48 1 Q46 15 49 24 T46 45 Q39 55 43 65 T40 86"/>';
@@ -562,8 +618,9 @@ export function startDeepstrike(){
    const col=id%4,row=Math.floor(id/4);
    map.insertAdjacentHTML('beforeend','<rect class="atlas-alert" x="'+xEdges[col]+'" y="'+yEdges[row]+'" width="'+(xEdges[col+1]-xEdges[col])+'" height="'+(yEdges[row+1]-yEdges[row])+'"/><g class="ds-warn" transform="translate('+(xEdges[col]+4.5)+' '+(yEdges[row]+5)+')"><title>'+tr('Імовірна ППО','Suspected air defence')+'</title><path d="M0-2.7 2.7 1.9H-2.7Z"/><path class="ds-warn-i" d="M0-.9V.5"/><circle cy="1.2" r=".2"/></g>');
   }
-  for(const line of [north,inner,outer])map.insertAdjacentHTML('beforeend','<polyline class="atlas-border" points="'+line+'"/>');
-  map.insertAdjacentHTML('beforeend','<polyline class="ds-coast" points="'+coast+'"/>'+
+  for(const line of [north,inner,outer])map.insertAdjacentHTML('beforeend','<path class="atlas-border-glow" filter="url(#ds-halo)" d="'+smooth(parsePts(line))+'"/><path class="atlas-border" d="'+smooth(parsePts(line))+'"/>');
+  map.insertAdjacentHTML('beforeend','<rect class="ds-vignette" width="100" height="100" fill="url(#ds-vignette)" pointer-events="none"/>');
+  map.insertAdjacentHTML('beforeend','<path class="ds-coast" d="'+coastD+'"/>'+
    '<g pointer-events="none"><path d="M43.5 89.7L50 90.7" stroke="#232c30" stroke-width="1.9"/><path d="M43.5 89.7L50 90.7" stroke="#e9d6a7" stroke-width=".85"/><text class="atlas-city" x="46" y="95">'+bridge+'</text></g>');
   for(const [name,x,y] of [['Ненька',10,62],['Ордло',31,67],['Мордор',78,13],[sea,12,96]])map.insertAdjacentHTML('beforeend','<text class="atlas-territory'+(name===sea?' sea':'')+'" transform="rotate('+(name==='Ордло'?82:0)+' '+x+' '+y+')" x="'+x+'" y="'+y+'">'+name+'</text>');
   map.insertAdjacentHTML('beforeend','<g class="ds-base" pointer-events="none"><title>'+tr('База запуску','Launch base')+'</title><circle cx="7" cy="48" r="2.7"/><path d="M7 44.6V51.4M3.6 48H10.4"/><path class="ds-base-star" d="M7 46.1 8.3 48 7 49.9 5.7 48Z"/><text class="atlas-city" x="7" y="54.2">'+tr('База','Base')+'</text></g>');
@@ -577,7 +634,7 @@ export function startDeepstrike(){
    const ad=e.kind==='ad',label=kindName(e.kind)+(e.confirmed?' ×'+e.hits:'?'),ago=Math.max(0,s.wave-1-e.wave);
    map.insertAdjacentHTML('beforeend','<g class="th th-'+e.kind+(e.confirmed?' conf':'')+(e.stale?' stale':'')+'" pointer-events="none"><title>'+label+' · '+confidence(e)+'% · ±'+Math.round(e.r)+' · '+ago+tr(' хв. тому',' w. ago')+(e.stale?' · '+tr('застаріло','stale'):'')+'</title>'+
     '<circle class="th-ring" cx="'+e.x+'" cy="'+e.y+'" r="'+e.r+'"/><g transform="translate('+e.x+' '+e.y+')">'+
-    (ad?'<path class="th-glyph" d="M0-2.2 2.1 1.6H-2.1Z"/><circle class="th-in" r=".6" cy=".35"/>':'<circle class="th-glyph" r="2"/><path class="th-in" d="M.5-1.4-.9.2H0L-.5 1.4 .9-.2H0Z"/>')+
+    (ad?'<path class="th-glyph th-star" d="'+adStar+'"/><circle class="th-in" r=".55"/>':'<circle class="th-glyph" r="2"/><path class="th-in" d="M.5-1.4-.9.2H0L-.5 1.4 .9-.2H0Z"/>')+
     '</g><text class="atlas-city th-label" x="'+e.x+'" y="'+(e.y+4.4)+'">'+label+'</text></g>');
   }
   if(!flying){
@@ -587,9 +644,12 @@ export function startDeepstrike(){
     map.insertAdjacentHTML('beforeend','<g class="ds-sector'+(index===sector?' cur':'')+'" data-sector="'+index+'" pointer-events="none"><title>'+tr('Сектор розвідки','Survey sector')+' · '+tr(...entry.label)+'</title><circle cx="'+x+'" cy="'+y+'" r="2.5"/><circle class="ds-sector-dot" cx="'+x+'" cy="'+y+'" r=".45"/><text x="'+x+'" y="'+(y+4.8)+'">'+tr(...entry.label)+(count?' ×'+count:'')+'</text></g>');
    });
    let n=0;
+   const planGlow=document.createElementNS('http://www.w3.org/2000/svg','g');
+   planGlow.setAttribute('pointer-events','none');planGlow.setAttribute('filter','url(#ds-glow)');map.append(planGlow);
    for(const [i,row] of selected){
-    const path=sitePath(i,row,flags),[ex,ey]=points[i];n++;
-    map.insertAdjacentHTML('beforeend','<polyline class="atlas-plan" points="'+path.map(p=>p.join(',')).join(' ')+'"/>'+
+    const path=wobble(sitePath(i,row,flags),i*5+1,i%2?1:-1),[ex,ey]=points[i],pts=smooth(path);n++;
+    planGlow.insertAdjacentHTML('beforeend','<path class="atlas-plan-glow" d="'+pts+'"/>');
+    map.insertAdjacentHTML('beforeend','<path class="atlas-plan" d="'+pts+'"/>'+
      [.22,.45,.68].map(f=>{const c=travel(path,f);return '<path class="ds-chev" transform="translate('+c.x+' '+c.y+') rotate('+c.angle+')" d="M-.7-.7L.2 0L-.7.7"/>'}).join('')+
      '<g class="ds-num" transform="translate('+(ex-3.2)+' '+(ey-3.2)+')" pointer-events="none"><circle r="1.55"/><text y=".65">'+n+'</text></g>');
    }
@@ -660,15 +720,19 @@ export function startDeepstrike(){
    el?.focus({preventScroll:true});refocusStep=null;
   }
   if(refocusCard>=0){root.querySelector('[data-card="'+refocusCard+'"]')?.focus({preventScroll:true});refocusCard=-1}
+  const tones={o:['#ff7a00','#ff9a2e','#ff8f1f','#ffd9a8'],r:['#7d2a22','#a8392f','#bd4a3e','#e6867a'],g:['#4fbf8a','#7fcfa6','#a8e6c4','#effff6'],c:['#3fb5d0','#6fd3e8','#9be6f5','#e4fbff']};
   function drawTracks(overlay,flights,elapsed){
    const past=elapsed===Infinity,calm=reduced();
+   let glows='';const bodies=[];
    for(const f of flights){
     const t=Math.min(1,elapsed/f.duration),laneLoss=!!(f.lane&&f.lost),jam=f.cause==='jammed';
-    const path=f.path??[[7,48],points[f.i]];
+    const path=f.path?wobble(f.path,f.i*5+(f.number??0),f.i%2?1:-1):bowedPath(points[f.i],f.i,f.number);
     const {x:px,y:py,angle,segment}=travel(path,laneLoss?Math.min(t,f.lossAt):t*(f.lost?lostTrackFraction:1));
-    const flown=[...path.slice(0,segment+1),[px,py]].map(p=>p.join(',')).join(' ');
-    const done=laneLoss?t>=f.lossAt:t===1,k=past?1:Math.min(1,Math.max(0,(elapsed-(laneLoss?f.lossAt*f.duration:f.duration))/1200)),tone=done?(f.lost?(jam?'#6fd3e8':'#ff6b5e'):f.survey?'#7fcfa6':'#ffb347'):f.survey?'#bfeed3':'#ece4bd';
-    let h='<g class="trk'+(past?' past':'')+'">'+(past?'':'<polyline class="trk-plan" points="'+path.map(p=>p.join(',')).join(' ')+'"/><polyline class="trk-glow" stroke="'+tone+'" points="'+flown+'"/>')+'<polyline class="trk-line atlas-track" stroke="'+tone+'" points="'+flown+'"/>';
+    const flownPts=[...path.slice(0,segment+1),[px,py]],flown=smooth(flownPts);
+    const done=laneLoss?t>=f.lossAt:t===1,k=past?1:Math.min(1,Math.max(0,(elapsed-(laneLoss?f.lossAt*f.duration:f.duration))/1200));
+    const tone=done&&f.lost?(jam?tones.c:tones.r):f.survey?tones.g:tones.o,head=done&&f.lost?tone[2]:'#ff9a2e';
+    glows+='<path class="trk-glow trk-glow-o" stroke="'+tone[0]+'" d="'+flown+'"/><path class="trk-glow" stroke="'+tone[1]+'" d="'+flown+'"/>';
+    let h='<g class="trk'+(past?' past':'')+'">'+(past?'':'<path class="trk-plan" stroke="'+tone[1]+'" d="'+smooth(path)+'"/>')+'<path class="trk-line atlas-track" stroke="'+tone[2]+'" d="'+flown+'"/><path class="trk-core" stroke="'+tone[3]+'" d="'+flown+'"/>'+(done&&f.lost?'':'<path class="trk-arrow" fill="'+(f.survey?tone[2]:'#ffa733')+'" transform="translate('+px+' '+py+') rotate('+angle+')" d="M1.5 0L-.7-1.15L-.3 0L-.7 1.15Z"/>');
     if(!past&&f.surprise&&t>=.4){
      const [x,y]=f.surprise,pulse=calm?0:Math.abs(Math.sin(elapsed/230));
      h+='<g class="trk-warn"><circle cx="'+x+'" cy="'+y+'" r="'+(3.1+pulse*.9)+'" fill="#db564730" stroke="#eb7962" stroke-width=".4" stroke-opacity="'+(.95-pulse*.4)+'"/><circle cx="'+x+'" cy="'+y+'" r="'+(1.8+pulse*.4)+'" fill="none" stroke="#eb7962" stroke-width=".25" stroke-dasharray=".6 .5"/><text x="'+x+'" y="'+(y+1)+'">!</text></g>';
@@ -681,11 +745,12 @@ export function startDeepstrike(){
      symbol=(past?'':'<circle class="trk-ring'+(jam?' jam':'')+'" r="'+(1.4+kr*3.6)+'" opacity="'+(.85*(1-kr))+'"/>')+(jam?'<path class="trk-bolt" d="M.6-1.9-1 .35H0L-.6 1.9 1-.35H0Z"'+(past?' transform="scale(.7)"':'')+'/>':'<path class="trk-x" d="M-1.5-1.5L1.5 1.5M1.5-1.5L-1.5 1.5"'+(past?' transform="scale(.7)"':'')+'/>');
     }
     else if(f.survey)symbol='<g class="trk-ok"'+(past?' transform="scale(.8)"':'')+'>'+(past?'':'<circle class="trk-wave ok" r="'+(1.5+k*3)+'" opacity="'+(.9*(1-k))+'"/>')+'<circle r="1.35"/><path d="M-.7 0L-.2.6L.75-.6"/></g>';
-    else symbol='<g'+(past?' transform="scale(.6)"':'')+'>'+(past?'':'<circle class="trk-wave" r="'+(1.5+k*4)+'" opacity="'+(.9*(1-k))+'"/>'+[0,1,2,3,4,5,6,7].map(a=>'<path class="trk-ray" d="M0-1.9V-'+(2.8+k*1.1)+'" transform="rotate('+(a*45+(a%2?0:11))+')"/>').join(''))+'<circle r="2.1" fill="#ff802740"/><path d="M0 1.5C-2 1-1.6-.4-.6-1.3L-.45-.45Q.4-1 .15-2.4C2 .1 1.6 1.2 0 1.5" fill="#ff972e"/><circle cy=".6" r=".55" fill="#ffe39a"/></g>';
+    else symbol='<g transform="scale('+(past?1.4:1.6)+')">'+(past?'':'<circle class="trk-wave" r="'+(1.5+k*4)+'" opacity="'+(.9*(1-k))+'"/>')+'<path class="trk-hit" d="'+hitStar+'"/><circle class="trk-hit-in" r=".5"/></g>';
     if(past&&done)symbol+=f.lost||f.survey?'':'<g class="trk-tick" transform="translate(2.4 -2.4)"><circle r="1.2"/><path d="M-.6 0L-.15.5L.65-.5"/></g>';
     h+='<g '+(f.survey?'data-survey-unit="'+f.number+'" ':'')+'transform="translate('+px+' '+py+')"><title>'+tr(...fleet[f.type??0].name)+(f.survey?' #'+f.number:'')+'</title>'+symbol+'</g></g>';
-    overlay.insertAdjacentHTML('beforeend',h);
+    bodies.push(h);
    }
+   overlay.insertAdjacentHTML('beforeend','<g class="trk-glows'+(past?' past':'')+'" filter="url(#ds-glow)" pointer-events="none">'+glows+'</g>'+bodies.join(''));
   }
   if(!flying&&s.lastTracks?.length){
    const history=document.createElementNS('http://www.w3.org/2000/svg','g');

@@ -1,4 +1,4 @@
-.deep-board{--soft:#8fa0b0;--land-line:#dcc2a0;--site-0:#7fc3c0;--site-1:#e6c35c;--site-2:#f08a6c;--r-good:var(--good);--r-bad:var(--bad);display:block;position:fixed;inset:0;z-index:1000;overflow:auto;background:var(--bg);color:var(--fg);font:14px/1.45 var(--body)}
+.deep-board{--soft:#8fa0b0;--land-line:#dcc2a0;--map-font:'Bebas Neue','Oswald','Arial Narrow',var(--display),sans-serif;--site-0:#7fc3c0;--site-1:#e6c35c;--site-2:#f08a6c;--r-good:var(--good);--r-bad:var(--bad);display:block;position:fixed;inset:0;z-index:1000;overflow:auto;background:var(--bg);color:var(--fg);font:14px/1.45 var(--body)}
 .deep-board .top{height:auto}
 .deep-board h1{margin:0;font:700 22px var(--display)}
 .deep-layout{align-items:start}
@@ -23,33 +23,33 @@
 @media(max-width:680px){.deep-board .top{grid-template-columns:1fr auto}.deep-board .top-left .label{display:none}.deep-board .top-title{display:none}.deep-board .top-status{justify-content:end}}
 
 /* ---- map: land, sea, graticule ---- */
-.atlas-land.land-0{fill:url(#ds-home)}
-.atlas-land.land-1{fill:url(#ds-occ)}
-.atlas-land.land-2{fill:url(#ds-foe)}
-.ds-shade{fill:none;stroke:#05090c;stroke-opacity:.38;stroke-width:3.4;stroke-linejoin:round;pointer-events:none}
-.ds-wave{fill:none;stroke:#8fc3d6;stroke-opacity:.2;stroke-width:.16;pointer-events:none}
-.deep-layout .ds-tick{font:1.7px var(--mono);fill:#b9cdd4;fill-opacity:.8;text-anchor:start;pointer-events:none;paint-order:stroke;stroke:#0b1118;stroke-width:.4px}
-.ds-tick-line{stroke:#b9cdd4;stroke-opacity:.6;stroke-width:.2;pointer-events:none}
-.atlas-border{fill:none;stroke:var(--land-line);stroke-width:.5;stroke-linejoin:round;stroke-linecap:round;pointer-events:none}
-.ds-coast{fill:none;stroke:#9fc2cc;stroke-width:.4;stroke-linejoin:round;pointer-events:none}
-.atlas-river-bank{fill:none;stroke:#6f9fb0;stroke-opacity:.25;stroke-width:1.9;stroke-linecap:round}
-.atlas-river{fill:none;stroke:#5d8ea3;stroke-width:.7;stroke-linecap:round}
-.deep-layout .atlas-territory{font:650 3.4px var(--display);letter-spacing:.35px;fill:#f3e6d2;fill-opacity:.9;paint-order:stroke;stroke:#262321;stroke-width:.7px;stroke-linejoin:round;pointer-events:none}
+.atlas-land.land-0{fill:#1d3526}
+.atlas-land.land-1{fill:#2a1411}
+.atlas-land.land-2{fill:#0b0d0b}
+.ds-sea{fill:#03060a}
+.ds-shade{fill:none;stroke:#000;stroke-opacity:.45;stroke-width:3.6;stroke-linejoin:round;pointer-events:none;filter:blur(.7px)}
+.atlas-border-glow{fill:none;stroke:#fff;stroke-opacity:.16;stroke-width:1.1;stroke-linejoin:round;stroke-linecap:round;pointer-events:none}
+.atlas-border{fill:none;stroke:#fff;stroke-opacity:1;stroke-width:.55;stroke-linejoin:round;stroke-linecap:round;pointer-events:none}
+.ds-coast{fill:none;stroke:#b8bdbc;stroke-opacity:.4;stroke-width:.2;stroke-linejoin:round;stroke-linecap:round;pointer-events:none}
+.atlas-river-bank{fill:none;stroke:#000;stroke-opacity:.25;stroke-width:1.6;stroke-linecap:round}
+.atlas-river{fill:none;stroke:#2a4650;stroke-opacity:.7;stroke-width:.45;stroke-linecap:round}
+.deep-layout .atlas-territory{font:800 3.6px var(--map-font);text-transform:uppercase;letter-spacing:.35px;fill:#f3e6d2;fill-opacity:.9;paint-order:stroke;stroke:#262321;stroke-width:.7px;stroke-linejoin:round;pointer-events:none}
 .deep-layout .atlas-territory.sea{fill:#a8c8d6;fill-opacity:.8;font-style:italic;stroke:#0b1c29}
-.deep-layout .atlas-city{font:600 1.95px var(--body);fill:#eadfd2;paint-order:stroke;stroke:#1b1a1e;stroke-width:.5px;stroke-linejoin:round;pointer-events:none}
+.deep-layout .atlas-city{font:800 2.3px var(--map-font);text-transform:uppercase;letter-spacing:.12px;fill:#fff;paint-order:stroke;stroke:#05080a;stroke-opacity:.8;stroke-width:.7px;stroke-linejoin:round;pointer-events:none}
 .atlas-alert{fill:url(#ds-hatch-alert);stroke:#ff8a78;stroke-width:.25;stroke-dasharray:.8 .6;pointer-events:none}
 .ds-warn{pointer-events:none}
 .ds-warn path:first-child{fill:#2a0f0d;stroke:#ff8a78;stroke-width:.4;stroke-linejoin:round}
 .ds-warn .ds-warn-i{stroke:#ffb0a3;stroke-width:.5;stroke-linecap:round}
 .ds-warn circle{fill:#ffb0a3}
-.ds-range{stroke:#9fe0be;stroke-width:.4;stroke-dasharray:1.6 1;pointer-events:none}
-.deep-layout .ds-range-label{font:600 2px var(--mono);fill:#bfeed3;paint-order:stroke;stroke:#0b1c29;stroke-width:.6px;pointer-events:none}
+.ds-range{stroke:#9fe0be;stroke-opacity:.18;stroke-width:.2;pointer-events:none}
+.deep-layout .ds-range-label{font:600 2px var(--mono);fill:#bfeed3;fill-opacity:.6;paint-order:stroke;stroke:#0b1c29;stroke-width:.6px;pointer-events:none}
 .ds-base circle{fill:#0b1118;stroke:#7fcfa6;stroke-width:.4}
 .ds-base path{fill:none;stroke:#7fcfa6;stroke-width:.25}
 .ds-base .ds-base-star{fill:#7fcfa6;stroke:none}
 
 /* ---- map: plan routes ---- */
-.atlas-plan{fill:none;stroke:#ffb347;stroke-width:.5;stroke-dasharray:1.2 .8;stroke-linecap:round;pointer-events:none}
+.atlas-plan{fill:none;stroke:#ffb347;stroke-opacity:.55;stroke-width:.5;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.atlas-plan-glow{fill:none;stroke:#ff7a00;stroke-opacity:.3;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
 .ds-chev{fill:none;stroke:#ffd089;stroke-width:.4;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 .ds-num{pointer-events:none}
 .ds-num circle{fill:var(--accent);stroke:#1d1103;stroke-width:.25}
@@ -66,11 +66,11 @@
 .site .mk-in{fill:#071016}
 .site.mk-1 .mk{fill:var(--site-1)}
 .site.mk-2 .mk{fill:var(--site-2)}
-.site .plate{fill:#0b1118e6;stroke:#2a3846;stroke-width:.2}
+.site .plate{fill:#05080acc;stroke:#2a3846;stroke-width:.2}
 .site .plate[data-state=dmg]{stroke:#ffb347}
 .site .plate[data-state=out]{stroke:var(--bad)}
 .site .plate[data-state=fixed]{stroke:var(--good)}
-.deep-layout .site .site-label{font:600 1.95px var(--body);fill:#f1f4f6;pointer-events:none}
+.deep-layout .site .site-label{font:800 2.3px var(--map-font);text-transform:uppercase;letter-spacing:.1px;fill:#fff;pointer-events:none}
 .site .intel circle{fill:#13202b;stroke:#9ec5dd;stroke-width:.25}
 .deep-layout .site .intel text{font:700 1.5px var(--mono);fill:#cfe6f4}
 .site .unit circle{fill:var(--accent);stroke:#1d1103;stroke-width:.25}
@@ -83,15 +83,23 @@
 @keyframes ds-pulse{from{transform:scale(1);opacity:.9}to{transform:scale(1.9);opacity:0}}
 
 /* ---- map: tracks ---- */
-.trk-plan{fill:none;stroke:#e9e1bd;stroke-opacity:.28;stroke-width:.3;stroke-dasharray:.9 .9}
-.trk-glow{fill:none;stroke-width:1.5;stroke-opacity:.2;stroke-linecap:round;stroke-linejoin:round}
-.trk-line{fill:none;stroke-width:.46;stroke-linecap:round;stroke-linejoin:round}
-.trk.past{opacity:.5}
-.trk.past .trk-line{stroke-width:.4;stroke-dasharray:.05 1;stroke-opacity:.9}
-.trk-x{fill:none;stroke:#ff6b5e;stroke-width:.65;stroke-linecap:round}
-.trk-ring,.trk-wave{fill:none;stroke:#ff6b5e;stroke-width:.35}
-.trk-wave{stroke:#ffb347}
-.trk-ray{stroke:#ffcf7a;stroke-width:.3;stroke-linecap:round}
+.trk-plan{fill:none;stroke-opacity:.3;stroke-width:.5;stroke-linecap:round;stroke-linejoin:round}
+.trk-glow{fill:none;stroke-width:1.6;stroke-opacity:.45;stroke-linecap:round;stroke-linejoin:round}
+.trk-glow.trk-glow-o{stroke-width:3.5;stroke-opacity:.22}
+.trk-glows.past{opacity:.55}
+.trk-line{fill:none;stroke-width:.75;stroke-linecap:round;stroke-linejoin:round}
+.trk-core{fill:none;stroke-width:.15;stroke-opacity:.6;stroke-linecap:round;stroke-linejoin:round}
+.trk-arrow{stroke:none;pointer-events:none;filter:drop-shadow(0 0 .8px #ff7a00)}
+.trk.past .trk-arrow{opacity:.8}
+.trk.past{opacity:.7}
+.trk.past .trk-line{stroke-width:.55;stroke-opacity:.9}
+.trk.past .trk-hit{fill:#ff3b30;stroke:#ff3b30;filter:drop-shadow(0 0 1.6px #ff3b30)}
+.trk-x{fill:none;stroke:#a8392f;stroke-width:.65;stroke-linecap:round}
+.trk-ring,.trk-wave{fill:none;stroke:#a8392f;stroke-width:.35}
+.trk-wave{stroke:#ff3b30}
+.trk-ray{stroke:#ff3b30;stroke-width:.3;stroke-linecap:round}
+.trk-hit{fill:#ff3b30;stroke:#ff6a4d;stroke-width:.2;stroke-linejoin:round;filter:drop-shadow(0 0 1.4px #ff3b30) drop-shadow(0 0 .5px #ffd23a)}
+.trk-hit-in{fill:#2a0805}
 .trk-tick circle{fill:#0f1f17;stroke:var(--good);stroke-width:.25}
 .trk-tick path{fill:none;stroke:var(--good);stroke-width:.3;stroke-linecap:round;stroke-linejoin:round}
 .deep-layout .trk-warn text{font:700 2.4px var(--mono);fill:#ffd5cd}
@@ -148,6 +156,7 @@
 .deep-chip{display:inline-flex;gap:5px;align-items:baseline;padding:2px 7px;border:1px solid var(--line-2);border-radius:99px;background:var(--bg);font-size:10.5px;color:var(--soft);letter-spacing:0}
 .deep-chip b{color:var(--fg);font-weight:700}
 .deep-chip.weak b{color:#ffb347}
+.deep-spec{grid-column:1/-1;font-size:10.5px;line-height:1.3;color:var(--fg);opacity:.85;font-family:var(--mono)}
 .deep-prod{grid-column:1/-1;font-size:10.5px;line-height:1.3;color:var(--soft);opacity:.9}
 
 /* ---- right column: plan ---- */
@@ -362,14 +371,14 @@
 }
 
 /* Estimated enemy air defence / EW zones revealed by dummy losses */
-.deep-layout .th-ring{fill:#f0b46d14;stroke:#f0b46d;stroke-width:.35;stroke-dasharray:1 .7}
+.deep-layout .th-ring{fill:#ffe60012;stroke:#ffe600;stroke-width:.35;stroke-dasharray:1 .7}
 .deep-layout .th-ew .th-ring{fill:#6fd3e814;stroke:#6fd3e8}
 .deep-layout .th.conf .th-ring{stroke-dasharray:none;stroke-width:.5;fill-opacity:1}
 .deep-layout .th.stale{opacity:.38}
-.deep-layout .th-glyph{fill:#f0b46d;stroke:#071016;stroke-width:.25}
-.deep-layout .th-ew .th-glyph{fill:#6fd3e8}
+.deep-layout .th-glyph{fill:#ffe600;stroke:#2a2500;stroke-width:.2;stroke-linejoin:round;filter:drop-shadow(0 0 .7px #ffe600)}
+.deep-layout .th-ew .th-glyph{fill:#6fd3e8;filter:none}
 .deep-layout .th-in{fill:#071016}
-.deep-layout .th-label{fill:#ffd9a6;font-weight:700}
+.deep-layout .th-label{fill:#ffe600}
 .deep-layout .th-ew .th-label{fill:#b7f0fb}
 .trk-bolt{fill:#6fd3e8;stroke:#071016;stroke-width:.15;stroke-linejoin:round}
 .trk-ring.jam{stroke:#6fd3e8}
@@ -387,3 +396,12 @@
 .deep-zones li b{font:700 11px var(--mono)}
 .deep-zones li small{grid-column:1/-1;color:var(--soft);font-size:10.5px}
 .deep-zones .deep-hint{font-size:11.5px}
+.deep-legend .lg-svg{flex:none;display:block;overflow:visible}
+
+/* Oko Gora map finish: crisp geometry, readable labels on dark land */
+.deep-layout .c-play > svg{shape-rendering:geometricPrecision;text-rendering:geometricPrecision}
+.deep-layout .c-play > svg .ds-vignette{mix-blend-mode:normal}
+.atlas-land.land-1{stroke:#5a2f29;stroke-opacity:.5;stroke-width:.15}
+.atlas-river-bank,.atlas-river{stroke-linejoin:round}
+.deep-layout .atlas-city{fill:#f2f2f2;stroke-opacity:.9}
+.deep-layout .atlas-territory{fill:#e8e4dc;fill-opacity:.75}

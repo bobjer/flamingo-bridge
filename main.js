@@ -673,7 +673,7 @@ const FLIERS=new Set(['drone','bird','flamingo','loaf','neptune']);
 function spawn(k,deckX=null){let a=Math.random()*Math.PI*2;const r=23+Math.random()*4;let x=Math.cos(a)*r,z=Math.sin(a)*r,y=.35;if(k==='neptune'){z=Math.max(11,Math.abs(z));x*=.48}
  if(FLIERS.has(k))y=5+Math.random()*5;else if(Math.abs(z)<5)z=6;
  if(deckX!==null){x=deckX;z=5+Math.random()*2;y=5}
- const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.6);const stats={drone:[3,2.7],loaf:[3,2.2],baby:[3,1.6],flamingo:[4,2.7],bird:[2,3.8],neptune:[30,4.2]}[k];const candidates=gameTargets(k);
+ const m=put(k,x,y,z);if(k==='neptune')m.scale.setScalar(2.6);const stats={drone:[3,2.7],loaf:[3,2.5],baby:[3,1.45],flamingo:[4,2.75],bird:[2,3.8],neptune:[30,3.5]}[k];const candidates=gameTargets(k);
  const target=Math.random()<(k==='baby'?.82:k==='loaf'?.75:.65)?candidates[Math.floor(Math.random()*candidates.length)]:null;
  const ships=units.filter(u=>u.k==='cruiser'&&u.m.position.z*z>0),prey=k==='neptune'&&ships.length&&Math.random()<.6?ships[Math.floor(Math.random()*ships.length)]:null;
  const enemy={m,k,y,deckX,target,prey,oldPoint:null,exitPoint:new T.Vector3(x,0,z).normalize().multiplyScalar(32),hp:Math.max(1,Math.round((stats[0]+Math.floor((wave-1)/4))*(.75+.25*intensity()))),speed:stats[1]*(1+wave*.018),angle:a};
