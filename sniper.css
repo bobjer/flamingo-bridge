@@ -1,0 +1,119 @@
+.sniper-board {
+ --sniper-bg: #141b18;
+ --sniper-panel: #202a23;
+ --sniper-ink: #e9ebda;
+ --sniper-muted: #b2baa8;
+ --sniper-accent: #d6d69a;
+ display: block;
+ position: fixed;
+ padding: 0;
+ inset: 0;
+ z-index: 1000;
+ overflow: auto;
+ background: var(--sniper-bg);
+ color: var(--sniper-ink);
+ font: 16px/1.45 var(--body, system-ui);
+ color-scheme: dark;
+}
+.sniper-header {
+ display: flex;
+ justify-content: space-between;
+ align-items: center;
+ gap: 12px;
+ max-width: 1180px;
+ margin: auto;
+ padding: 20px clamp(16px, 4vw, 42px);
+ border-bottom: 1px solid #404b3d;
+}
+.sniper-header small { color: var(--sniper-muted); letter-spacing: .18em; font: 13px var(--mono, monospace); }
+.sniper-header h1 { margin: 2px 0 0; font-size: clamp(26px, 4vw, 42px); line-height: 1; }
+.sniper-header nav { display: flex; gap: 8px; }
+.sniper-layout {
+ display: grid;
+ grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
+ gap: clamp(16px, 3vw, 36px);
+ max-width: 1180px;
+ margin: auto;
+ padding: clamp(16px, 4vw, 42px);
+ align-items: start;
+}
+.sniper-scene {
+ display: grid;
+ place-items: center;
+ min-width: 0;
+ aspect-ratio: 1;
+ padding: clamp(6px, 2vw, 24px);
+ border: 1px solid #3e4a3b;
+ border-radius: 15px;
+ background: radial-gradient(circle, #2b3729, #121713 72%);
+}
+.sniper-scope {
+ width: 100%;
+ aspect-ratio: 1;
+ overflow: hidden;
+ border-radius: 50%;
+ border: clamp(5px, 1vw, 12px) solid #131915;
+ outline: 1px solid #626c56;
+ box-shadow: 0 0 0 clamp(3px, .5vw, 7px) #282e25;
+}
+.sniper-scope canvas { display: block; position: static; width: 100%; height: 100%; }
+.sniper-console {
+ display: grid;
+ gap: 16px;
+ padding: clamp(14px, 2.5vw, 24px);
+ border: 1px solid #465042;
+ border-radius: 15px;
+ background: var(--sniper-panel);
+}
+.sniper-instructions, .sniper-result, .sniper-calculator p { margin: 0; }
+.sniper-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.sniper-settings label { display: grid; gap: 4px; min-width: 0; font-size: 14px; color: var(--sniper-muted); }
+.sniper-board button, .sniper-settings select {
+ min-height: 42px;
+ max-width: 100%;
+ padding: 7px 9px;
+ border-radius: 6px;
+ border: 1px solid #596750;
+ background: #18211b;
+ color: var(--sniper-ink);
+ font: 14px var(--body, system-ui);
+}
+.sniper-board button { cursor: pointer; }
+.sniper-board :is(button, select, input):focus-visible { outline: 2px solid var(--sniper-accent); outline-offset: 2px; }
+.sniper-weather { display: grid; gap: 6px; margin: 0; padding-block: 13px; border-block: 1px solid #465042; }
+.sniper-weather div { display: flex; justify-content: space-between; gap: 12px; }
+.sniper-weather dt { color: var(--sniper-muted); }
+.sniper-weather dd { margin: 0; color: var(--sniper-accent); font: 15px var(--mono, monospace); white-space: pre; }
+.sniper-calculator { display: grid; gap: 10px; }
+.sniper-calculator header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.sniper-calculator h2 { margin: 0; font-size: 16px; }
+.sniper-calculator [data-answer] { color: var(--sniper-accent); }
+.sniper-axis {
+ display: grid;
+ grid-template-columns: 20px minmax(0, 1fr) 32px;
+ align-items: center;
+ gap: 9px;
+ font: 15px var(--mono, monospace);
+}
+.sniper-axis input { width: 100%; margin: 0; accent-color: var(--sniper-accent); min-height: 28px; }
+.sniper-axis output { text-align: right; }
+.sniper-result { min-height: 1.45em; color: var(--sniper-muted); }
+.sniper-result[data-won="true"] { color: var(--sniper-accent); font-weight: 700; }
+.sniper-next { justify-self: start; }
+@media (max-width: 750px) {
+ .sniper-layout { grid-template-columns: minmax(0, 1fr); max-width: 560px; }
+ .sniper-scene { width: min(100%, 48vh); justify-self: center; }
+}
+
+.sniper-board [hidden] { display: none; }
+.sniper-board button:disabled { opacity: .55; cursor: default; }
+.sniper-tutorial h2 { margin: 0 0 6px; font-size: 18px; }
+.sniper-tutorial ol { margin: 0; padding-inline-start: 23px; }
+.sniper-tutorial li + li { margin-top: 5px; }
+.sniper-field-table { padding: 8px 10px; border: 1px solid #465042; border-radius: 6px; }
+.sniper-field-table summary { cursor: pointer; font-weight: 600; }
+.sniper-field-table p { margin: 8px 0 6px; color: var(--sniper-muted); font-size: 14px; }
+.sniper-field-table table { width: 100%; border-collapse: collapse; font: 14px/1.4 var(--mono, monospace); }
+.sniper-field-table th, .sniper-field-table td { padding: 5px 4px; text-align: left; white-space: nowrap; border-bottom: 1px solid #465042; }
+.sniper-field-table tbody tr:last-child td { border-bottom: 0; }
+.sniper-hints { display: flex; flex-wrap: wrap; gap: 8px; }

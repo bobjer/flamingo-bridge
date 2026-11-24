@@ -2,6 +2,7 @@ import {tr} from './language.js';
 import './factions.css';
 
 const sideKey = 'pop-side-v1';
+const sides = ['bridge','coalition','deepstrike','sniper'];
 export const read = key => {try{return JSON.parse(localStorage.getItem(key))}catch{return null}};
 export const write = (key,value) => {try{localStorage.setItem(key,JSON.stringify(value));return true}catch{return false}};
 export const preferredLevel = () => read('pop-level-v1') ?? 'normal';
@@ -17,16 +18,22 @@ const paperclip = '<svg viewBox="0 0 48 48" aria-hidden="true"><rect x="2" y="2"
 export const languageButton = () => '<button type="button" data-language>'+tr('English','Українська')+'</button>';
 export async function changeSide(){
   if(document.querySelector('.faction-picker:modal')) return;
-  const result = await pickSide(true);
+  const fromSniper=read(sideKey)==='sniper';
+  const result = await pickSide(!fromSniper,true);
   if(!result) return;
+  if(fromSniper||result.side==='sniper'){
+   write(sideKey,result.side);
+   location.reload();
+   return;
+  }
   // Consume this instruction at boot, after the old page's final save has finished.
   write(sideKey,{restart:result.side,level:result.level});
   location.reload();
 }
 export async function chooseSide(){
   const remembered=read(sideKey);
-  if(['bridge','coalition','deepstrike'].includes(remembered)) return remembered;
-  if(['bridge','coalition','deepstrike'].includes(remembered?.restart)){
+  if(sides.includes(remembered)) return remembered;
+  if(sides.includes(remembered?.restart)){
     localStorage.removeItem('pink-siege:match:v1');
     localStorage.removeItem('pop-coalition-v2');
     localStorage.removeItem('pop-deepstrike-v1');
@@ -36,7 +43,7 @@ export async function chooseSide(){
   const {side,level}=await pickSide(false);
   rememberLevel(level); write(sideKey,side);return side;
 }
-async function pickSide(restart){
+async function pickSide(restart,canCancel=restart){
   let side=restart?read(sideKey):null, level=preferredLevel();
   const dialog=document.createElement('dialog');
   dialog.className='faction-picker';dialog.setAttribute('aria-labelledby','faction-title');
@@ -58,21 +65,24 @@ async function pickSide(restart){
       dialog.querySelector('[data-mode]').focus();
       return;
     }
-    dialog.innerHTML='<div class="faction-head"><span>POP SEASON</span><a href="/license.html" target="_blank" rel="noopener">'+tr('Ліцензія','License')+'</a>'+languageButton()+'</div><h1 id="faction-title">'+tr('Оберіть сторону','Choose your side')+'</h1>'+(restart?'<p class="restart-warning">'+tr('Увесь прогрес збережених партій обох сторін буде втрачено. Нова гра почнеться з першої хвилі.','All saved progress for both factions will be lost. The new game starts at wave one.')+'</p>':'')+levelField(level,true)+'<div class="faction-options">'+
+    dialog.innerHTML='<div class="faction-head"><span>POP SEASON</span><a href="/license.html" target="_blank" rel="noopener">'+tr('Ліцензія','License')+'</a>'+languageButton()+'</div><h1 id="faction-title">'+tr('Оберіть режим','Choose a mode')+'</h1>'+(restart?'<p class="restart-warning">'+tr('Увесь прогрес збережених партій обох сторін буде втрачено. Нова гра почнеться з першої хвилі.','All saved progress for both factions will be lost. The new game starts at wave one.')+'</p>':'')+levelField(level,true)+'<div class="faction-options">'+
       '<button data-side="coalition"><img src="/coalition-koala.svg" alt=""><small>'+tr('НАСТУП','OFFENCE')+'</small><strong>'+tr('Коаліція охочих','Coalition of the Willing')+'</strong><span>'+tr('Зберіть зграю, виконайте контракт і переконайте спонсорів оплатити наступну хвилю.','Build a flock, deliver the contract and convince the sponsors to fund another wave.')+'</span></button>'+
       '<button data-side="bridge">'+paperclip+'<small>'+tr('ОБОРОНА','DEFENCE')+'</small><strong>'+tr('Гарнізон','Garrison')+'</strong><span>'+tr('Тримайте міст, латайте полотно й освоюйте бюджет.','Hold the bridge, patch the road and burn through the budget.')+'</span></button></div>';
 
-    if (restart) {
+    const options=dialog.querySelector('.faction-options');
+    options.insertAdjacentHTML('beforeend','<button data-side="sniper"><span class="faction-optics" aria-hidden="true">⊕</span><strong>'+tr('Снайпер','Sniper')+'</strong><span>'+tr('Головоломка з оптикою на полігоні.','An optics puzzle at the range.')+'</span></button>');
+    if (canCancel) {
       const body=document.createElement('div'); body.className='faction-body'; body.append(...dialog.children);dialog.append(body);
-      dialog.insertAdjacentHTML('beforeend','<footer class="restart-actions"><button type="button" data-cancel>'+tr('Скасувати','Cancel')+'</button><button type="button" data-confirm>'+tr('Почати спочатку','Start over')+'</button></footer>');
-      placeDifficulty();
+      const confirm=restart?'<button type="button" data-confirm>'+tr('Почати спочатку','Start over')+'</button>':'';
+      dialog.insertAdjacentHTML('beforeend','<footer class="restart-actions"><button type="button" data-cancel>'+tr('Скасувати','Cancel')+'</button>'+confirm+'</footer>');
+      if(restart)placeDifficulty();
     }
   };
   render();document.addEventListener('siege-language',render);
   dialog.onchange=e=>{if(e.target.matches('[data-level-pick]'))level=e.target.value};
   dialog.showModal();
   const result=await new Promise(resolve=>{
-    dialog.oncancel=e=>{e.preventDefault();if(restart)resolve(null)};
+    dialog.oncancel=e=>{e.preventDefault();if(canCancel)resolve(null)};
     dialog.onclick=e=>{
       if(e.target.closest('[data-back]')){choosingMode=false;render();dialog.querySelector('[data-side=coalition]').focus();return}
       const mode=e.target.closest('[data-mode]');
@@ -83,7 +93,7 @@ async function pickSide(restart){
       if(e.target.closest('[data-confirm]')){resolve({side,level});return}
       const card=e.target.closest('[data-side]');if(!card)return;
       side=card.dataset.side;
-      if(!restart)resolve({side,level});
+      if(!restart||side==='sniper')resolve({side,level});
       else placeDifficulty();
     };
   });
