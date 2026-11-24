@@ -327,7 +327,7 @@ function drawGrid(c,center){
  line(30,cy,cx-15*u,cy,7);line(cx+15*u,cy,670,cy,7);
  line(cx,30,cx,cy-10.5*u,7);line(cx,cy+10.5*u,cx,670,7);
  for(let n=2;n<=14;n+=2)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-9,'center','bottom');
- for(let k=1;k<=10;k++)text(String(k),cx+8,cy-k*u,'left','middle');
+ for(let k=2;k<=10;k++)text(String(k),cx+8,cy-k*u,'left','middle');
  for(let k=1;k<=10;k++){
   const y=cy+k*u,x=(w(k)+0.9)*u;
   text(String(k),cx-x,y,'right','middle');text(String(k),cx+x,y,'left','middle');
