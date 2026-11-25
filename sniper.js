@@ -175,7 +175,7 @@ export function startSniper(){
 
  // Autoplay: a single controller; every timed action goes through schedule() so pause/resume can freeze it.
  let align=()=>{},aimer=()=>{},zoomer=()=>{};
- const ap={on:false,paused:false,step:0,timer:0,remaining:0,startedAt:0,fn:null};
+ const ap={shown:-1,on:false,paused:false,step:0,timer:0,remaining:0,startedAt:0,fn:null};
  const finalNow=()=>state.tutorialDone===true&&state.round===seriesSize-1;
  const solved=()=>{const [a,b]=solution(state),t=tolerance[state.distance];return Math.abs(a-state.x)<=t&&Math.abs(b-state.y)<=t};
  const aimed=()=>!state.aim.x&&!state.aim.y;
@@ -202,17 +202,23 @@ export function startSniper(){
   ];
  };
  const apLabel=()=>ap.on?tr('✋ Грати самому','✋ Take over'):tr('Автогра','Autoplay');
- const apPanel=()=>`<section class="sniper-autoplay" aria-live="polite"><small></small><p data-narration></p><button type="button" data-autoplay-pause></button></section>`;
+ const apPanel=()=>`<section class="sniper-autoplay" aria-live="polite"><div class="ap-head"><span class="ap-pill"></span><span class="ap-bar" aria-hidden="true"></span><button type="button" class="ap-pause" data-autoplay-pause></button></div><p data-narration></p></section>`;
+ const escHtml=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+ const narrationHtml=t=>escHtml(t).replace(/[−+-]?\d+(?:[.,]\d+)?\s?(?:міл|mil|м\/с|m\/s|км|km|м|m|×|°|%)(?!\p{L})/gu,'<b class="ap-num">$&</b>');
  function paintAutoplay(){
   const button=root.querySelector('[data-autoplay]'),panel=root.querySelector('.sniper-autoplay');
   button.textContent=apLabel();button.setAttribute('aria-pressed',String(ap.on));
   for(const old of root.querySelectorAll('.is-explained'))old.classList.remove('is-explained');
-  if(!ap.on){panel?.remove();updateFire();return}
+  if(!ap.on){panel?.remove();ap.shown=-1;updateFire();return}
   const steps=apSteps(),s=steps[ap.step];
   if(panel){
-   panel.querySelector('small').textContent=tr('Крок ','Step ')+(ap.step+1)+'/'+steps.length;
-   panel.querySelector('[data-narration]').textContent=s.text;
-   panel.querySelector('[data-autoplay-pause]').textContent=ap.paused?tr('Далі','Resume'):tr('Пауза','Pause');
+   panel.querySelector('.ap-pill').textContent=tr('Крок ','Step ')+(ap.step+1)+'/'+steps.length;
+   panel.querySelector('.ap-bar').innerHTML=steps.map((_,i)=>`<i class="${i<ap.step?'is-done':i===ap.step?'is-cur':''}"></i>`).join('');
+   panel.querySelector('[data-narration]').innerHTML=narrationHtml(s.text);
+   const pb=panel.querySelector('[data-autoplay-pause]'),pl=ap.paused?tr('Далі','Resume'):tr('Пауза','Pause');
+   pb.textContent=ap.paused?'▶':'⏸';pb.setAttribute('aria-label',pl);pb.title=pl;
+   panel.classList.toggle('is-fire',s.mark==='fire');
+   if(ap.shown!==ap.step){ap.shown=ap.step;panel.classList.remove('is-new');void panel.offsetWidth;panel.classList.add('is-new')}
   }
   if(s.mark==='table')selectTab('table');
   const el=s.mark==='x'||s.mark==='y'?root.querySelector('[data-axis="'+s.mark+'"]')?.closest('.sniper-axis'):
@@ -688,7 +694,7 @@ export function startSniper(){
   analysisModal=null;
   root.innerHTML=`
    <header class="sniper-header"><div class="sniper-brand"><h1>${tr('Снайпер','Sniper')}</h1><small>POP SEASON</small></div>
-    <nav>${languageButton()}<button data-autoplay aria-pressed="${ap.on}">${apLabel()}</button><button data-exit>${tr('Режими','Modes')}</button></nav>
+    <nav>${languageButton()}<button data-autoplay aria-pressed="${ap.on}">${apLabel()}</button><button data-exit>${tr('Нова гра','New game')}</button></nav>
    </header>
    <div class="sniper-layout">
     <section class="sniper-scene" aria-label="${tr('Вид в оптику','Scope view')}">
@@ -700,7 +706,7 @@ export function startSniper(){
       <div class="sniper-hud sniper-breath" aria-hidden="true" hidden><span data-breath-label></span><i class="sniper-breath-bar"><b data-breath-fill></b></i></div>
       ${ap.on?apPanel():''}
      </div>
-     <div class="sniper-reticle" role="group" aria-label="${tr('Сітка','Reticle')}">${optics.map((label,i)=>`<button type="button" data-optic="${i}" aria-pressed="${i===state.optic}">${tr(...label)}</button>`).join('')}</div>
+     <div class="sniper-reticle" role="group" aria-label="${tr('Сітка','Reticle')}">${optics.map((label,i)=>`<button type="button" class="sniper-thumb" data-optic="${i}" aria-pressed="${i===state.optic}" aria-label="${tr(...label)}" title="${tr(...label)}"><canvas aria-hidden="true"></canvas></button>`).join('')}</div>
      <span id="sniper-drag-desc" class="sniper-sr">${dragHint}</span>
      <div class="sniper-pad" role="group" aria-label="${tr('Налаштування оптики','Scope adjustment')}">
       <button type="button" data-step="x" data-delta="-10" aria-label="${tr('X −1 міл','X −1 mil')}">«</button>
@@ -761,10 +767,10 @@ export function startSniper(){
         <label><input type="radio" name="sniper-plane" data-plane="ffp"${state.plane==='ffp'?' checked':''}> ${tr('Сітка: перша фокальна площина (FFP)','Reticle: first focal plane (FFP)')}</label>
         <label><input type="radio" name="sniper-plane" data-plane="sfp"${state.plane==='sfp'?' checked':''}> ${tr('друга фокальна площина (SFP, калібрування 10×)','second focal plane (SFP, calibrated at 10×)')}</label>
        </fieldset>
-       <label class="sniper-check"><input type="checkbox" data-realtime${state.realtime?' checked':''}> ${tr('Реальний час: без повтору польоту','Real time: no flight replay')}</label>
       </div>
      </section>
      <div class="sniper-actions">
+      <label class="sniper-switch" title="${tr('Увімкнено: після пострілу повільний 3D-повтор польоту. Вимкнено: реальний час, результат у приціл.','On: slow-motion 3D replay of the flight after the shot. Off: real time, the result shows in the scope.')}"><input type="checkbox" role="switch" data-realtime${state.realtime?'':' checked'}><i aria-hidden="true"></i><span>${tr('Повтор польоту','Flight replay')}</span></label>
       <button type="button" class="sniper-fire" data-fire aria-pressed="false" aria-keyshortcuts="Space"><span aria-hidden="true">⊕</span> ${tr('Постріл','Fire')}</button>
       <button type="button" class="sniper-next" data-next>${tutorial?tr('Почати серію','Start series'):finalRound?tr('Нова серія','New series'):tr('Наступний раунд','Next round')}</button>
      </div>
@@ -783,6 +789,7 @@ export function startSniper(){
   const numbers=[...root.querySelectorAll('[data-number]')];
   const steps=[...root.querySelectorAll('[data-step]')];
   const opticButtons=[...root.querySelectorAll('[data-optic]')];
+  opticButtons.forEach((b,i)=>paintThumb(b.querySelector('canvas'),i));
   const result=root.querySelector('.sniper-result');
   const next=root.querySelector('[data-next]');
   const fireButton=root.querySelector('[data-fire]');
@@ -965,7 +972,7 @@ export function startSniper(){
    };
   });
   const rtBox=root.querySelector('[data-realtime]');
-  rtBox.disabled=!!rt;rtBox.onchange=()=>{state.realtime=rtBox.checked;save()};
+  rtBox.disabled=!!rt;rtBox.onchange=()=>{state.realtime=!rtBox.checked;save()};
   fireButton.onpointerdown=event=>{
    if(event.pointerType==='mouse'&&event.button!==0)return;
    event.preventDefault();
@@ -1079,9 +1086,30 @@ const skip=(spacing,u)=>{let m=1;while(spacing*m*u<6&&m<64)m*=2;return m}; // ke
 const lstep=(base,u)=>{for(const s of [1,2,4,5,10,20])if(s>=base&&s*u>=26)return s;return 0}; // mil step between labels, 0 = no labels
 const lidx=spacing=>{for(const m of [1,2,3,4,5])if(m*spacing>=26)return m;return 0}; // every m-th labeled mark, 0 = none
 const halo='#e8e4c81f',tHalo='#e8e4c840',ink='#0b100c',pTau=Math.PI*2;
-let thinPx=1.4,haloOn=true;
+let thinPx=1.4,haloOn=true,thumbMode=false;
+// Reticle picker thumbnails: static mini renders (cached per DPR) drawn with the real reticle functions in a simplified LOD.
+const thumbCache=new Map();
+function paintThumb(canvas,i){
+ const dpr=canvasScale(),key=dpr+'|'+tr('uk','en');
+ let set=thumbCache.get(key);
+ if(!set){thumbCache.clear();thumbCache.set(key,set=[])}
+ if(!set[i]){
+  const px=44,S=Math.round(px*dpr),o=document.createElement('canvas');o.width=o.height=S;
+  const c=o.getContext('2d'),k=S/viewSize,center=viewSize/2;
+  c.setTransform(k,0,0,k,0,0);
+  c.save();c.beginPath();c.arc(center,center,center-1/k,0,pTau);c.clip();
+  const bg=c.createRadialGradient(center,center,0,center,center,center);bg.addColorStop(0,'#c9c6a3');bg.addColorStop(1,'#8f9a7a');
+  c.fillStyle=bg;c.fillRect(0,0,viewSize,viewSize);
+  thumbMode=true;cssK=px/viewSize;
+  try{(i===0?drawTree:i===1?drawDot:drawGrid)(c,center,[34,40,40][i])}finally{thumbMode=false}
+  c.restore();
+  c.setTransform(1,0,0,1,0,0);c.strokeStyle='#0b100c';c.lineWidth=1*dpr;c.beginPath();c.arc(S/2,S/2,S/2-.5*dpr,0,pTau);c.stroke();
+  set[i]=o;
+ }
+ const o=set[i];canvas.width=o.width;canvas.height=o.height;canvas.getContext('2d').drawImage(o,0,0);
+}
 // Level of detail by px per mil: below 8 the lines thin to 1.2 px and lose their halo; below 10 the crosshair opens at the centre and the heavy posts start >= 30% of the scope radius out.
-const lod=u=>{thinPx=u<8?1.2:1.4;haloOn=u>=8;const low=u<10;return{low,gap:low?Math.max(8,1.2*u):0,reach:r=>low?Math.max(r*u,viewSize*.15):r*u}};
+const lod=u=>{if(thumbMode){thinPx=.8;haloOn=false;return{low:false,gap:0,reach:r=>Math.min(r*u,viewSize*.3)}}thinPx=u<8?1.2:1.4;haloOn=u>=8;const low=u<10;return{low,gap:low?Math.max(8,1.2*u):0,reach:r=>low?Math.max(r*u,viewSize*.15):r*u}};
 let cssK=1; // CSS px per view unit (scope is CSS-scaled; canvas DPR is already in the context transform)
 // Collects the reticle, then paints every halo first and the dark ink on top, so halos never cover neighbouring lines.
 function pen(c){
@@ -1090,16 +1118,16 @@ function pen(c){
  return{
   line(x1,y1,x2,y2,lw=1){
    if(Math.max(x1,x2)<-10||Math.min(x1,x2)>710||Math.max(y1,y2)<-10||Math.min(y1,y2)>710)return;
-   if(lw<=1.4)lw=thinPx/cssK;
+   if(thumbMode)lw=(lw<=1.4?.8:1.8)/cssK;else if(lw<=1.4)lw=thinPx/cssK;
    let p=lines.get(lw);if(!p)lines.set(lw,p=new Path2D());p.moveTo(x1,y1);p.lineTo(x2,y2);
   },
   dot(x,y,r=1.1){
    if(out(x,y,5))return;
-   r=Math.max(r,1.4/cssK);
+   r=thumbMode?.65/cssK:Math.max(r,1.4/cssK);
    let d=dots.get(r);if(!d)dots.set(r,d={ink:new Path2D(),halo:new Path2D()});
    d.ink.moveTo(x+r,y);d.ink.arc(x,y,r,0,pTau);d.halo.moveTo(x+r+.5/cssK,y);d.halo.arc(x,y,r+.5/cssK,0,pTau);
   },
-  text(t,x,y,font,align='center',base='middle'){if(!out(x,y,20))texts.push([t,x,y,font.startsWith('600')?font:'600 '+font,align,base])},
+  text(t,x,y,font,align='center',base='middle'){if(!thumbMode&&!out(x,y,20))texts.push([t,x,y,font.startsWith('600')?font:'600 '+font,align,base])},
   flush(){
    c.save();c.globalAlpha=1;c.globalCompositeOperation='source-over';c.lineCap='butt';c.lineJoin='round';
    if(haloOn){c.strokeStyle=halo;for(const [lw,p] of lines){c.lineWidth=lw+1/cssK;c.stroke(p)}
