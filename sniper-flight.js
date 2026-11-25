@@ -153,6 +153,9 @@ function scene3d(T,o,root,canvas,onFinal,onHud){
   const d=add(pl,new T.CircleGeometry(hr,16),new T.MeshBasicMaterial({color:0x0b0f0c}),-ix,iy-R1,-.026);d.rotation.y=Math.PI;
   const rm=add(pl,new T.RingGeometry(hr,hr*1.6,16),new T.MeshBasicMaterial({color:0xcfd2c0,transparent:true,opacity:.75}),-ix,iy-R1,-.025);rm.rotation.y=Math.PI;
  }
+ for(const h of o.holes||[]){ // earlier hits of this series
+  const e=add(pl,new T.CircleGeometry(hr,16),new T.MeshBasicMaterial({color:0x0b0f0c}),-h.lat,h.dy-R1,-.026);e.rotation.y=Math.PI;
+ }
  const ms=Math.max(.24,R1*.32);
  const marker=add(scene,new T.PlaneGeometry(ms,ms),new T.MeshBasicMaterial({map:tex(128,128,(c)=>{c.beginPath();c.arc(64,64,48,0,TAU);c.moveTo(34,34);c.lineTo(94,94);c.moveTo(94,34);c.lineTo(34,94);c.lineJoin=c.lineCap='round';c.strokeStyle='#10130f';c.lineWidth=22;c.stroke();c.strokeStyle='#ff8a1f';c.lineWidth=11;c.stroke()}),transparent:true,depthWrite:false}),C.x,C.y,D-.1);
  marker.rotation.y=Math.PI;marker.visible=false;

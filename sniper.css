@@ -353,3 +353,15 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-settings .sniper-plane legend { padding: 0 4px; font-size: 12px; color: var(--sniper-muted); letter-spacing: .06em; text-transform: uppercase; }
 .sniper-settings .sniper-plane label { display: flex; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; font-size: 14px; color: var(--sniper-ink); }
 .sniper-settings .sniper-plane input { accent-color: var(--sniper-accent); margin: 0; }
+
+/* ---- breath hold ---- */
+.sniper-hud.sniper-breath { top: 46px; bottom: auto; left: 50%; right: auto; transform: translateX(-50%); display: grid; justify-items: center; gap: 4px; max-width: min(90%, 360px); white-space: normal; text-align: center; z-index: 2; }
+.sniper-breath-bar { position: relative; display: block; width: 120px; height: 8px; overflow: hidden; border-radius: 4px; background: linear-gradient(90deg, #5d6b57 0 6.7%, #2f6f3f 6.7% 33.3%, #7a5f1f 33.3% 58.3%, #7a2f2a 58.3%); }
+.sniper-breath-bar b { display: block; height: 100%; width: 0; border-radius: 4px; background: #8fd19e; }
+.sniper-breath[data-phase="settle"] b { background: #b9c4b0; }
+.sniper-breath[data-phase="steady"] b { background: #5fd17a; }
+.sniper-breath[data-phase="strain"] b { background: #f0b43c; }
+.sniper-breath[data-phase="hard"] b, .sniper-breath[data-phase="over"] b { background: #e0584c; }
+.sniper-breath[data-phase="over"] { color: #f2b0a8; }
+.sniper-board .sniper-fire { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.sniper-board .sniper-fire.is-holding { background: #5fd17a; border-color: #5fd17a; }

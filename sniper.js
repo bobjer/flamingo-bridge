@@ -10,9 +10,9 @@ const gravity=B.gravity; // Game-world gravity (10), deliberately not 9.80665; t
 const calibers=B.calibers; // {name,v0,bc7,…}: 300 gr .338 Lapua, 350 gr .375 CheyTac, 395 gr .416 Barrett, 750 gr .50 BMG
 const profiles=calibers.map(c=>c.name);
 const distances=[300,500,1000,2000,3000];
-const modeDistances=[[0,0,0,0,0],[1,1,1,1,1],[2,2,2,2,2],[3,3,3,3,3],[4,4,4,4,4],[2,2,3,3,4]]; // series mode (300 m, 500 m, 1 km, 2 km, 3 km, mix) → distance index per round
-const modeLabels=()=>[tr('300 м','300 m'),tr('500 м','500 m'),tr('1 км','1 km'),tr('2 км','2 km'),tr('3 км','3 km'),tr('Мікс 1–3 км','Mix 1–3 km')];
-const mixMode=5,caliberShort=['.338 LM','.375 CT','.416 B','.50 BMG'];
+const modeDistances=[[0,0,0,0,0],[1,1,1,1,1],[2,2,2,2,2],[3,3,3,3,3],[4,4,4,4,4]]; // series mode (300 m, 500 m, 1 km, 2 km, 3 km) → distance index per round: five shots at one distance
+const modeLabels=()=>[tr('300 м','300 m'),tr('500 м','500 m'),tr('1 км','1 km'),tr('2 км','2 km'),tr('3 км','3 km')];
+const defaultMode=2,caliberShort=['.338 LM','.375 CT','.416 B','.50 BMG'];
 const tolerance=[12,8,5,4.7,6.6]; // hit tolerance in tenths of a mil, by distance index (2 km and 3 km: large ELR steel, plate Ø 1.9 m and 4.0 m)
 const ring10=[1.3,1.15,.95,.95,.95]; // 10-ring radius in tenths of a mil per distance index (constant ~0.1 mil angular size, a bit larger up close)
 const ringFrac=d=>ring10[d]/tolerance[d]; // 10-ring radius as a fraction of the plate (ring 1) radius
@@ -22,6 +22,11 @@ const ringOf=(err,d)=>{const t=tolerance[d],r=ring10[d];return err>t?0:err<=r?10
 const sigma={gust:.5,res:.1,tau:4,dv0:2.1,rand:.05,hold:.03,holdReduced:.05},gustDt=GUST_DT; // gustDt: spacing of the stored gust path, s
 const gauss=()=>Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math.PI*Math.random());
 const swayAt=t=>({x:.05*Math.sin(2*Math.PI*.23*t)+.02*Math.sin(2*Math.PI*.9*t+1),y:.07*Math.sin(2*Math.PI*.17*t+.5)+.02*Math.sin(2*Math.PI*1.1*t)}); // mil
+// Breath hold (seconds held h → multiplier of the sway amplitude and of the hold noise): 1 free breathing; eases to 0.25 over 0.8 s (respiratory pause), steady to 4 s, then oxygen debt: 1.0 at 7 s, 2.5 at 10 s (+0.5/s after); a tremor of 6–9 Hz grows after 4 s. Past 12 s the shooter must breathe.
+const breathMax=12,breathRecover=1500,microScale=1/25,microLimit=3,microKey=.1; // micro-adjust: 1/25 of the drag scale, ±0.3 mil (3 tenths) per hold, arrow keys 0.01 mil = 0.1 tenth
+const breathK=h=>h<=0?1:h<.8?1-.75*(h/.8)**2*(3-2*h/.8):h<=4?.25:h<=7?.25+.75*(h-4)/3:1+.5*(Math.min(h,breathMax)-7);
+const tremorAt=(h,t)=>{if(h<=4)return{x:0,y:0};const a=.025*(Math.min(h,breathMax)-4)**2/36;return{x:a*Math.sin(2*Math.PI*6.3*t)+.5*a*Math.sin(2*Math.PI*8.7*t+1),y:a*Math.sin(2*Math.PI*7.4*t+2)+.5*a*Math.sin(2*Math.PI*6.1*t+.5)}}; // mil
+const breathPhase=h=>h<.8?'settle':h<=4?'steady':h<=7?'strain':'hard';
 const sgn=(v,d)=>(v<0?'−':v>0?'+':'')+Math.abs(v).toFixed(d);
 const distLabel=d=>d<1000?d+' '+tr('м','m'):d/1000+' '+tr('км','km');
 // TODO(hard mode): humidity → air density → velocity decay and drift.
@@ -46,7 +51,7 @@ const validIndex=(value,length)=>Number.isInteger(value)&&value>=0&&value<length
 const validDisp=d=>d===undefined||!!d&&[d.gust,d.gustRead,d.res,d.gx,d.gxR,d.vy,d.dv0,d.rand?.x,d.rand?.y,d.hold?.x,d.hold?.y].every(Number.isFinite)&&Array.isArray(d.gp)&&d.gp.length>=2&&d.gp.length<=200&&d.gp.every(Number.isFinite); // saves from before the G7 solver lack gp/gx/vy and restart the series
 const validP=p=>p===undefined||!!p&&validIndex(p.di,distances.length)&&validIndex(p.ci,calibers.length)&&validIndex(p.wi,weather.length)&&Number.isFinite(p.x)&&Number.isFinite(p.y);
 const validShot=s=>!!s&&typeof s==='object'&&validDisp(s.disp)&&validP(s.p)&&Number.isInteger(s.ring)&&s.ring>=0&&s.ring<=10&&typeof s.hit==='boolean'&&Number.isFinite(s.dx)&&Number.isFinite(s.dy)&&Number.isFinite(s.ms)&&s.ms>=0;
-const validSeries=s=>!!s&&typeof s==='object'&&Array.isArray(s.rounds)&&s.rounds.length===seriesSize&&s.rounds.every(i=>validIndex(i,weather.length))&&
+const validSeries=s=>!!s&&typeof s==='object'&&s.v===2&&Array.isArray(s.rounds)&&s.rounds.length===seriesSize&&s.rounds.every(i=>validIndex(i,weather.length)&&i===s.rounds[0])&&
  Array.isArray(s.unassisted)&&s.unassisted.length<=seriesSize&&s.unassisted.every(v=>typeof v==='boolean')&&typeof s.usedCode==='boolean'&&
  Array.isArray(s.scores)&&s.scores.length<=seriesSize&&s.scores.every(v=>Number.isInteger(v)&&v>=0&&v<=10)&&
  s.unassisted.length===s.scores.length&&Array.isArray(s.shots)&&s.shots.length===s.scores.length&&s.shots.every(validShot)&&
@@ -58,12 +63,13 @@ const seriesSize=5;
 const zoomMin=4,zoomMax=25,aimLimit=600; // magnification (×); aim clamp in tenths of a mil
 const uOf=zoom=>panStep/2*zoom/10; // px per mil at a magnification
 const clampAim=v=>Math.max(-aimLimit,Math.min(aimLimit,v));
+const recoilOf=aim=>{const r=5+Math.random()*10,a=Math.random()*Math.PI*2;return{x:clampAim(Math.round(aim.x+r*Math.cos(a))),y:clampAim(Math.round(aim.y+r*Math.sin(a)))}}; // recoil: uniform radius 0.5–1.5 mil, random direction
 const randomAim=()=>{const r=3+Math.random()*5,a=Math.random()*Math.PI*2;return{x:Math.round(r*Math.cos(a)*10),y:Math.round(r*Math.sin(a)*10)}};
 const clock2=ms=>{const t=Math.round(ms/100),m=Math.floor(t/600),sec=(t%600)/10;return String(m).padStart(2,'0')+':'+(sec<10?'0':'')+sec.toFixed(1)};
 const clock1=ms=>{const t=Math.floor(ms/1000);return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0')};
 const maxScore=seriesSize*10;
 const clampAxis=(axis,value)=>axis==='x'?Math.max(-xMax,Math.min(xMax,value)):Math.max(0,Math.min(yMax,value));
-const initial=()=>({mode:mixMode,modeV:2,plane:'ffp',distance:2,optic:0,profile:0,weather:0,x:0,y:0,aim:randomAim(),zoom:zoomMin});
+const initial=()=>({mode:defaultMode,modeV:3,plane:'ffp',distance:2,optic:0,profile:0,weather:0,x:0,y:0,aim:randomAim(),zoom:zoomMin});
 const mil=value=>(Math.abs(value)/10).toFixed(1);
 const signedMil=value=>value<0?'−'+mil(value):value>0?'+'+mil(value):mil(0);
 
@@ -84,8 +90,8 @@ export function startSniper(){
  if(state.round===undefined&&validSeries(state.series)&&validIndex(state.distance,seriesSize))state.round=state.distance;
  delete state.best;
  state.realtime=state.realtime===true;
- if(state.modeV!==2){state.mode=state.mode===2?mixMode:state.mode;state.modeV=2} // before the 1/2/3 km modes existed: 0 = 300 m, 1 = 500 m, 2 = mix
- if(!validIndex(state.mode,modeDistances.length))state.mode=mixMode;
+ if(state.modeV!==3){if(state.mode===5)state.mode=defaultMode;state.modeV=3} // the mix mode (index 5) is gone: it becomes 1 km; older saves had 0 = 300 m, 1 = 500 m, 2 = mix, which map to the same index here
+ if(!validIndex(state.mode,modeDistances.length))state.mode=defaultMode;
  if(state.pendingMode!==undefined&&!validIndex(state.pendingMode,modeDistances.length))delete state.pendingMode;
  if(state.pendingProfile!==undefined&&!validIndex(state.pendingProfile,calibers.length))delete state.pendingProfile;
  state.plane=state.plane==='sfp'?'sfp':'ffp';
@@ -94,7 +100,7 @@ export function startSniper(){
  if(state.bestScore!==undefined&&!(Number.isInteger(state.bestScore)&&state.bestScore>=0&&state.bestScore<=maxScore))delete state.bestScore;
  if(state.bestHpm!==undefined&&!(Number.isFinite(state.bestHpm)&&state.bestHpm>0))delete state.bestHpm;
  state.zoom=Number.isInteger(state.zoom)&&state.zoom>=zoomMin&&state.zoom<=zoomMax?state.zoom:zoomMin;
- state.aim=state.aim&&Number.isFinite(state.aim.x)&&Number.isFinite(state.aim.y)?{x:clampAim(Math.round(state.aim.x)),y:clampAim(Math.round(state.aim.y))}:randomAim();
+ state.aim=state.aim&&Number.isFinite(state.aim.x)&&Number.isFinite(state.aim.y)?{x:clampAim(+state.aim.x.toFixed(2)),y:clampAim(+state.aim.y.toFixed(2))}:randomAim(); // fractional after a breath-hold micro-adjust
  if(!(Number.isInteger(state.misses)&&state.misses>=0))state.misses=0;
  const shot=state.lastShot;
  if(!(shot&&typeof shot==='object'&&Number.isInteger(shot.ring)&&shot.ring>=0&&shot.ring<=10&&Number.isInteger(shot.score)&&shot.score>=0&&shot.score<=10))delete state.lastShot;
@@ -132,8 +138,8 @@ export function startSniper(){
   s.started=true;save();clock();
  }
  // ---- WebGL scope view lifecycle ----
- const swayNow=()=>gl&&!reduced()?swayAt(performance.now()/1000):{x:0,y:0}; // hold sway in mil; only while the animated scope view runs
- const view=()=>{const w=swayNow();return w.x||w.y?{...state,aim:{x:state.aim.x+w.x*10,y:state.aim.y+w.y*10}}:state}; // the target drifts by the sway
+ const swayNow=(h=holdSec())=>{if(!gl||reduced())return{x:0,y:0};const t=performance.now()/1000,s=swayAt(t),k=breathK(h),r=tremorAt(h,t);return{x:s.x*k+r.x,y:s.y*k+r.y}}; // hold sway in mil (breath hold shrinks it, oxygen debt adds tremor); only while the animated scope view runs
+ const view=()=>{const w=swayNow(),m=microNow();return w.x||w.y||m.x||m.y?{...state,aim:{x:state.aim.x+w.x*10+m.x,y:state.aim.y+w.y*10+m.y}}:state}; // the target drifts by the sway and the micro-adjust of a breath hold
  const glOn=()=>!!gl&&root.isConnected&&!flying&&!document.hidden;
  function glStop(){cancelAnimationFrame(glLoop);glLoop=0}
  function glStart(){ // light ~20 fps loop for the flags; runs only while the scope is visible
@@ -176,7 +182,7 @@ export function startSniper(){
  const hold=text=>Math.max(3500,Math.min(9000,1800+45*text.length));
  const apSteps=()=>{
   const w=weather[state.weather],c=calibers[state.profile],dk=distances[state.distance],T=tabOf(state.profile,state.distance),sp=flagMs(w),wt=weightsShown(T),wind=windEff(w,wt),
-   e=T.elev,k=T.drift1,[sx,sy]=solution(state),last=finalNow(),dir=dirOf(w);
+   e=T.elev,k=T.drift1,[sx,sy]=solution(state),last=finalNow(),dir=dirOf(w),again=state.tutorialDone===true?state.round>0:state.misses>0;
   return [
    {mark:'zoom',zoom:true,text:state.plane==='sfp'?tr('Ставлю кратність 4×, щоб знайти мішень, потім 10×. У SFP-прицілі ставлю 10× — тільки на цій кратності поділки сітки точні.','Setting 4× to find the target, then 10×. With an SFP scope I use 10× — the only magnification where the marks are true.'):tr('Ставлю кратність 4×, щоб знайти мішень, потім 16× для точного наведення.','Setting 4× to find the target, then 16× for precise aiming.')},
    {mark:'weather',text:tr('Читаю прапорці: ','Reading the flags: ')+flagPattern(w)+'. '+tr('Кожна риска — 2 м/с, тож це ','Each mark is 2 m/s, so that is ')+sp.join(', ')+tr(' м/с.',' m/s.')},
@@ -189,8 +195,8 @@ export function startSniper(){
    {mark:'x',text:'X = −('+(dir*k).toFixed(2)+' × '+wind.toFixed(1)+' + '+T.sc.toFixed(2)+') ≈ '+signedMil(sx)+tr(' міл. Чим довше куля летить, тим більше її зносить.',' mil. The longer the flight, the more the wind carries it.')+tr(' Порив не враховую — він видно лише по тому, як зараз тріпочуть прапорці.',' I ignore the current gust — it shows only in how the flags are flapping right now.')},
    {mark:'y',dial:'y',text:tr('Кручу барабан підйому до ','Dialing elevation to ')+mil(sy)+tr(' міл.',' mil.')},
    {mark:'x',dial:'x',text:tr('Кручу барабан вітру до ','Dialing windage to ')+signedMil(sx)+tr(' міл.',' mil.')},
-   {mark:'aim',aim:true,text:tr('Наводжу гвинтівку: ставлю мішень у центр сітки, бо поправки виставлені барабанами повністю.','Aiming the rifle: target to the reticle center, since the turrets carry the full correction.')},
-   {mark:'fire',text:tr('Приціл виставлено. Тепер ваш постріл — натисніть «Постріл».','Aim is set. Your shot — press Fire.')},
+   {mark:'aim',aim:true,text:again?tr('Барабани залишаю як є — поправка та сама, умови ті самі. Після віддачі лише заново наводжу мішень у центр сітки. Порив змінився — слідкую за прапорцями.','I keep the dial as it is — same correction, same conditions. After the recoil I only re-aim, target to the reticle center. The gust has moved on — I watch the flags.'):tr('Наводжу гвинтівку: ставлю мішень у центр сітки, бо поправки виставлені барабанами повністю.','Aiming the rifle: target to the reticle center, since the turrets carry the full correction.')},
+   {mark:'fire',text:tr('Натисніть і тримайте «Постріл» — затримка дихання; відпустіть у спокійне вікно (зелена смуга).','Press and hold Fire to hold your breath; release in the steady window (green bar).')},
    {mark:null,text:state.roundDone?(state.lastShot?.ring?tr('Влучання: ','Hit: ')+state.lastShot.ring+tr(' очок. ',' pts. ')+(state.lastShot.ring<10?tr(' Відхилення через порив і розкид — це нормально.',' The deviation comes from gusts and spread — that\'s normal.')+' ':''):tr('Промах: 0 очок. ','Miss: 0 pts. '))+(last?tr('Серію з '+seriesSize+' пострілів завершено.',seriesSize+'-shot series complete.'):tr('Переходжу до наступного раунду.','Moving to the next round.')):
     tr('Промах: ','Miss: ')+'X '+signedMil(miss?.dx??0)+' / Y '+signedMil(miss?.dy??0)+tr(' міл. Перевіряю розрахунок і виправляю.',' mil. Rechecking and correcting.')},
   ];
@@ -201,7 +207,7 @@ export function startSniper(){
   const button=root.querySelector('[data-autoplay]'),panel=root.querySelector('.sniper-autoplay');
   button.textContent=apLabel();button.setAttribute('aria-pressed',String(ap.on));
   for(const old of root.querySelectorAll('.is-explained'))old.classList.remove('is-explained');
-  if(!ap.on){panel?.remove();return}
+  if(!ap.on){panel?.remove();updateFire();return}
   const steps=apSteps(),s=steps[ap.step];
   if(panel){
    panel.querySelector('small').textContent=tr('Крок ','Step ')+(ap.step+1)+'/'+steps.length;
@@ -212,6 +218,7 @@ export function startSniper(){
   const el=s.mark==='x'||s.mark==='y'?root.querySelector('[data-axis="'+s.mark+'"]')?.closest('.sniper-axis'):
    s.mark==='zoom'?root.querySelector('.sniper-zoom'):s.mark==='aim'?root.querySelector('.sniper-scope'):s.mark==='weather'?root.querySelector('.sniper-weather'):s.mark==='fire'?root.querySelector('[data-fire]'):s.mark==='table'?root.querySelector('tr.is-current'):null;
   el?.classList.add('is-explained');
+  updateFire();
  }
  function schedule(fn,ms){
   clearTimeout(ap.timer);ap.fn=fn;ap.remaining=ms;ap.startedAt=Date.now();
@@ -375,23 +382,20 @@ export function startSniper(){
   runStep();
  }
 
- function resetShot(){gustSeed();state.misses=0;state.roundDone=false;delete state.lastShot;notice='';miss=null;state.aim=randomAim()}
+ function resetShot(next=false){ // next: another shot of the same series: the gust process keeps evolving and recoil moves the aim off the target
+  if(!next)gustSeed();
+  state.misses=0;state.roundDone=false;delete state.lastShot;notice='';miss=null;state.aim=next?recoilOf(state.aim):randomAim();
+ }
  function startSeries(){
-  const rounds=[];
-  let previous=state.weather;
-  while(rounds.length<seriesSize){
-   const available=weather.flatMap((entry,index)=>entry.east!==weather[previous].east?[index]:[]); // alternate wind side; indices may recur but never back to back
-   previous=available[Math.floor(Math.random()*available.length)];
-   rounds.push(previous);
-  }
+  const wi=Math.floor(Math.random()*weather.length); // one weather (mean wind and flags) for all five shots; only the gust keeps changing
   if(state.pendingMode!==undefined){state.mode=state.pendingMode;delete state.pendingMode}
   if(state.pendingProfile!==undefined){state.profile=state.pendingProfile;delete state.pendingProfile}
-  holes.length=0;
-  state.series={rounds,unassisted:[],scores:[],shots:[],usedCode:false,time:0,started:false};
+  holes.length=0;gl?.reset();
+  state.series={v:2,rounds:Array(seriesSize).fill(wi),unassisted:[],scores:[],shots:[],usedCode:false,time:0,started:false};
   resetShot();
   state.round=0;
   state.distance=modeDistances[state.mode][0];
-  state.weather=rounds[0];
+  state.weather=wi;
   state.x=state.y=0;
  }
 
@@ -403,24 +407,110 @@ export function startSniper(){
  document.addEventListener('visibilitychange',clock);
  let savedSec=-1;
  const tickId=setInterval(()=>{
-  if(!root.isConnected){clearInterval(tickId);document.removeEventListener('visibilitychange',glStart);glDrop();return}
+  if(!root.isConnected){clearInterval(tickId);clearTimeout(breath.timer);document.removeEventListener('visibilitychange',glStart);document.removeEventListener('visibilitychange',onLeave);document.removeEventListener('keydown',onKeyDown);document.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onLeave);glDrop();return}
+  if(breath.on&&holdSec()>=breathMax)cancelHold(true);
   clock();paintTimer();
   if(!glLoop){gustStep(performance.now());if(glOn()){try{gl.setWind(flagGusts());gl.draw(view())}catch(error){glFail(error)}}} // fallback when the animation loop is not running (reduced motion)
   const sec=state.series?Math.floor(state.series.time/1000):-1;
   if(mark&&sec!==savedSec){savedSec=sec;save()}
  },250);
 
+ // ---- Breath hold: press = hold the breath, release = shot ----
+ const apFireStep=11; // index of the 'fire' step in apSteps(): autoplay waits there for the player
+ const breath={on:false,t0:0,id:null,sx:0,sy:0,pm:{x:0,y:0},km:{x:0,y:0},recover:0,msg:'',msgUntil:0,key:false,timer:0};
+ let painter=()=>{};
+ const holdSec=()=>breath.on?(performance.now()-breath.t0)/1000:0;
+ const clampMicro=v=>Math.max(-microLimit,Math.min(microLimit,v));
+ const microNow=()=>breath.on?{x:clampMicro(breath.pm.x+breath.km.x),y:clampMicro(breath.pm.y+breath.km.y)}:{x:0,y:0}; // tenths of a mil
+ const fireGate=()=>!ap.on||ap.step===apFireStep; // with autoplay on, Fire works only at its fire-wait step
+ const canFire=()=>!state.roundDone&&!flying&&!rt&&fireGate();
+ function updateFire(){
+  const b=root.querySelector('[data-fire]');
+  if(!b)return;
+  b.hidden=state.roundDone===true;
+  b.disabled=!breath.on&&(!canFire()||performance.now()<breath.recover);
+  b.classList.toggle('is-holding',breath.on);b.setAttribute('aria-pressed',String(breath.on));
+  const label=breath.on?tr('Відпустіть — постріл','Release to fire'):tr('Постріл','Fire');
+  if(b.dataset.label!==label){b.dataset.label=label;b.innerHTML='<span aria-hidden="true">⊕</span> '+label}
+ }
+ function paintBreath(){
+  const el=root.querySelector('.sniper-breath');
+  if(!el)return;
+  const now=performance.now(),h=holdSec(),msg=!breath.on&&now<breath.msgUntil;
+  el.hidden=!(breath.on||msg);
+  if(el.hidden)return;
+  el.dataset.phase=breath.on?breathPhase(h):'over';
+  el.querySelector('[data-breath-label]').textContent=msg?breath.msg:tr('Затримка дихання','Breath hold')+' · '+h.toFixed(1)+' '+tr('с','s');
+  el.querySelector('[data-breath-fill]').style.width=(msg?100:Math.min(100,h/breathMax*100)).toFixed(1)+'%';
+ }
+ function breathTick(){
+  breath.timer=0;
+  if(!root.isConnected)return;
+  if(breath.on&&holdSec()>=breathMax)cancelHold(true);
+  paintBreath();
+  if(breath.on||performance.now()<Math.max(breath.recover,breath.msgUntil))breath.timer=setTimeout(breathTick,50);else updateFire();
+ }
+ const breathLoop=()=>{if(!breath.timer)breath.timer=setTimeout(breathTick,50)};
+ function startHold(){
+  if(breath.on||!canFire()||performance.now()<breath.recover)return false;
+  begin();
+  Object.assign(breath,{on:true,t0:performance.now(),pm:{x:0,y:0},km:{x:0,y:0},msg:'',msgUntil:0,key:false});
+  updateFire();paintBreath();breathLoop();
+  return true;
+ }
+ function endHold(){ // keeps the micro-adjust as part of the aim
+  const m=microNow();
+  if(m.x||m.y){state.aim={x:clampAim(+(state.aim.x+m.x).toFixed(2)),y:clampAim(+(state.aim.y+m.y).toFixed(2))};save()}
+  Object.assign(breath,{on:false,id:null,key:false,pm:{x:0,y:0},km:{x:0,y:0}});
+ }
+ function cancelHold(over){ // no shot: breath held too long (12 s) or the press was lost
+  if(!breath.on)return;
+  endHold();
+  const now=performance.now();
+  breath.recover=now+(over?breathRecover:400);
+  if(over){breath.msg=tr('Видихніть — затримка дихання надто довга','Breathe — breath held too long');breath.msgUntil=breath.recover;notice=breath.msg}
+  updateFire();paintBreath();painter();breathLoop();
+ }
+ function releaseHold(){
+  if(!breath.on)return;
+  const h=holdSec();
+  endHold();
+  fire({h});
+ }
+ const typing=t=>t instanceof Element&&!!t.closest('input,textarea,select,[contenteditable]');
+ const isSpace=e=>e.code==='Space'||e.key===' ';
+ const onKeyDown=event=>{
+  if(!root.isConnected||event.ctrlKey||event.altKey||event.metaKey)return;
+  const t=event.target;
+  if(isSpace(event)){
+   if(typing(t)||(t instanceof Element&&t.closest('button:not([data-fire]),a,[role="tab"],summary')))return;
+   event.preventDefault();
+   if(!event.repeat&&!breath.on&&startHold())breath.key=true;
+  }else if(breath.on&&breath.key&&event.key.startsWith('Arrow')){
+   event.preventDefault();
+   const d={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,1],ArrowDown:[0,-1]}[event.key];
+   if(d){breath.km.x=clampMicro(breath.km.x+d[0]*microKey);breath.km.y=clampMicro(breath.km.y+d[1]*microKey);painter()}
+  }
+ };
+ const onKeyUp=event=>{
+  if(!root.isConnected||!isSpace(event)||!breath.on||!breath.key)return;
+  event.preventDefault();releaseHold();
+ };
+ const onLeave=()=>{if(document.hidden||!breath.on)cancelHold(false)};
+ document.addEventListener('keydown',onKeyDown);document.addEventListener('keyup',onKeyUp);
+ document.addEventListener('visibilitychange',onLeave);window.addEventListener('blur',onLeave);
+
  // Explicit shot: score by distance from the solution, play the 3D flight, then record the result.
- async function fire(){
-  if(state.roundDone||flying||rt)return;
+ async function fire(o={}){ // o.h: seconds the breath was held at the release (0 = instant shot)
+  if(state.roundDone||flying||rt||!fireGate())return;
   begin();
   if(ap.on){clearTimeout(ap.timer);ap.fn=null}
   const tol=tolerance[state.distance],w=weather[state.weather],tutorial=state.tutorialDone!==true;
   gustStep(performance.now());
-  const ci=state.profile,D=distances[state.distance],T=tabOf(ci,state.distance),dir=dirOf(w),sw=swayNow(),gustRead=gp.g,flagG=flagGusts(),dv0=gauss()*sigma.dv0,hs=reduced()?sigma.holdReduced:sigma.hold;
+  const h=o.h||0,k=breathK(h),ci=state.profile,D=distances[state.distance],T=tabOf(ci,state.distance),dir=dirOf(w),sw=swayNow(h),gustRead=gp.g,flagG=flagGusts(),dv0=gauss()*sigma.dv0,hs=(reduced()?sigma.holdReduced:sigma.hold)*k;
   // The gust keeps evolving (Ornstein–Uhlenbeck, from the value the flags show now) while the bullet flies; the solver integrates the time-varying wind it actually meets.
   const gp2=ouPath(gustRead,sigma.gust,sigma.tau,gustDt,Math.ceil((T.tof+1.5)/gustDt)+2,gauss),res=gauss()*sigma.res,gf=pathFn(gp2,gustDt);
-  const disp={gust:0,gustRead,res,gp:gp2.map(v=>+v.toFixed(3)),gx:0,gxR:dir*T.drift1*gustRead,vy:0,dv0,rand:{x:gauss()*sigma.rand,y:gauss()*sigma.rand},hold:{x:gauss()*hs-sw.x,y:gauss()*hs-sw.y}}; // mil; hold is the impact error from the sway at the trigger pull
+  const disp={gust:0,gustRead,res,gp:gp2.map(v=>+v.toFixed(3)),gx:0,gxR:dir*T.drift1*gustRead,vy:0,dv0,rand:{x:gauss()*sigma.rand,y:gauss()*sigma.rand},hold:{x:gauss()*hs-sw.x,y:gauss()*hs-sw.y}}; // mil; hold is the impact error from the sway at the trigger pull (sway and hs already scaled by the breath factor k)
   const flags=flagMs(w).map(v=>dir*v),mean={flags},full={flags,gust:t=>dir*gf(t),res:dir*res};
   // Dial and pointing errors are all angles: the bore points (dial − aim offset + rifle + hold) from the zero.
   const ang={elevMil:(state.y-state.aim.y)/10+disp.rand.y+disp.hold.y,windMil:(state.x-state.aim.x)/10+disp.rand.x+disp.hold.x};
@@ -428,29 +518,28 @@ export function startSniper(){
   const noGust=B.trajectory(ci,D,{...ang,dv0,wind:mean,dx:D}),noV=B.trajectory(ci,D,{...ang,dv0:0,wind:mean,dx:D});
   disp.gx=path.impact.x-noGust.impact.x;disp.vy=noGust.impact.y-noV.impact.y;disp.gust=disp.gx/(dir*T.drift1); // gust: effective along-wind m/s equivalent
   const dx=10*path.impact.x,dy=10*path.impact.y,err=Math.hypot(dx,dy),ring=ringOf(err,state.distance),tof=path.tof;
-  const note=tr('Порив ','Gust ')+sgn(disp.gust,1)+tr(' м/с · швидкість ',' m/s · velocity ')+sgn(dv0,1)+tr(' м/с',' m/s')+'\n'+tr('розкид ','spread ')+sgn(disp.rand.x,2)+'/'+sgn(disp.rand.y,2)+tr(' · рука ',' · hold ')+sgn(disp.hold.x,2)+'/'+sgn(disp.hold.y,2)+tr(' міл',' mil');
+  const note=tr('Порив ','Gust ')+sgn(disp.gust,1)+tr(' м/с · швидкість ',' m/s · velocity ')+sgn(dv0,1)+tr(' м/с',' m/s')+'\n'+tr('розкид ','spread ')+sgn(disp.rand.x,2)+'/'+sgn(disp.rand.y,2)+tr(' · рука ',' · hold ')+sgn(disp.hold.x,2)+'/'+sgn(disp.hold.y,2)+tr(' міл',' mil')+(h>0?'\n'+tr('затримка дихання ','breath held ')+h.toFixed(1)+tr(' с · коеф. ',' s · factor ')+k.toFixed(2):'');
   if(state.realtime){
    if(ap.on)stopAutoplayTimerOnly();
    await realtimeShot({D,dx,dy,ring,note,tof});
   }else{
     flying=true;clock();
-    const button=root.querySelector('[data-fire]');
-    if(button)button.disabled=true;
+    updateFire();
     try{
      const {playFlight}=await import('./sniper-flight.js');
      await playFlight(root,{
       distance:D,caliber:calibers[ci],gravity,path,
-      aimMil:{x:state.x/10,y:state.y/10},impactMil:{x:dx/10,y:dy/10},targetRadiusMil:tol/10,ring10:ringFrac(state.distance),note,ring,hit:ring>0,
+      aimMil:{x:state.x/10,y:state.y/10},holes:holes.filter(v=>v.D===D),impactMil:{x:dx/10,y:dy/10},targetRadiusMil:tol/10,ring10:ringFrac(state.distance),note,ring,hit:ring>0,
       wind:{east:w.east,flags:w.flags,gust:flagG},
       duration:D<1000?D/100:10*Math.sqrt(D/1000),autoClose:ap.on?4:0,tr,
      });
     }catch(error){console.warn(error)}
-
+    if(ring>0){const hole={D,lat:dx/10*D/1000,dy:dy/10*D/1000};holes.push(hole);try{gl?.hole(hole)}catch(error){glFail(error)}}
   }
   flying=false;pendingRender=false;
   if(tutorial){
    if(ring){state.roundDone=true;state.lastShot={ring,score:Math.max(1,ring-(state.misses||0))};state.misses=0;notice='';miss=null}
-   else{state.misses=(state.misses||0)+1;miss={dx,dy};notice=tr('Промах · поправте приціл і стріляйте знову','Miss · correct and fire again')}
+   else{state.misses=(state.misses||0)+1;miss={dx,dy};state.aim=recoilOf(state.aim);notice=tr('Промах · поправте приціл і стріляйте знову','Miss · correct and fire again')}
   }else{
    const series=state.series;
    const before=series.shots.reduce((a,b)=>a+b.ms,0);
@@ -519,11 +608,10 @@ export function startSniper(){
    startSeries();
   }else{
    state.series.usedCode=false;
-   resetShot();
+   resetShot(true);
    state.round++;
    state.distance=modeDistances[state.mode][state.round];
-   state.weather=state.series.rounds[state.round];
-   state.x=state.y=0;
+   state.weather=state.series.rounds[state.round]; // same conditions; the turrets and zoom stay as the player left them
   }
   clock();
   save();render();scopeTop();
@@ -539,9 +627,11 @@ export function startSniper(){
   <li>${tr('Навіть ідеальний розрахунок не гарантує 10: реальний розкид — порив і залишок вітру (≈±0,5 м/с), розкид швидкості кулі ±2 м/с (≈7 фут/с), кучність гвинтівки ≈0,5 MOA, дихання стрільця й округлення барабанів до 0,1 міл — дає випадкове відхилення. За симуляцією ідеальний постріл дає 10 приблизно у 70% випадків на 300 м, 55% на 500 м, 20–32% на 1 км, 4–13% на 2 км і 2–4% на 3 км. Мішені на 2 і 3 км великі (сталева плита ⌀ 1,9 і 4,0 м): ідеальний постріл влучає в плиту приблизно у 60–90% (2 км) і 55–85% (3 км) випадків залежно від калібру — найкраще для .416 Barrett і .50 BMG, найгірше для .338 Lapua, яка на 2 км вже майже дозвукова.','Even a perfect solution doesn\'t guarantee a 10. Realistic error adds up: gust plus the unreadable part of the wind (about ±0.5 m/s), muzzle velocity varies by ±2 m/s (~7 fps), the rifle shoots about 0.5 MOA, the shooter\'s breathing moves the hold, and the turrets round to 0.1 mil. In simulation a perfect shot is a 10 about 70% of the time at 300 m, 55% at 500 m, 20–32% at 1 km, 4–13% at 2 km and 2–4% at 3 km. The 2 km and 3 km targets are large steel plates (1.9 m and 4.0 m across): a perfect shot still hits the plate about 60–90% of the time at 2 km and 55–85% at 3 km, depending on the caliber — best for the .416 Barrett and .50 BMG, worst for the .338 Lapua, which is nearly subsonic at 2 km.')}</li>
   <li>${tr('Вітер не постійний: порив повільно «дихає» (приблизно ±0,5 м/с, з часом ≈4 с), і його видно лише по прапорцях. Але куля летить кілька секунд, а порив за цей час змінюється: чим довший політ, тим менше допомагає зчитаний порив (на 1 км він прибирає ≈60% розкиду від вітру, на 3 км лише ≈20%). Прапорці випрямляються — вітер сильнішає: додайте поправку в бік вітру; обвисли — слабшає: додайте проти вітру або зачекайте затишшя. Скільки міл на кожен +1 м/с: .375 CheyTac — '+row(1)+' на 1 / 2 / 3 км; .338 Lapua — '+row(0)+'; .416 Barrett — '+row(2)+'; .50 BMG — '+row(3)+'. Тож порив ±0,5 м/с — це ≈±'+g(2)+' міл на 1 км і ≈±'+g(4)+' міл на 3 км для .375. Невидима частина вітру (≈0,1 м/с по трасі та майбутня зміна пориву) лишається випадковою.','The wind is not constant: the gust slowly breathes (about ±0.5 m/s, time constant about 4 s) and is visible only in the flags. But the bullet flies for several seconds and the gust keeps changing: the longer the flight, the less a gust you have read helps (at 1 km it removes about 60% of the wind scatter, at 3 km only about 20%). Flags straighten out = stronger wind: add windage toward the wind side; flags droop = weaker wind: add against the wind, or wait for a lull. Mil per extra +1 m/s: .375 CheyTac '+row(1)+' at 1 / 2 / 3 km; .338 Lapua '+row(0)+'; .416 Barrett '+row(2)+'; .50 BMG '+row(3)+'. So a ±0.5 m/s gust is about ±'+g(2)+' mil at 1 km and ±'+g(4)+' mil at 3 km for the .375. The unreadable part (about 0.1 m/s along the range and the future change of the gust) stays random.')}</li>
   <li>${tr('Сітка: у FFP (перша фокальна площина) сітка росте разом з кратністю, тож 1 поділка = 1 міл на будь-якому збільшенні. У SFP (друга фокальна площина) сітка має незмінний розмір і калібрована на 10×: на іншій кратності одна поділка — це 10/кратність міл, тож винос у поділках множте на 10/кратність. Точні поділки в SFP лише на 10×.','Reticle: in an FFP (first focal plane) scope the reticle grows with magnification, so 1 mark = 1 mil at any zoom. In an SFP (second focal plane) scope the reticle stays a fixed size and is calibrated at 10×: at any other magnification one mark is 10/zoom mil, so multiply your holdover in marks by 10/zoom. SFP marks are true only at 10×.')}</li>
+  <li>${tr('Затримка дихання: натисніть і тримайте «Постріл» (або пробіл) — відпускання робить постріл. Дихальна пауза гасить гойдання прицілу до 25% приблизно за 0,8 с; «тихе вікно» (зелена смуга) триває до ≈4 с. Далі кисневий борг: гойдання наростає (амбер до 7 с, червоне далі) і з’являється тремор. Через 12 с треба видихнути — затримка скасовується. Поки тримаєте, прапорці рухаються: чекайте на потрібний порив. Мікрокорекції: рухайте мишею (25 пікселів ≈ 1 піксель перетягування прицілу, до ±0,3 міл) або стрілками під час утримання пробілу (±0,01 міл).','Breath hold: press and hold Fire (or Space); releasing takes the shot. The respiratory pause cuts the sway to 25% in about 0.8 s, and the steady window (green bar) lasts until about 4 s. After that oxygen debt builds: the sway grows (amber to 7 s, red beyond) and a tremor appears. At 12 s you must breathe — the hold is cancelled. The flags keep moving while you hold, so wait for the right gust. Micro-corrections: move the mouse (25 px ≈ 1 px of scope drag, up to ±0.3 mil) or use the arrow keys while holding Space (±0.01 mil).')}</li>
   <li>${tr('Вологість на код не впливає.','Humidity does not affect the code.')}</li>
   <li>${tr('Можна не докручувати барабани: якщо бракує поправки, поставте мішень на поділку сітки на цю різницю (винос). Наприклад, бракує 0.7 міл підйому — мішень на поділці 0.7 нижче центру.','You don\'t have to dial everything: if the dial is short, put the target on the reticle mark at that difference (holdover). E.g. 0.7 mil elevation short — put the target on the 0.7 mark below center.')}</li>`;
 }
+ const cmOf=(milValue,D)=>Math.round(milValue*D/10)+' '+tr('см','cm'); // mil at the target, metric
  const dispTip=d=>tr('Порив ','Gust ')+sgn(d.gust,1)+tr(' м/с · швидкість ',' m/s · velocity ')+sgn(d.dv0,1)+tr(' м/с · розкид ',' m/s · spread ')+sgn(d.rand.x,2)+'/'+sgn(d.rand.y,2)+tr(' · рука ',' · hold ')+sgn(d.hold.x,2)+'/'+sgn(d.hold.y,2)+tr(' міл',' mil');
  function resultsHtml(){
   const series=state.series,shots=series.shots,n=shots.length,hits=shots.filter(v=>v.hit).length,total=series.scores.reduce((a,b)=>a+b,0),
@@ -558,7 +648,7 @@ export function startSniper(){
     `<g transform="translate(${x} ${y})" class="miss"><path d="M-4-4L4 4M4-4L-4 4"/><text x="8" y="-5">${i+1}</text></g>`;
   }).join('');
   const rings=Array.from({length:10},(_,j)=>`<circle r="${(R*(fp+(1-fp)*j/9)).toFixed(1)}"${j===9?' class="edge"':''}/>`).join('');
-  const rows=shots.map((v,i)=>`<tr><td><span class="sa-dot" style="background:${shotColors[i%shotColors.length]}"></span>${i+1}</td><td>${distLabel(distances[modeDistances[state.mode][i]])}</td><td>${v.ring}${v.hit?'':' ×'}</td><td>${(v.ms/1000).toFixed(1)} ${tr('с','s')}</td><td${v.disp?` title="${dispTip(v.disp)}"`:''}>${(Math.hypot(v.dx,v.dy)/10).toFixed(2)}</td></tr>`).join('');
+  const rows=shots.map((v,i)=>`<tr><td><span class="sa-dot" style="background:${shotColors[i%shotColors.length]}"></span>${i+1}</td><td>${distLabel(distances[modeDistances[state.mode][i]])}</td><td>${v.ring}${v.hit?'':' ×'}</td><td>${(v.ms/1000).toFixed(1)} ${tr('с','s')}</td><td${v.disp?` title="${dispTip(v.disp)}"`:''}>${(Math.hypot(v.dx,v.dy)/10).toFixed(2)} <small>· ${cmOf(Math.hypot(v.dx,v.dy)/10,distances[modeDistances[state.mode][i]])}</small></td></tr>`).join('');
   return `<dl class="sniper-stats">
     ${cell(tr('Влучань','Hits'),hits+'/'+n)}${cell(tr('Точність','Accuracy'),Math.round(100*hits/n)+'%')}
     ${cell(tr('Бали','Score'),total+'/'+maxScore+badge(rec.score))}${cell(tr('Час серії','Series time'),clock2(time))}
@@ -573,6 +663,7 @@ export function startSniper(){
    <p class="sniper-hint-note">${tr('Рекорд','Best')}: ${state.bestScore??0}/${maxScore} · ${(state.bestHpm??0).toFixed(1)} ${tr('влуч./хв','hits/min')}</p>`;
  }
  function render(){
+  if(breath.on)cancelHold(false); // the button is about to be rebuilt
   const conditions=weather[state.weather];
   const tutorial=state.tutorialDone!==true;
   const finalRound=!tutorial&&state.round===seriesSize-1;
@@ -588,7 +679,7 @@ export function startSniper(){
    shownMode=sel&&state.pendingMode!==undefined?state.pendingMode:state.mode,shownProfile=sel&&state.pendingProfile!==undefined?state.pendingProfile:state.profile,
    lockTip=tr('Дистанцію можна змінити до першого пострілу або після серії','Distance can be changed before the first shot or after the series'),
    pills=(attr,labels,cur,titles)=>labels.map((l,i)=>`<button type="button" data-${attr}="${i}" aria-pressed="${i===cur}"${titles?` title="${titles[i]}"`:''}>${l}</button>`).join(''),
-   plan=modeDistances[state.mode].map((di,i)=>i===state.round?'<b>'+distLabel(distances[di])+'</b>':distLabel(distances[di])).join(' · '),
+   plan=seriesSize+' × '+distLabel(distances[modeDistances[state.mode][0]]),
    pickRows=`<div class="sniper-pick" role="group" aria-label="${tr('Дистанція','Distance')}"><span class="sniper-pick-label">${tr('Дистанція','Distance')}</span>${canPick?`<span class="sniper-pills">${pills('mode',modeLabels(),shownMode)}</span>`:`<span class="sniper-pick-plan" title="${lockTip}">${plan}</span>`}</div>
    <div class="sniper-pick" role="group" aria-label="${tr('Калібр','Caliber')}"><span class="sniper-pick-label">${tr('Калібр','Caliber')}</span>${canPick?`<span class="sniper-pills">${pills('profile',caliberShort,shownProfile,profiles)}</span>`:`<span class="sniper-pick-plan" title="${tr('Калібр можна змінити до першого пострілу або після серії','Caliber can be changed before the first shot or after the series')}">${caliber.name}</span>`}</div>`;
   const axisLabel=(axis,text)=>`<label class="sniper-axis"><span>${axis.toUpperCase()}</span><input type="range" min="${axis==='x'?-xMax:0}" max="${axis==='x'?xMax:yMax}" step="1" value="${state[axis]}" data-axis="${axis}" aria-label="${text}"><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-number="${axis}" aria-label="${text}"></label>`;
@@ -606,6 +697,7 @@ export function startSniper(){
       <div class="sniper-hud sniper-hud-wind" aria-hidden="true">${compass(conditions).replace(/ /g,'')} ${flagPattern(conditions).replace(/ \/ /g,'/')}</div>
       <div class="sniper-hud sniper-hud-turret" aria-hidden="true"></div>
       <div class="sniper-hud sniper-hud-plane" aria-hidden="true" hidden></div>
+      <div class="sniper-hud sniper-breath" aria-hidden="true" hidden><span data-breath-label></span><i class="sniper-breath-bar"><b data-breath-fill></b></i></div>
       ${ap.on?apPanel():''}
      </div>
      <div class="sniper-reticle" role="group" aria-label="${tr('Сітка','Reticle')}">${optics.map((label,i)=>`<button type="button" data-optic="${i}" aria-pressed="${i===state.optic}">${tr(...label)}</button>`).join('')}</div>
@@ -673,7 +765,7 @@ export function startSniper(){
       </div>
      </section>
      <div class="sniper-actions">
-      <button type="button" class="sniper-fire" data-fire><span aria-hidden="true">⊕</span> ${tr('Постріл','Fire')}</button>
+      <button type="button" class="sniper-fire" data-fire aria-pressed="false" aria-keyshortcuts="Space"><span aria-hidden="true">⊕</span> ${tr('Постріл','Fire')}</button>
       <button type="button" class="sniper-next" data-next>${tutorial?tr('Почати серію','Start series'):finalRound?tr('Нова серія','New series'):tr('Наступний раунд','Next round')}</button>
      </div>
     </aside>
@@ -748,7 +840,7 @@ export function startSniper(){
    }
    for(const hint of root.querySelectorAll('[data-check-axis],[data-code]'))hint.disabled=complete||busy;
    for(const button of opticButtons)button.disabled=complete;
-   fireButton.disabled=complete||flying||busy;fireButton.hidden=complete;
+   updateFire();root.dataset.aim=(state.aim.x+microNow().x).toFixed(2)+','+(state.aim.y+microNow().y).toFixed(2);
    next.disabled=!complete;next.hidden=!complete;
    result.dataset.won=String(complete);
    let message=notice||tr('Знайдіть мішень, виставте X та Y, наведіть і стріляйте','Find the target, set X and Y, aim, then fire');
@@ -826,6 +918,7 @@ export function startSniper(){
    if(step.dataset.step==='x')setAlignment(state.x+delta,state.y);
    else setAlignment(state.x,state.y+delta);
   };
+  const aimStep=()=>uOf(state.zoom)*canvas.clientWidth/viewSize/10; // px per tenth of a mil
   let drag=null;
   canvas.onpointerdown=event=>{
    takeover();
@@ -835,7 +928,7 @@ export function startSniper(){
   };
   canvas.onpointermove=event=>{
    if(drag?.id!==event.pointerId)return;
-   const step=uOf(state.zoom)*canvas.clientWidth/viewSize/10; // px per tenth of a mil
+   const step=aimStep();
    setAim(drag.x+Math.round((event.clientX-drag.left)/step),drag.y-Math.round((event.clientY-drag.top)/step));
   };
   canvas.onlostpointercapture=()=>{drag=null;dragging=false;if(pendingRender){pendingRender=false;render()}};
@@ -873,7 +966,28 @@ export function startSniper(){
   });
   const rtBox=root.querySelector('[data-realtime]');
   rtBox.disabled=!!rt;rtBox.onchange=()=>{state.realtime=rtBox.checked;save()};
-  fireButton.onclick=()=>fire();
+  fireButton.onpointerdown=event=>{
+   if(event.pointerType==='mouse'&&event.button!==0)return;
+   event.preventDefault();
+   if(!startHold())return;
+   breath.id=event.pointerId;breath.sx=event.clientX;breath.sy=event.clientY;
+   try{fireButton.setPointerCapture(event.pointerId)}catch{}
+   fireButton.focus({preventScroll:true});
+  };
+  fireButton.onpointermove=event=>{
+   if(!breath.on||breath.id!==event.pointerId)return;
+   const step=aimStep();
+   breath.pm.x=clampMicro((event.clientX-breath.sx)*microScale/step);breath.pm.y=clampMicro(-(event.clientY-breath.sy)*microScale/step); // 1/25 of the scope drag, tenths of a mil
+   painter();
+  };
+  fireButton.onpointerup=event=>{if(breath.on&&breath.id===event.pointerId){try{fireButton.releasePointerCapture(event.pointerId)}catch{}releaseHold()}};
+  fireButton.onpointercancel=event=>{if(breath.on&&breath.id===event.pointerId)cancelHold(false)};
+  fireButton.onlostpointercapture=event=>{if(breath.on&&breath.id===event.pointerId)cancelHold(false)};
+  fireButton.oncontextmenu=event=>event.preventDefault();
+  fireButton.onkeydown=event=>{ // Enter on the focused button: instant shot with the current sway (accessibility fallback); Space is the global hold key
+   if(event.key==='Enter'&&!event.ctrlKey&&!event.altKey&&!event.metaKey){event.preventDefault();if(!event.repeat&&!breath.on)fire()}
+   else if(isSpace(event))event.preventDefault();
+  };
   const expand=root.querySelector('[data-expand]');
   if(expand)expand.onclick=()=>{
    analysisModal?.remove();
@@ -891,7 +1005,7 @@ export function startSniper(){
   root.querySelector('[data-autoplay]').onclick=()=>{if(ap.on)stopAutoplay();else startAutoplay()};
   const pauseButton=root.querySelector('[data-autoplay-pause]');
   if(pauseButton)pauseButton.onclick=togglePause;
-  align=setAlignment;aimer=setAim;zoomer=setZoom;
+  align=setAlignment;aimer=setAim;zoomer=setZoom;painter=paint;
   bindCalc();
   root.querySelector('[data-language]').onclick=()=>document.querySelector('.lang').click();
   paint();
@@ -1144,6 +1258,8 @@ function createGL(T,buildWorld,holes){
   },
   setWind(g){wind=g;world?.setWind(g)},
   impact(h){world?.addImpact(h)},
+  hole(h){world?.addHole(h)},
+  reset(){key=''}, // rebuild the range (drops the old bullet holes) on the next draw
   update(dt){world?.update(dt)},
   dispose(){world?.dispose();world=null;renderer.dispose();renderer.forceContextLoss()}
  };

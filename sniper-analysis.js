@@ -13,6 +13,7 @@ const nice=(lo,hi,n)=>{
 const fmtTick=(v,st)=>(st>=1?String(Math.round(v)):v.toFixed(st>=.1?1:2)).replace('-','−');
 const sg=(v,d=2)=>(v<0?'−':v>0?'+':'')+Math.abs(v).toFixed(d);
 const median=a=>{const s=[...a].sort((x,y)=>x-y),m=s.length>>1;return s.length%2?s[m]:(s[m-1]+s[m])/2};
+const cmAt=(m,D)=>Math.round(m*D/10)+' '+tr('см','cm'); // mil → centimetres at the target
 const dist=d=>d<1000?d+' '+tr('м','m'):d/1000+' '+tr('км','km');
 
 // Greedy vertical nudge so direct labels do not overlap: items {x,y}, returns adjusted y.
@@ -172,12 +173,13 @@ export function analysisHtml(shots,M,W=420,wide=false){
  const P=prepShots(shots,M);
  if(!P.length)return'';
  const G=groupStats(P),H=Math.round(W*.55),fig=(t,sub,body)=>`<figure class="sa-fig"><figcaption>${t}${sub?`<small>${sub}</small>`:''}</figcaption>${body}</figure>`,
-  cell=(l,v)=>`<div><dt>${l}</dt><dd>${v}</dd></div>`;
+  cell=(l,v)=>`<div><dt>${l}</dt><dd>${v}</dd></div>`,
+  one=new Set(P.map(q=>q.D)).size===1,cm=v=>one?' · '+cmAt(v,P[0].D):''; // one distance per series: metric size at the target as a secondary label
  const legend=`<ul class="sa-legend">${P.map(q=>`<li><span class="sa-dot" style="background:${q.color}"></span>#${q.i+1} ${dist(q.D)} · ${q.s.ring}${q.s.hit?'':' ×'}</li>`).join('')}</ul>`;
  const stats=`<dl class="sniper-stats sa-stats">
-  ${cell(tr('Крайній розкид (ES)','Extreme spread (ES)'),G.es.toFixed(2)+' '+tr('міл','mil')+' · ≈ '+(G.es*MOA).toFixed(1)+' MOA')}
-  ${cell(tr('Середній радіус','Mean radius'),G.meanR.toFixed(2)+' '+tr('міл','mil'))}
-  ${cell('CEP50',G.cep.toFixed(2)+' '+tr('міл','mil'))}
+  ${cell(tr('Крайній розкид (ES)','Extreme spread (ES)'),G.es.toFixed(2)+' '+tr('міл','mil')+' · ≈ '+(G.es*MOA).toFixed(1)+' MOA'+cm(G.es))}
+  ${cell(tr('Середній радіус','Mean radius'),G.meanR.toFixed(2)+' '+tr('міл','mil')+cm(G.meanR))}
+  ${cell('CEP50',G.cep.toFixed(2)+' '+tr('міл','mil')+cm(G.cep))}
   ${cell(tr('Центр групи (MPI)','Mean point of impact'),'X '+sg(G.mx)+' / Y '+sg(G.my))}
   ${cell(tr('Станд. відхилення X','Std dev X'),G.sdX.toFixed(2)+' '+tr('міл','mil'))}
   ${cell(tr('Станд. відхилення Y','Std dev Y'),G.sdY.toFixed(2)+' '+tr('міл','mil'))}</dl>`;
