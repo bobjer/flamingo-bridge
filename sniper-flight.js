@@ -113,7 +113,7 @@ function scene3d(T,o,root,canvas,onFinal,onHud){
  const renderer=new T.WebGLRenderer({canvas,antialias:true,logarithmicDepthBuffer:true});
  if(!renderer.getContext())throw new Error('no gl');
  renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
- const world=buildWorld(T,{distance:D,wind:W,targetRadiusM:R1,ring10:o.ring10}),{scene,sky,plate:pl,flags,lam,add,tex}=world;
+ const world=buildWorld(T,{distance:D,wind:W,targetRadiusM:R1,ring10:o.ring10,world:o.world}),{scene,sky,plate:pl,flags,lam,add,tex}=world;
  renderer.setClearColor(world.clearColor);
  const cam=new T.PerspectiveCamera(50,1,.05,4500);
  const uS={value:600};

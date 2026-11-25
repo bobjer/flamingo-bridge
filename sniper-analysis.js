@@ -123,7 +123,7 @@ function top(P,W,H){
 function velocity(P,W,H,M){
  const {B}=M,Dm=Math.max(...P.map(q=>q.D)),cis=[...new Set(P.map(q=>q.ci))],cals=cis.map(ci=>M.calibers[ci]),vmax=Math.max(...cals.map(c=>c.v0))*1.05,SOUND=B.sound;
  const f=frame({W,H,x:[0,Dm*1.02],y:[0,vmax],xl:tr('Дистанція, м','Range, m'),yl:tr('Швидкість, м/с','Velocity, m/s'),r:16});
- let b=f.g+`<rect class="sa-trans" x="${f.m.l}" y="${f.sy(400).toFixed(1)}" width="${f.pw}" height="${(f.sy(300)-f.sy(400)).toFixed(1)}"><title>${tr('Трансзвукова зона 300–400 м/с','Transonic zone 300–400 m/s')}</title></rect><line class="sa-sound" x1="${f.m.l}" x2="${f.m.l+f.pw}" y1="${f.sy(SOUND).toFixed(1)}" y2="${f.sy(SOUND).toFixed(1)}"/><text class="sa-t sa-warn" x="${f.m.l+6}" y="${(f.sy(SOUND)-5).toFixed(1)}">${tr(`звуковий бар’єр ${SOUND} м/с`,`sound barrier ${SOUND} m/s`)}</text>`;
+ let b=f.g+(SOUND?`<rect class="sa-trans" x="${f.m.l}" y="${f.sy(SOUND*1.175).toFixed(1)}" width="${f.pw}" height="${(f.sy(SOUND*.88)-f.sy(SOUND*1.175)).toFixed(1)}"><title>${tr(`Трансзвукова зона ${Math.round(SOUND*.88)}–${Math.round(SOUND*1.175)} м/с`,`Transonic zone ${Math.round(SOUND*.88)}–${Math.round(SOUND*1.175)} m/s`)}</title></rect>`:'')+`${SOUND?`<line class="sa-sound" x1="${f.m.l}" x2="${f.m.l+f.pw}" y1="${f.sy(SOUND).toFixed(1)}" y2="${f.sy(SOUND).toFixed(1)}"/><text class="sa-t sa-warn" x="${f.m.l+6}" y="${(f.sy(SOUND)-5).toFixed(1)}">${tr(`звуковий бар’єр ${SOUND} м/с`,`sound barrier ${SOUND} m/s`)}</text>`:''}`;
  const lab=[];
  cals.forEach((c,k)=>{
   const nom=B.trajectory(cis[k],Dm,{dx:Dm/80,dt:.002});

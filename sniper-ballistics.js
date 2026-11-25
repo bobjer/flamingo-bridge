@@ -1,12 +1,22 @@
 // Point-mass exterior ballistics with G7 drag, shared by the game, the table, the 3D flight and the analysis. Pure: no DOM, no three.js.
 // Frame: x downrange, y up, z lateral (right = +). Bore at the origin, the sight line is the horizontal y = sightHeight.
-// Air: ICAO standard sea level, 15 C: density 1.225 kg/m3, speed of sound 340.3 m/s. Game gravity is deliberately g = 10 m/s2.
+// Air: the selected world's density, speed of sound and rotation (WORLDS below); Earth = ICAO sea level, 15 C: 1.225 kg/m3, 340.3 m/s. The 'Earth' game world has the deliberate gravity g = 10 m/s2.
+// Spin drift (Litz) is an air effect: it is scaled by rho/1.225 (vacuum: 0, thin Mars air: tiny). Coriolis keeps latitude 48 N for every world, with the world's rotation rate.
 // Drag: a = (pi/8)*rho*Cd_G7(M)*v_rel^2 / BC_SI along the air-relative velocity, BC_SI = BC_G7[lb/in2]*703.07 kg/m2.
 // Spin drift (right-hand twist, always right): Litz approximation SD[in] = 1.25*(SG+1.2)*t^1.83, SG ~ 2.0. Empirical, fine for a game.
 // Coriolis: latitude 48 N, range pointing North (Eotvos term 0), deflection to the right = Omega*sin(lat)*D*t.
 
 export const AIR={rho:1.225,sound:340.3};
 export const OMEGA=7.292e-5;
+// The one table of game worlds. flagMs: speed (m/s) of flag marks 1/2/3; gust: stationary sigma (m/s) of the OU gust (residual wind = gust/5); sound null = no air (no Mach); omega: rotation rate, rad/s; tempC informational.
+export const WORLDS={
+ moon:{id:'moon',name:['Місяць','Moon'],g:1.62,rho:0,sound:null,omega:2.66e-6,flagMs:[0,0,0],gust:0,tempC:null},
+ earth:{id:'earth',name:['Майже Земля (g = 10)','Almost Earth (g = 10)'],g:10,rho:1.225,sound:340.3,omega:OMEGA,flagMs:[2,4,6],gust:.5,tempC:15},
+ mars:{id:'mars',name:['Марс','Mars'],g:3.71,rho:.02,sound:240,omega:7.088e-5,flagMs:[8,16,25],gust:3,tempC:-60},
+ mercury:{id:'mercury',name:['Меркурій','Mercury'],g:3.7,rho:0,sound:null,omega:1.24e-6,flagMs:[0,0,0],gust:0,tempC:null},
+};
+export const WORLD_IDS=Object.keys(WORLDS);
+export const validWorld=v=>typeof v==='string'&&Object.hasOwn(WORLDS,v);
 export const GUST_DT=.25; // spacing (s) of stored gust paths
 
 // Standard G7 drag coefficient vs Mach (public JPG/BRL G7 table).
@@ -45,9 +55,10 @@ export const pathFn=(gp,dt)=>t=>{ // linear interpolation of a sampled path, cla
  return gp.length<2?(gp[0]||0):gp[i]+(gp[i+1]-gp[i])*Math.min(1,u-i);
 };
 
-export function makeBallistics({gravity=10,sightHeight=.05,zeroRange=100,latitude=48,calibers=CALIBERS,distances=[300,500,1000,2000,3000]}={}){
- const K=Math.PI/8*AIR.rho,invSnd=1/AIR.sound,spin0=1.25*.0254,corK=OMEGA*Math.sin(latitude*Math.PI/180),A=new Float64Array(3);
- const spinM=(c,t)=>spin0*(c.sg+1.2)*t**1.83; // spin drift, metres, to the right
+export function makeBallistics({world=WORLDS.earth,sightHeight=.05,zeroRange=100,latitude=48,calibers=CALIBERS,distances=[300,500,1000,2000,3000]}={}){
+ const gravity=world.g,rho=world.rho,sound=world.sound;
+ const K=Math.PI/8*rho,invSnd=sound?1/sound:0,spin0=1.25*.0254*rho/AIR.rho,corK=world.omega*Math.sin(latitude*Math.PI/180),A=new Float64Array(3);
+ const spinM=(c,t)=>spin0*(c.sg+1.2)*t**1.83; // spin drift, metres, to the right (scaled by rho/1.225)
  const corM=(x,t)=>corK*x*t; // Coriolis deflection, metres, to the right
  // Core RK4 integrator to x = xStop. wf(x,t) = lateral wind speed (m/s, right +) or null. rec = {step,arr:{x,y,z,v,t}} records samples every step metres.
  function integrate(ci,theta,psi,dv0,wf,xStop,dt,rec){
@@ -100,10 +111,10 @@ export function makeBallistics({gravity=10,sightHeight=.05,zeroRange=100,latitud
   const key=ci+'|'+D;let T=cache.get(key);if(T)return T;
   const th=solveAngle(ci,D,zeros[ci]+ (D>zeroRange?.0005*D/1000:0)),base=integrate(ci,th,0,0,null,D,TD),c=calibers[ci];
   const sens=[0,1,2].map(i=>{const f=[0,0,0];f[i]=1;return integrate(ci,th,0,0,mkWind(D,{flags:f}),D,TD).z/D*1000});
-  const drift1=sens[0]+sens[1]+sens[2],weights=sens.map(s=>s/drift1);
+  const drift1=sens[0]+sens[1]+sens[2],weights=Math.abs(drift1)<1e-9?[1/3,1/3,1/3]:sens.map(s=>s/drift1); // no air: no wind effect, weights are moot
   const dvy=(integrate(ci,th,0,1,null,D,TD).y-base.y)/D*1000; // mil per +1 m/s of muzzle velocity
   const spin=spinM(c,base.t)/D*1000,coriolis=1000*corK*base.t;
-  T={elev:(th-zeros[ci])*1000,theta:th,drift1,sens,weights,spin,coriolis,sc:spin+coriolis,tof:base.t,vImpact:base.v,mach:base.v*invSnd,dvy,D};
+  T={elev:(th-zeros[ci])*1000,theta:th,drift1,sens,weights,spin,coriolis,sc:spin+coriolis,tof:base.t,vImpact:base.v,mach:sound?base.v*invSnd:null,dvy,D};
   cache.set(key,T);return T;
  }
  // Full trajectory. opts: elevMil / windMil = turret dial plus any angular error (mil, from the zero), dv0, wind {flags:[3 signed m/s],gust:t=>m/s,res} or {fn:(x,t)=>m/s},
@@ -120,16 +131,19 @@ export function makeBallistics({gravity=10,sightHeight=.05,zeroRange=100,latitud
   }
   const iD=n;
   return{...arr,n:N,step,iD,D,sight:sightHeight,
-   impact:{x:arr.z[iD]/D*1000,y:(arr.y[iD]-sightHeight)/D*1000},tof:arr.t[iD],vImpact:arr.v[iD],mach:arr.v[iD]*invSnd,end,
+   impact:{x:arr.z[iD]/D*1000,y:(arr.y[iD]-sightHeight)/D*1000},tof:arr.t[iD],vImpact:arr.v[iD],mach:sound?arr.v[iD]*invSnd:null,end,
    spinMil:spinOn?spinM(c,arr.t[iD])/D*1000:0,corMil:coriolisOn?corM(D,arr.t[iD])/D*1000:0};
  }
  // Interpolated lookup of a sampled trajectory at range x: ballistics.at(path,'y',x).
  const at=(p,key,x)=>{const a=p[key],u=Math.max(0,Math.min(p.n-1,x/p.step)),i=Math.min(p.n-2,u|0);return a[i]+(a[i+1]-a[i])*(u-i)};
  // Inverse: range at flight time t.
  const xAt=(p,t)=>{const a=p.t;let lo=0,hi=p.n-1;if(t<=0)return 0;if(t>=a[hi])return p.x[hi];while(hi-lo>1){const m=(lo+hi)>>1;a[m]<=t?lo=m:hi=m}return p.x[lo]+(t-a[lo])/(a[hi]-a[lo])*(p.x[hi]-p.x[lo])};
- const api={calibers,gravity,sightHeight,zeroRange,latitude,rho:AIR.rho,sound:AIR.sound,distances,zero:ci=>zeros[ci]*1000,table,trajectory,at,xAt,integrate,prof,mkWind};
+ const api={calibers,gravity,sightHeight,zeroRange,latitude,world,rho,sound,distances,zero:ci=>zeros[ci]*1000,table,trajectory,at,xAt,integrate,prof,mkWind};
  for(let ci=0;ci<calibers.length;ci++)for(const D of distances)table(ci,D);
  return api;
 }
 
 export const ballistics=makeBallistics();
+const byWorld=new Map([['earth',ballistics]]);
+// One solver instance per world, built on first use (tables are cached inside it per caliber and distance).
+export const ballisticsFor=id=>{if(!validWorld(id))id='earth';let b=byWorld.get(id);if(!b)byWorld.set(id,b=makeBallistics({world:WORLDS[id]}));return b};
