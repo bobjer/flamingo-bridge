@@ -337,3 +337,19 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-board .sniper-impact button { min-height: 36px; padding: 4px 14px; border-color: var(--sniper-accent); background: var(--sniper-accent); color: #141b18; font-weight: 800; }
 .sniper-settings .sniper-check { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; font-size: 14px; color: var(--sniper-ink); }
 .sniper-settings .sniper-check input { accent-color: var(--sniper-accent); width: 18px; height: 18px; margin: 0; }
+
+.sniper-hud-plane { top: 44px; right: 10px; color: #f5ad53; border-color: #f5ad5380; }
+.sniper-hud-plane.is-true { color: var(--sniper-accent); border-color: var(--sniper-line); }
+.sniper-hud-plane[hidden] { display: none; }
+.sniper-pick { display: flex; align-items: center; gap: 4px 8px; margin-top: 6px; min-width: 0; }
+.sniper-pick-label { flex: none; min-width: 7.2em; white-space: nowrap; color: var(--sniper-muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.sniper-pills { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }
+.sniper-board .sniper-pills button { min-height: 24px; padding: 1px 6px; border: 1px solid var(--sniper-line); border-radius: 999px; background: #18211b; font-size: 11.5px; line-height: 1.3; white-space: nowrap; }
+.sniper-board .sniper-pills button[aria-pressed="true"] { background: var(--sniper-accent); color: #141b18; font-weight: 700; border-color: var(--sniper-accent); }
+.sniper-board .sniper-pills button:disabled { opacity: .55; }
+.sniper-pick-plan { color: var(--sniper-muted); font: 12px var(--mono, monospace); cursor: help; }
+.sniper-pick-plan b { color: var(--sniper-accent); }
+.sniper-settings .sniper-plane { grid-column: 1 / -1; display: grid; gap: 6px; margin: 0; padding: 8px; border: 1px solid var(--sniper-line); border-radius: 8px; min-width: 0; }
+.sniper-settings .sniper-plane legend { padding: 0 4px; font-size: 12px; color: var(--sniper-muted); letter-spacing: .06em; text-transform: uppercase; }
+.sniper-settings .sniper-plane label { display: flex; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; font-size: 14px; color: var(--sniper-ink); }
+.sniper-settings .sniper-plane input { accent-color: var(--sniper-accent); margin: 0; }

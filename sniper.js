@@ -10,7 +10,9 @@ const gravity=B.gravity; // Game-world gravity (10), deliberately not 9.80665; t
 const calibers=B.calibers; // {name,v0,bc7,…}: 300 gr .338 Lapua, 350 gr .375 CheyTac, 395 gr .416 Barrett, 750 gr .50 BMG
 const profiles=calibers.map(c=>c.name);
 const distances=[300,500,1000,2000,3000];
-const modeDistances=[[0,0,0,0,0],[1,1,1,1,1],[2,2,3,3,4]]; // series mode → distance index per round
+const modeDistances=[[0,0,0,0,0],[1,1,1,1,1],[2,2,2,2,2],[3,3,3,3,3],[4,4,4,4,4],[2,2,3,3,4]]; // series mode (300 m, 500 m, 1 km, 2 km, 3 km, mix) → distance index per round
+const modeLabels=()=>[tr('300 м','300 m'),tr('500 м','500 m'),tr('1 км','1 km'),tr('2 км','2 km'),tr('3 км','3 km'),tr('Мікс 1–3 км','Mix 1–3 km')];
+const mixMode=5,caliberShort=['.338 LM','.375 CT','.416 B','.50 BMG'];
 const tolerance=[12,8,5,4.7,6.6]; // hit tolerance in tenths of a mil, by distance index (2 km and 3 km: large ELR steel, plate Ø 1.9 m and 4.0 m)
 const ring10=[1.3,1.15,.95,.95,.95]; // 10-ring radius in tenths of a mil per distance index (constant ~0.1 mil angular size, a bit larger up close)
 const ringFrac=d=>ring10[d]/tolerance[d]; // 10-ring radius as a fraction of the plate (ring 1) radius
@@ -61,7 +63,7 @@ const clock2=ms=>{const t=Math.round(ms/100),m=Math.floor(t/600),sec=(t%600)/10;
 const clock1=ms=>{const t=Math.floor(ms/1000);return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0')};
 const maxScore=seriesSize*10;
 const clampAxis=(axis,value)=>axis==='x'?Math.max(-xMax,Math.min(xMax,value)):Math.max(0,Math.min(yMax,value));
-const initial=()=>({mode:2,distance:2,optic:0,profile:0,weather:0,x:0,y:0,aim:randomAim(),zoom:zoomMin});
+const initial=()=>({mode:mixMode,modeV:2,plane:'ffp',distance:2,optic:0,profile:0,weather:0,x:0,y:0,aim:randomAim(),zoom:zoomMin});
 const mil=value=>(Math.abs(value)/10).toFixed(1);
 const signedMil=value=>value<0?'−'+mil(value):value>0?'+'+mil(value):mil(0);
 
@@ -82,7 +84,11 @@ export function startSniper(){
  if(state.round===undefined&&validSeries(state.series)&&validIndex(state.distance,seriesSize))state.round=state.distance;
  delete state.best;
  state.realtime=state.realtime===true;
- if(!validIndex(state.mode,3))state.mode=2;
+ if(state.modeV!==2){state.mode=state.mode===2?mixMode:state.mode;state.modeV=2} // before the 1/2/3 km modes existed: 0 = 300 m, 1 = 500 m, 2 = mix
+ if(!validIndex(state.mode,modeDistances.length))state.mode=mixMode;
+ if(state.pendingMode!==undefined&&!validIndex(state.pendingMode,modeDistances.length))delete state.pendingMode;
+ if(state.pendingProfile!==undefined&&!validIndex(state.pendingProfile,calibers.length))delete state.pendingProfile;
+ state.plane=state.plane==='sfp'?'sfp':'ffp';
  if(state.tutorialDone!==true)state.distance=modeDistances[state.mode][0];
  if(state.series&&Array.isArray(state.series.rounds)&&state.series.rounds.length!==seriesSize)delete state.bestScore; // record from an older series length
  if(state.bestScore!==undefined&&!(Number.isInteger(state.bestScore)&&state.bestScore>=0&&state.bestScore<=maxScore))delete state.bestScore;
@@ -172,7 +178,7 @@ export function startSniper(){
   const w=weather[state.weather],c=calibers[state.profile],dk=distances[state.distance],T=tabOf(state.profile,state.distance),sp=flagMs(w),wt=weightsShown(T),wind=windEff(w,wt),
    e=T.elev,k=T.drift1,[sx,sy]=solution(state),last=finalNow(),dir=dirOf(w);
   return [
-   {mark:'zoom',zoom:true,text:tr('Ставлю кратність 4×, щоб знайти мішень, потім 16× для точного наведення.','Setting 4× to find the target, then 16× for precise aiming.')},
+   {mark:'zoom',zoom:true,text:state.plane==='sfp'?tr('Ставлю кратність 4×, щоб знайти мішень, потім 10×. У SFP-прицілі ставлю 10× — тільки на цій кратності поділки сітки точні.','Setting 4× to find the target, then 10×. With an SFP scope I use 10× — the only magnification where the marks are true.'):tr('Ставлю кратність 4×, щоб знайти мішень, потім 16× для точного наведення.','Setting 4× to find the target, then 16× for precise aiming.')},
    {mark:'weather',text:tr('Читаю прапорці: ','Reading the flags: ')+flagPattern(w)+'. '+tr('Кожна риска — 2 м/с, тож це ','Each mark is 2 m/s, so that is ')+sp.join(', ')+tr(' м/с.',' m/s.')},
    {mark:'weather',text:tr('Вітер уздовж траси різний, і ближній вітер діє на кулю довше й сильніше, тож беру зважене середнє з вагами з таблиці ','Wind varies along the range, and the near wind acts on the bullet longer and harder, so I take the weighted average with the table weights ')+wt.map(v=>v.toFixed(2)).join(' / ')+': '+wt.map((v,i)=>v.toFixed(2)+'·'+sp[i]).join(' + ')+' = '+wind.toFixed(1)+tr(' м/с.',' m/s.')},
    {mark:'weather',text:w.east?tr('Вітер дме W → E і зносить кулю праворуч. Щоб компенсувати, X має бути від’ємним — ціль лівіше.','The wind blows W → E and pushes the bullet right. To compensate, X must be negative — aim left.'):
@@ -349,7 +355,7 @@ export function startSniper(){
   const s=apSteps()[ap.step];
   if(s.mark==='fire')return; // autoplay waits for the player's shot
   const wait=()=>schedule(advance,hold(s.text));
-  if(s.zoom)zoomTo(4,()=>schedule(()=>zoomTo(16,wait),900));else if(s.aim)aimOut(wait);else if(s.dial)dial(s.dial,wait);else wait();
+  if(s.zoom)zoomTo(4,()=>schedule(()=>zoomTo(state.plane==='sfp'?10:16,wait),900));else if(s.aim)aimOut(wait);else if(s.dial)dial(s.dial,wait);else wait();
  }
  function advance(){
   if(ap.step<12){ap.step++;runStep();return}
@@ -378,6 +384,8 @@ export function startSniper(){
    previous=available[Math.floor(Math.random()*available.length)];
    rounds.push(previous);
   }
+  if(state.pendingMode!==undefined){state.mode=state.pendingMode;delete state.pendingMode}
+  if(state.pendingProfile!==undefined){state.profile=state.pendingProfile;delete state.pendingProfile}
   holes.length=0;
   state.series={rounds,unassisted:[],scores:[],shots:[],usedCode:false,time:0,started:false};
   resetShot();
@@ -530,6 +538,7 @@ export function startSniper(){
   <li>${tr('X = −(знос на 1 м/с × зважений вітер + деривація + Коріоліс). Вітер W → E зносить праворуч — його частина від’ємна; E → W — ліворуч, додатна; деривація й Коріоліс завжди дають від’ємний внесок.','X = −(drift per 1 m/s × weighted wind + spin + Coriolis). A W → E wind pushes right, so its part is negative; E → W pushes left, positive; spin and Coriolis always contribute a negative part.')}</li>
   <li>${tr('Навіть ідеальний розрахунок не гарантує 10: реальний розкид — порив і залишок вітру (≈±0,5 м/с), розкид швидкості кулі ±2 м/с (≈7 фут/с), кучність гвинтівки ≈0,5 MOA, дихання стрільця й округлення барабанів до 0,1 міл — дає випадкове відхилення. За симуляцією ідеальний постріл дає 10 приблизно у 70% випадків на 300 м, 55% на 500 м, 20–32% на 1 км, 4–13% на 2 км і 2–4% на 3 км. Мішені на 2 і 3 км великі (сталева плита ⌀ 1,9 і 4,0 м): ідеальний постріл влучає в плиту приблизно у 60–90% (2 км) і 55–85% (3 км) випадків залежно від калібру — найкраще для .416 Barrett і .50 BMG, найгірше для .338 Lapua, яка на 2 км вже майже дозвукова.','Even a perfect solution doesn\'t guarantee a 10. Realistic error adds up: gust plus the unreadable part of the wind (about ±0.5 m/s), muzzle velocity varies by ±2 m/s (~7 fps), the rifle shoots about 0.5 MOA, the shooter\'s breathing moves the hold, and the turrets round to 0.1 mil. In simulation a perfect shot is a 10 about 70% of the time at 300 m, 55% at 500 m, 20–32% at 1 km, 4–13% at 2 km and 2–4% at 3 km. The 2 km and 3 km targets are large steel plates (1.9 m and 4.0 m across): a perfect shot still hits the plate about 60–90% of the time at 2 km and 55–85% at 3 km, depending on the caliber — best for the .416 Barrett and .50 BMG, worst for the .338 Lapua, which is nearly subsonic at 2 km.')}</li>
   <li>${tr('Вітер не постійний: порив повільно «дихає» (приблизно ±0,5 м/с, з часом ≈4 с), і його видно лише по прапорцях. Але куля летить кілька секунд, а порив за цей час змінюється: чим довший політ, тим менше допомагає зчитаний порив (на 1 км він прибирає ≈60% розкиду від вітру, на 3 км лише ≈20%). Прапорці випрямляються — вітер сильнішає: додайте поправку в бік вітру; обвисли — слабшає: додайте проти вітру або зачекайте затишшя. Скільки міл на кожен +1 м/с: .375 CheyTac — '+row(1)+' на 1 / 2 / 3 км; .338 Lapua — '+row(0)+'; .416 Barrett — '+row(2)+'; .50 BMG — '+row(3)+'. Тож порив ±0,5 м/с — це ≈±'+g(2)+' міл на 1 км і ≈±'+g(4)+' міл на 3 км для .375. Невидима частина вітру (≈0,1 м/с по трасі та майбутня зміна пориву) лишається випадковою.','The wind is not constant: the gust slowly breathes (about ±0.5 m/s, time constant about 4 s) and is visible only in the flags. But the bullet flies for several seconds and the gust keeps changing: the longer the flight, the less a gust you have read helps (at 1 km it removes about 60% of the wind scatter, at 3 km only about 20%). Flags straighten out = stronger wind: add windage toward the wind side; flags droop = weaker wind: add against the wind, or wait for a lull. Mil per extra +1 m/s: .375 CheyTac '+row(1)+' at 1 / 2 / 3 km; .338 Lapua '+row(0)+'; .416 Barrett '+row(2)+'; .50 BMG '+row(3)+'. So a ±0.5 m/s gust is about ±'+g(2)+' mil at 1 km and ±'+g(4)+' mil at 3 km for the .375. The unreadable part (about 0.1 m/s along the range and the future change of the gust) stays random.')}</li>
+  <li>${tr('Сітка: у FFP (перша фокальна площина) сітка росте разом з кратністю, тож 1 поділка = 1 міл на будь-якому збільшенні. У SFP (друга фокальна площина) сітка має незмінний розмір і калібрована на 10×: на іншій кратності одна поділка — це 10/кратність міл, тож винос у поділках множте на 10/кратність. Точні поділки в SFP лише на 10×.','Reticle: in an FFP (first focal plane) scope the reticle grows with magnification, so 1 mark = 1 mil at any zoom. In an SFP (second focal plane) scope the reticle stays a fixed size and is calibrated at 10×: at any other magnification one mark is 10/zoom mil, so multiply your holdover in marks by 10/zoom. SFP marks are true only at 10×.')}</li>
   <li>${tr('Вологість на код не впливає.','Humidity does not affect the code.')}</li>
   <li>${tr('Можна не докручувати барабани: якщо бракує поправки, поставте мішень на поділку сітки на цю різницю (винос). Наприклад, бракує 0.7 міл підйому — мішень на поділці 0.7 нижче центру.','You don\'t have to dial everything: if the dial is short, put the target on the reticle mark at that difference (holdover). E.g. 0.7 mil elevation short — put the target on the 0.7 mark below center.')}</li>`;
 }
@@ -574,6 +583,14 @@ export function startSniper(){
   const roundTitle=tutorial?tr('Навчальний раунд — спробуйте без балів','Tutorial round — practice, no score'):tr('Раунд ','Round ')+(state.round+1)+'/'+seriesSize;
   const pips=tutorial?'':Array.from({length:seriesSize},(_,i)=>{const v=state.series.scores[i];return`<li class="${v===undefined?(i===state.round?'is-now':''):v>0?'is-hit':'is-miss'}">${v??'·'}</li>`}).join('');
   const results=hasResults();
+  const sel=state.series&&!tutorial&&state.roundDone&&state.round===seriesSize-1,
+   canPick=tutorial||(!!state.series&&state.series.scores.length===0&&!state.roundDone)||!!sel,
+   shownMode=sel&&state.pendingMode!==undefined?state.pendingMode:state.mode,shownProfile=sel&&state.pendingProfile!==undefined?state.pendingProfile:state.profile,
+   lockTip=tr('Дистанцію можна змінити до першого пострілу або після серії','Distance can be changed before the first shot or after the series'),
+   pills=(attr,labels,cur,titles)=>labels.map((l,i)=>`<button type="button" data-${attr}="${i}" aria-pressed="${i===cur}"${titles?` title="${titles[i]}"`:''}>${l}</button>`).join(''),
+   plan=modeDistances[state.mode].map((di,i)=>i===state.round?'<b>'+distLabel(distances[di])+'</b>':distLabel(distances[di])).join(' · '),
+   pickRows=`<div class="sniper-pick" role="group" aria-label="${tr('Дистанція','Distance')}"><span class="sniper-pick-label">${tr('Дистанція','Distance')}</span>${canPick?`<span class="sniper-pills">${pills('mode',modeLabels(),shownMode)}</span>`:`<span class="sniper-pick-plan" title="${lockTip}">${plan}</span>`}</div>
+   <div class="sniper-pick" role="group" aria-label="${tr('Калібр','Caliber')}"><span class="sniper-pick-label">${tr('Калібр','Caliber')}</span>${canPick?`<span class="sniper-pills">${pills('profile',caliberShort,shownProfile,profiles)}</span>`:`<span class="sniper-pick-plan" title="${tr('Калібр можна змінити до першого пострілу або після серії','Caliber can be changed before the first shot or after the series')}">${caliber.name}</span>`}</div>`;
   const axisLabel=(axis,text)=>`<label class="sniper-axis"><span>${axis.toUpperCase()}</span><input type="range" min="${axis==='x'?-xMax:0}" max="${axis==='x'?xMax:yMax}" step="1" value="${state[axis]}" data-axis="${axis}" aria-label="${text}"><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-number="${axis}" aria-label="${text}"></label>`;
   const tabDefs=[...results?[['results',tr('Результати','Results')]]:[],['table',tr('Таблиця','Table')],['method',tr('Як рахувати','How to solve')],['settings',tr('Налаштування','Settings')]];
   const panelAttrs=id=>`role="tabpanel" id="sniper-panel-${id}" aria-labelledby="sniper-tab-${id}" tabindex="0"${id===cur?'':' hidden'}`;
@@ -588,6 +605,7 @@ export function startSniper(){
       <div class="sniper-scope"><canvas width="${Math.round(viewSize*canvasScale())}" height="${Math.round(viewSize*canvasScale())}" aria-hidden="true" title="${dragHint}" aria-describedby="sniper-drag-desc"></canvas></div>
       <div class="sniper-hud sniper-hud-wind" aria-hidden="true">${compass(conditions).replace(/ /g,'')} ${flagPattern(conditions).replace(/ \/ /g,'/')}</div>
       <div class="sniper-hud sniper-hud-turret" aria-hidden="true"></div>
+      <div class="sniper-hud sniper-hud-plane" aria-hidden="true" hidden></div>
       ${ap.on?apPanel():''}
      </div>
      <div class="sniper-reticle" role="group" aria-label="${tr('Сітка','Reticle')}">${optics.map((label,i)=>`<button type="button" data-optic="${i}" aria-pressed="${i===state.optic}">${tr(...label)}</button>`).join('')}</div>
@@ -606,7 +624,8 @@ export function startSniper(){
     <aside class="sniper-console">
      <section class="sniper-status">
       <div class="sniper-status-row"><h2 class="sniper-round-title">${roundTitle}</h2>
-       <ul class="sniper-chips"><li>${distLabel(distances[state.distance])}</li><li>${caliber.name}</li></ul></div>
+       </div>
+      ${pickRows}
        ${tutorial?'':`<div class="sniper-series-row"><ul class="sniper-pips" aria-label="${tr('Бали за постріли','Shot scores')}">${pips}</ul><span class="sniper-timer" data-timer role="timer" aria-label="${tr('Час серії','Series time')}">00:00</span></div>`}
       <p class="sniper-result" role="status"></p>
      </section>
@@ -646,8 +665,10 @@ export function startSniper(){
        ${tutorial?'':`<p class="sniper-hint-note">${tr('«Перевірити X» безкоштовна. Повний код або автогра знімають бал за раунд. У серії кожен постріл остаточний.','Check X is free. The full code or autoplay costs that round\'s point. In a series every shot is final.')}</p>`}
       </div>
       <div class="sniper-settings sniper-tabpanel" ${panelAttrs('settings')}>
-       <label>${tutorial?tr('Режим','Mode'):tr('Дистанція','Distance')} <select data-distance aria-label="${tutorial?tr('Режим','Mode'):tr('Дистанція','Distance')}"></select></label>
-       <label>${tr('Калібр','Caliber')} <select data-profile aria-label="${tr('Калібр','Caliber')}"></select></label>
+       <fieldset class="sniper-plane"><legend>${tr('Площина сітки','Reticle plane')}</legend>
+        <label><input type="radio" name="sniper-plane" data-plane="ffp"${state.plane==='ffp'?' checked':''}> ${tr('Сітка: перша фокальна площина (FFP)','Reticle: first focal plane (FFP)')}</label>
+        <label><input type="radio" name="sniper-plane" data-plane="sfp"${state.plane==='sfp'?' checked':''}> ${tr('друга фокальна площина (SFP, калібрування 10×)','second focal plane (SFP, calibrated at 10×)')}</label>
+       </fieldset>
        <label class="sniper-check"><input type="checkbox" data-realtime${state.realtime?' checked':''}> ${tr('Реальний час: без повтору польоту','Real time: no flight replay')}</label>
       </div>
      </section>
@@ -669,7 +690,6 @@ export function startSniper(){
   const sliders=[...root.querySelectorAll('[data-axis]')];
   const numbers=[...root.querySelectorAll('[data-number]')];
   const steps=[...root.querySelectorAll('[data-step]')];
-  const settings=[...root.querySelectorAll('.sniper-settings select')];
   const opticButtons=[...root.querySelectorAll('[data-optic]')];
   const result=root.querySelector('.sniper-result');
   const next=root.querySelector('[data-next]');
@@ -718,7 +738,14 @@ export function startSniper(){
     const value=state[step.dataset.step];
     step.disabled=complete||busy||clampAxis(step.dataset.step,value+Number(step.dataset.delta))===value;
    }
-   for(const select of settings)select.disabled=complete||busy||(!tutorial&&select.hasAttribute('data-distance'));
+   for(const b of root.querySelectorAll('[data-mode],[data-profile]'))b.disabled=busy||flying;
+   for(const r of root.querySelectorAll('[data-plane]'))r.disabled=busy;
+   const chip=root.querySelector('.sniper-hud-plane');
+   if(chip){
+    chip.hidden=state.plane!=='sfp';
+    chip.textContent=state.zoom===10?tr('сітка точна (10×)','reticle true (10×)'):tr('1 поділка = ','1 mark = ')+(10/state.zoom).toFixed(2)+tr(' міл',' mil');
+    chip.classList.toggle('is-true',state.zoom===10);
+   }
    for(const hint of root.querySelectorAll('[data-check-axis],[data-code]'))hint.disabled=complete||busy;
    for(const button of opticButtons)button.disabled=complete;
    fireButton.disabled=complete||flying||busy;fireButton.hidden=complete;
@@ -812,21 +839,24 @@ export function startSniper(){
    setAim(drag.x+Math.round((event.clientX-drag.left)/step),drag.y-Math.round((event.clientY-drag.top)/step));
   };
   canvas.onlostpointercapture=()=>{drag=null;dragging=false;if(pendingRender){pendingRender=false;render()}};
-  for(const [field,labels] of [
-   ['distance',tutorial?[tr('300 м','300 m'),tr('500 м','500 m'),tr('1–3 км','1–3 km')]:distances.map(distLabel)],
-   ['profile',profiles]
-  ]){
-   const select=root.querySelector('[data-'+field+']');
-   const key=field==='distance'&&tutorial?'mode':field;
-   labels.forEach((label,i)=>select.add(new Option(label,String(i),false,i===state[key])));
-   select.onchange=()=>{
-    takeover();
-    state[key]=Number(select.value);
-    if(key==='mode')state.distance=modeDistances[state.mode][0];
-    state.x=state.y=0;
-    save();render();root.querySelector('[data-'+field+']').focus();
-   };
-  }
+  root.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{
+   const v=Number(b.dataset.mode);
+   takeover();
+   if(tutorial){state.mode=v;state.distance=modeDistances[v][0];state.x=state.y=0;save();render();root.querySelector('[data-mode="'+v+'"]')?.focus();return}
+   if(sel){state.pendingMode=v}
+   else{if(v===state.mode)return;state.mode=v;startSeries();clock()}
+   save();render();root.querySelector('[data-mode="'+v+'"]')?.focus();
+  });
+  root.querySelectorAll('[data-profile]').forEach(b=>b.onclick=()=>{
+   const v=Number(b.dataset.profile);
+   takeover();
+   if(sel)state.pendingProfile=v;else{state.profile=v;state.x=state.y=0}
+   save();render();root.querySelector('[data-profile="'+v+'"]')?.focus();
+  });
+  root.querySelectorAll('[data-plane]').forEach(r=>r.onchange=()=>{
+   if(!r.checked)return;
+   state.plane=r.dataset.plane==='sfp'?'sfp':'ffp';save();paint();
+  });
   opticButtons.forEach((button,i)=>button.onclick=()=>{
    takeover();
    state.optic=i;state.x=state.y=0;
@@ -875,7 +905,7 @@ export function startSniper(){
 
 
 function drawScope(canvas,state,conditions,glMode){
- const c=canvas.getContext('2d'),size=viewSize,center=size/2,scale=canvas.width/viewSize,u=uOf(state.zoom);
+ const c=canvas.getContext('2d'),size=viewSize,center=size/2,scale=canvas.width/viewSize,u=uOf(state.zoom),ur=state.plane==='sfp'?uOf(10):u; // image scale u; reticle scale ur (SFP: fixed at the 10× calibration)
  cssK=canvas.clientWidth>0?canvas.clientWidth/viewSize:1;
  c.setTransform(scale,0,0,scale,0,0);c.clearRect(0,0,size,size);
  if(!glMode)drawFallback(c,state,conditions,size,center,u);
@@ -883,9 +913,9 @@ function drawScope(canvas,state,conditions,glMode){
  vignette.addColorStop(0,'#10170c00');vignette.addColorStop(1,'#071009a0');
  c.fillStyle=vignette;c.fillRect(0,0,size,size);
  c.globalAlpha=1;c.globalCompositeOperation='source-over';
- if(state.optic===0)drawTree(c,center,u);
- else if(state.optic===1)drawDot(c,center,u);
- else drawGrid(c,center,u);
+ if(state.optic===0)drawTree(c,center,ur);
+ else if(state.optic===1)drawDot(c,center,ur);
+ else drawGrid(c,center,ur);
 }
 
 // 2D painting of the range: only used until the WebGL view loads or when WebGL is unavailable.
@@ -932,9 +962,12 @@ function drawFallback(c,state,conditions,size,center,u){
 
 // ---- reticle level of detail: thresholds are on-screen px so marks never crowd or overlap ----
 const skip=(spacing,u)=>{let m=1;while(spacing*m*u<6&&m<64)m*=2;return m}; // keep every m-th dot so dots stay >= 6 px apart
-const lstep=(base,u)=>{for(const s of [1,2,4,5,10,20])if(s>=base&&s*u>=21.9)return s;return 0}; // mil step between labels, 0 = no labels
-const lidx=spacing=>{for(const m of [1,2,3,4,5])if(m*spacing>=21.9)return m;return 0}; // every m-th labeled mark, 0 = none
+const lstep=(base,u)=>{for(const s of [1,2,4,5,10,20])if(s>=base&&s*u>=26)return s;return 0}; // mil step between labels, 0 = no labels
+const lidx=spacing=>{for(const m of [1,2,3,4,5])if(m*spacing>=26)return m;return 0}; // every m-th labeled mark, 0 = none
 const halo='#e8e4c81f',tHalo='#e8e4c840',ink='#0b100c',pTau=Math.PI*2;
+let thinPx=1.4,haloOn=true;
+// Level of detail by px per mil: below 8 the lines thin to 1.2 px and lose their halo; below 10 the crosshair opens at the centre and the heavy posts start >= 30% of the scope radius out.
+const lod=u=>{thinPx=u<8?1.2:1.4;haloOn=u>=8;const low=u<10;return{low,gap:low?Math.max(8,1.2*u):0,reach:r=>low?Math.max(r*u,viewSize*.15):r*u}};
 let cssK=1; // CSS px per view unit (scope is CSS-scaled; canvas DPR is already in the context transform)
 // Collects the reticle, then paints every halo first and the dark ink on top, so halos never cover neighbouring lines.
 function pen(c){
@@ -943,7 +976,7 @@ function pen(c){
  return{
   line(x1,y1,x2,y2,lw=1){
    if(Math.max(x1,x2)<-10||Math.min(x1,x2)>710||Math.max(y1,y2)<-10||Math.min(y1,y2)>710)return;
-   if(lw<=1.4)lw=1.4/cssK;
+   if(lw<=1.4)lw=thinPx/cssK;
    let p=lines.get(lw);if(!p)lines.set(lw,p=new Path2D());p.moveTo(x1,y1);p.lineTo(x2,y2);
   },
   dot(x,y,r=1.1){
@@ -955,8 +988,8 @@ function pen(c){
   text(t,x,y,font,align='center',base='middle'){if(!out(x,y,20))texts.push([t,x,y,font.startsWith('600')?font:'600 '+font,align,base])},
   flush(){
    c.save();c.globalAlpha=1;c.globalCompositeOperation='source-over';c.lineCap='butt';c.lineJoin='round';
-   c.strokeStyle=halo;for(const [lw,p] of lines){c.lineWidth=lw+1/cssK;c.stroke(p)}
-   c.fillStyle=halo;for(const d of dots.values())c.fill(d.halo);
+   if(haloOn){c.strokeStyle=halo;for(const [lw,p] of lines){c.lineWidth=lw+1/cssK;c.stroke(p)}
+   c.fillStyle=halo;for(const d of dots.values())c.fill(d.halo)}
    c.strokeStyle=ink;for(const [lw,p] of lines){c.lineWidth=lw;c.stroke(p)}
    c.fillStyle=ink;for(const d of dots.values())c.fill(d.ink);
    c.lineWidth=2/cssK;
@@ -967,8 +1000,10 @@ function pen(c){
 }
 
 function drawGrid(c,center,u){
- const cx=center,cy=center,p=pen(c),{line,dot,text}=p,w=k=>Math.round(1.5+k*0.95);
- const half=u/2>=5,one=u>=4,dm=skip(.5,u),rm=skip(1,u),lx=lstep(2,u),ly=lstep(1,u),font='10px system-ui';
+ const L=lod(u),g=L.gap,cx=center,cy=center,p=pen(c),{line,text}=p,w=k=>Math.round(1.5+k*0.95);
+ const dot=(x,y,r)=>{if(!g||Math.hypot(x-cx,y-cy)>=g)p.dot(x,y,r)};
+ const half=u/2>=6,one=u>=6,dm=skip(.5,u),rm=skip(1,u),lx=lstep(2,u),ly=lstep(1,u),font='10px system-ui',a=g||3;
+ const rx=L.reach(15),ry=L.reach(10),ty=L.reach(10.5);
  const thickH=(a,b)=>{if(b>a)line(a,cy,b,cy,7)},thickV=(a,b)=>{if(b>a)line(cx,a,cx,b,7)};
  const len=i=>i%10===0?6:i%2===0?4:2,shown=i=>i%10===0||(i%2?half:one);
  for(let k=1;k<=10;k++){
@@ -976,98 +1011,107 @@ function drawGrid(c,center,u){
   const y=cy+k*u;
   for(let i=2;i<=2*w(k);i++)for(const s of [-1,1]){
    const x=cx+s*i*u/2;
-   if(i===4)line(x,y-3,x,y+3,1);else if(i%dm===0)dot(x,y,1.1);
+   if(i===4){if(!g||Math.hypot(x-cx,y-cy)>=g)line(x,y-3,x,y+3,1)}else if(i%dm===0)dot(x,y,1.1);
   }
  }
- line(cx-15*u,cy,cx-3,cy);line(cx+3,cy,cx+15*u,cy);
- line(cx,cy-3,cx,cy-10*u);line(cx,cy+3,cx,cy+10*u);
- for(let i=1;i<=30;i++)if(shown(i))for(const s of [-1,1]){const x=cx+s*i*u/2,l=len(i);line(x,cy-l,x,cy+l)}
- for(let i=1;i<=20;i++)if(i%2?half:one)for(const s of [-1,1]){const y=cy+s*i*u/2,l=i%2?2:4;line(cx-l,y,cx+l,y)}
- thickH(30,cx-15*u);thickH(cx+15*u,670);
- thickV(30,cy-10.5*u);thickV(cy+10.5*u,670);
- if(lx)for(let n=1;n<=14;n++)if(n%lx===0)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-9,font,'center','bottom');
+ line(cx-rx,cy,cx-a,cy);line(cx+a,cy,cx+rx,cy);
+ line(cx,cy-a,cx,cy-ry);line(cx,cy+a,cx,cy+ry);
+ for(let i=1;i<=30;i++)if(shown(i)&&i*u/2>=g)for(const s of [-1,1]){const x=cx+s*i*u/2,l=len(i);line(x,cy-l,x,cy+l)}
+ for(let i=1;i<=20;i++)if((i%2?half:one)&&i*u/2>=g)for(const s of [-1,1]){const y=cy+s*i*u/2,l=i%2?2:4;line(cx-l,y,cx+l,y)}
+ thickH(30,cx-rx);thickH(cx+rx,670);
+ thickV(30,cy-ty);thickV(cy+ty,670);
+ if(lx)for(let n=1;n<=14;n++)if(n%lx===0&&n*u>=g)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-9,font,'center','bottom');
  if(ly)for(let k=2;k<=10;k++)if(k%ly===0)text(String(k),cx+8,cy-k*u,font,'left');
  if(ly)for(let k=1;k<=10;k++){
   if(k%ly)continue;
   const y=cy+k*u,x=(w(k)+0.9)*u;
   text(String(k),cx-x,y,font,'right');text(String(k),cx+x,y,font,'left');
  }
- dot(cx,cy,1.6);
+ p.dot(cx,cy,1.6);
  p.flush();
 }
 
 function drawDot(c,center,u){
- const cx=center,cy=center,p=pen(c),{line,dot,text}=p,w=k=>Math.round(3+k*0.7);
- const half=u/2>=5,one=u>=4,rm=skip(1,u),lx=lstep(2,u),font='11px system-ui';
+ const L=lod(u),g=L.gap,cx=center,cy=center,p=pen(c),{line,text}=p,w=k=>Math.round(3+k*0.7);
+ const dot=(x,y,r)=>{if(!g||Math.hypot(x-cx,y-cy)>=g)p.dot(x,y,r)};
+ const half=u/2>=6,one=u>=6,rm=skip(1,u),lx=lstep(2,u),font='11px system-ui',a=g||4;
+ const rx=L.reach(16),ru=L.reach(18),rd=L.reach(20);
  const thickH=(a,b)=>{if(b>a)line(a,cy,b,cy,7)},thickV=(a,b)=>{if(b>a)line(cx,a,cx,b,7)};
  for(let k=1;k<=20;k++){
   if(k%rm&&!(lx&&k%lx===0))continue;
   const n=Math.round(w(k)*(k%2?1:2))-(k%2?1:2)+1,st=k%2?u:u/2,m=skip(st/u,u);
   for(let j=0;j<n;j++)if(j%m===0||j===n-1)for(const s of [-1,1])dot(cx+s*(u+j*st),cy+k*u,j>=n-2?1.8:1.1);
  }
- line(cx-16*u,cy,cx-4,cy);line(cx+4,cy,cx+16*u,cy);
- line(cx,cy-4,cx,cy-18*u);line(cx,cy+4,cx,cy+20*u);
- for(let i=1;i<=20;i++)if(i%10===0||(i%2?half:one))for(const s of [-1,1]){const x=i*u/2,l=i%2?2:4;line(cx+s*x,cy-l,cx+s*x,cy+l)}
- for(let i=1;i<=40;i++)if(i%10===0||(i%2?half:one)){const y=cy+i*u/2,l=i%2?2:4;line(cx-l,y,cx+l,y)}
+ line(cx-rx,cy,cx-a,cy);line(cx+a,cy,cx+rx,cy);
+ line(cx,cy-a,cx,cy-ru);line(cx,cy+a,cx,cy+rd);
+ for(let i=1;i<=20;i++)if((i%10===0||(i%2?half:one))&&i*u/2>=g)for(const s of [-1,1]){const x=i*u/2,l=i%2?2:4;line(cx+s*x,cy-l,cx+s*x,cy+l)}
+ for(let i=1;i<=40;i++)if((i%10===0||(i%2?half:one))&&i*u/2>=g){const y=cy+i*u/2,l=i%2?2:4;line(cx-l,y,cx+l,y)}
  if(lx){
-  for(let n=1;n<=10;n++)if(n%lx===0)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-8,font,'center','bottom');
+  for(let n=1;n<=10;n++)if(n%lx===0&&n*u>=g)for(const s of [-1,1])text(String(n),cx+s*n*u,cy-8,font,'center','bottom');
   for(let k=1;k<=20;k++)if(k%lx===0)text(String(k),cx+(w(k)+1.2)*u,cy+k*u,font,'left');
  }
  if(u>=8)text('MIL',cx+11*u,cy+8,font,'left','top');
- thickH(30,cx-16*u);thickH(cx+16*u,670);
- thickV(30,cy-18*u);thickV(cy+20*u,670);
- dot(cx,cy,1.8);
+ thickH(30,cx-rx);thickH(cx+rx,670);
+ thickV(30,cy-ru);thickV(cy+rd,670);
+ p.dot(cx,cy,g?1.6:1.8);
  p.flush();
 }
 
 function drawTree(c,center,u){
- const cx=center,cy=center,p=pen(c),{line,dot,text}=p,w=k=>Math.round(2+1.6*k);
- const half=u/2>=5,one=u>=4,dm=skip(1,u),dm2=skip(2,u),lx=lstep(5,u),lm=lidx(2*u);
+ const L=lod(u),g=L.gap,cx=center,cy=center,p=pen(c),{line,dot,text}=p,w=k=>Math.round(2+1.6*k);
+ const bodyOff=2*u<16,sparse=!bodyOff&&2*u<24,rowOn=k=>!bodyOff&&(!sparse||k%2===0); // tree body: hidden below 16 px row spacing, every other row below 24 px
+ const half=u/2>=6,one=u>=6,dm=skip(1,u),dm2=skip(2,u),lx=lstep(5,u),lm=lidx(2*u*(sparse?2:1));
+ const rx=L.reach(21);
  const thickH=(a,b)=>{if(b>a)line(a,cy,b,cy,7)},thickV=(a,b)=>{if(b>a)line(cx,a,cx,b,7)};
- thickH(30,cx-21*u);thickH(cx+21*u,670);
- line(cx-21*u,cy,cx+21*u,cy,1.2);
+ thickH(30,cx-rx);thickH(cx+rx,670);
+ line(cx-rx,cy,cx-g,cy,1.2);line(cx+g,cy,cx+rx,cy,1.2);
  for(let i=-20;i<=20;i++){
-  if(!i)continue;
+  if(!i||Math.abs(i)*u<g)continue;
   const x=cx+i*u,five=!(i%5),l=five?5:2;
   if(five||one)line(x,cy-l,x,cy+l,1.2);
   if(five&&lx&&Math.abs(i)%lx===0)text(String(Math.abs(i)),x,cy-10,'600 12px system-ui');
-  if(!(i%2)&&Math.abs(i/2)%dm2===0)dot(x,cy+1.5*u,1.6);
+  if(!bodyOff&&!(i%2)&&Math.abs(i/2)%dm2===0)dot(x,cy+1.5*u,1.6);
  }
- line(cx,cy,cx,cy-14*u,1.2);
+ line(cx,cy-g,cx,cy-Math.max(14*u,L.low?viewSize*.15:0),1.2);
  for(let i=1;i<=14;i++){
+  if(i*u<g)continue;
   const y=cy-i*u,five=!(i%5),l=five?5:2;
   if(five||one)line(cx-l,y,cx+l,y,1.2);
   if(five&&lx&&i%lx===0)text(String(i),cx+8,y,'600 12px system-ui','left');
  }
- for(const s of [-1,1]){
-  for(const m of [5,10]){
-   const x=cx+s*m*u;
-   line(x,cy-5*u,x,cy-2*u,4);
-   if(lx&&m%lx===0)text(String(m),x,cy-5.6*u,'11px system-ui','center','bottom');
-  }
-  for(let m=5.5;m<10;m+=.5)if(m%1?half:one){const x=cx+s*m*u;line(x,cy-3.5*u,x,cy-2*u,1.2)}
- }
- for(let m=2;m<=14;m+=2){
-  let deep=0;
-  for(let k=1;k<=7;k++)if(w(k)>=m)deep=k;
-  if(deep)for(const s of [-1,1])line(cx+s*m*u,cy+2*u,cx+s*m*u,cy+deep*2*u,1.2);
- }
- for(let k=1;k<=7;k++){
-  const y=cy+k*2*u,wk=w(k);
+ if(!bodyOff){
   for(const s of [-1,1]){
-   line(cx+s*2*u,y,cx+s*wk*u,y,1.2);
-   for(let m=2;m<=wk;m++)if(m%dm===0)dot(cx+s*m*u,y,1.6);
+   for(const m of [5,10]){
+    const x=cx+s*m*u;
+    line(x,cy-5*u,x,cy-2*u,4);
+    if(lx&&m%lx===0)text(String(m),x,cy-5.6*u,'11px system-ui','center','bottom');
+   }
+   for(let m=5.5;m<10;m+=.5)if(m%1?half:one){const x=cx+s*m*u;line(x,cy-3.5*u,x,cy-2*u,1.2)}
   }
-  if(lm&&k%lm===0){
-   text(String(k*2),cx,y,'600 12px system-ui');
-   text('H'+k,cx-(wk+1.2)*u,y,'11px system-ui','right');
-   text('H'+k,cx+(wk+1.2)*u,y,'11px system-ui','left');
+  for(let m=2;m<=14;m+=2){
+   let deep=0;
+   for(let k=1;k<=7;k++)if(rowOn(k)&&w(k)>=m)deep=k;
+   if(deep)for(const s of [-1,1])line(cx+s*m*u,cy+2*u,cx+s*m*u,cy+deep*2*u,1.2);
   }
-  if(k<7&&one)line(cx-3,y+u,cx+3,y+u,1.2);
+  for(let k=1;k<=7;k++){
+   if(!rowOn(k))continue;
+   const y=cy+k*2*u,wk=w(k);
+   for(const s of [-1,1]){
+    line(cx+s*2*u,y,cx+s*wk*u,y,1.2);
+    for(let m=2;m<=wk;m++)if(m%dm===0)dot(cx+s*m*u,y,1.6);
+   }
+   if(lm&&k%lm===0){
+    text(String(k*2),cx,y,'600 12px system-ui');
+    text('H'+k,cx-(wk+1.2)*u,y,'11px system-ui','right');
+    text('H'+k,cx+(wk+1.2)*u,y,'11px system-ui','left');
+   }
+   if(k<7&&one&&!sparse)line(cx-3,y+u,cx+3,y+u,1.2);
+  }
+  if(rowOn(8))for(const s of [-1,1])for(let m=2;m<=w(8);m++)if(m%dm===0)dot(cx+s*m*u,cy+16*u,1.6);
+  if(u>=8)text('MRAD',cx-16*u,cy+3.5*u,'11px system-ui');
  }
- for(const s of [-1,1])for(let m=2;m<=w(8);m++)if(m%dm===0)dot(cx+s*m*u,cy+16*u,1.6);
- thickV(cy+17.5*u,670);
- if(u>=8)text('MRAD',cx-16*u,cy+3.5*u,'11px system-ui');
+ thickV(cy+L.reach(17.5),670);
+ if(g)p.dot(cx,cy,1.6);
  p.flush();
 }
 
