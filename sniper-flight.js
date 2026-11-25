@@ -45,9 +45,9 @@ export async function playFlight(host,o){
  root.innerHTML=`<canvas class="sf-canvas" aria-hidden="true"></canvas>
  <div class="sf-hud" aria-hidden="true"><div><small>${tr('Дистанція','Distance')}</small><b data-d>0 ${tr('м','m')}</b></div><div><small>${tr('Швидкість','Velocity')}</small><b data-v>0 ${tr('м/с','m/s')}</b></div><div><small>${tr('Час','Time')}</small><b data-t>0.00 ${tr('с','s')}</b></div></div>
  <button type="button" class="sf-skip">${tr('Пропустити','Skip')}</button>
- <section class="sf-score" hidden role="status"><div class="sf-ring">${o.ring}</div><div class="sf-label ${hit?'is-hit':'is-miss'}">${hit?tr('Влучання','Hit'):tr('Промах','Miss')}</div><p class="sf-off">${tr('Відхилення: ','Offset: ')}X ${sg(o.impactMil.x)} / Y ${sg(o.impactMil.y)} ${tr('міл','mil')}</p><button type="button" class="sf-go">${tr('Далі','Continue')}</button></section>`;
+ <section class="sf-score" hidden role="status"><div class="sf-ring">${o.ring}</div><div class="sf-label ${hit?'is-hit':'is-miss'}">${hit?tr('Влучання','Hit'):tr('Промах','Miss')}</div><p class="sf-off">${tr('Відхилення: ','Offset: ')}X ${sg(o.impactMil.x)} / Y ${sg(o.impactMil.y)} ${tr('міл','mil')}</p>${o.note?`<p class="sf-note"></p>`:''}<button type="button" class="sf-go">${tr('Далі','Continue')}</button></section>`;
  host.append(root);
- const $=s=>root.querySelector(s),canvas=$('.sf-canvas'),hud=$('.sf-hud'),skipB=$('.sf-skip'),score=$('.sf-score'),goB=$('.sf-go');
+ const $=s=>root.querySelector(s),canvas=$('.sf-canvas'),hud=$('.sf-hud'),skipB=$('.sf-skip'),score=$('.sf-score'),goB=$('.sf-go'),noteP=$('.sf-note');if(noteP)noteP.textContent=o.note;
  const hd=$('[data-d]'),hv=$('[data-v]'),ht=$('[data-t]');
  let closed=false,final=false,ctl=null,raf=0,autoT=0,last=0,resolve;
  const done=new Promise(r=>resolve=r);
@@ -110,7 +110,7 @@ function scene3d(T,o,root,canvas,onFinal,onHud){
  const renderer=new T.WebGLRenderer({canvas,antialias:true,logarithmicDepthBuffer:true});
  if(!renderer.getContext())throw new Error('no gl');
  renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
- const world=buildWorld(T,{distance:D,wind:W,targetRadiusM:R1}),{scene,sky,plate:pl,flags,lam,add,tex}=world;
+ const world=buildWorld(T,{distance:D,wind:W,targetRadiusM:R1,ring10:o.ring10}),{scene,sky,plate:pl,flags,lam,add,tex}=world;
  renderer.setClearColor(world.clearColor);
  const cam=new T.PerspectiveCamera(50,1,.05,4500);
  const uS={value:600};

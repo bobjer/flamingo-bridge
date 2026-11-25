@@ -5,7 +5,7 @@ export const Y0=1.5;
 export const moundOf=(D,R1)=>({a:Math.max(2.5,2*R1+2),b:3.5,h:3.5,cz:D+5});
 
 /** Builds the range. Returns scene + handles; the caller owns the renderer and camera. */
-export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1}){
+export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1,ring10:f10=.1}){
  const V=(x=0,y=0,z=0)=>new T.Vector3(x,y,z),fl=W.flags||[1,1,1],HS=clamp(D,600,1200); // HS scales hills / fog so short ranges still get depth
  const scene=new T.Scene();scene.fog=new T.Fog(0xbfbc95,Math.max(150,D*.35),D*2.4+600); // scaled to the real distance: target is only ~13-29% hazed at 300-3000 m
  const cc=new T.Color(),mound=moundOf(D,R1);
@@ -100,9 +100,10 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1}){
   const r=w/2;c.translate(r,r);
   [[1,'#ded4a6'],[.76,'#3b4c45'],[.48,'#ded4a6'],[.23,'#d87249']].forEach(([f,col])=>{c.fillStyle=col;c.beginPath();c.arc(0,0,r*f,0,TAU);c.fill()});
   c.strokeStyle='#141b1888';c.lineWidth=3;
-  for(let n=1;n<=10;n++){c.beginPath();c.arc(0,0,r*(11-n)/10,0,TAU);c.stroke()}
+  const out=n=>f10+(1-f10)*(10-n)/9; // outer edge of ring n as a fraction of the plate radius (10-ring is a disc)
+  for(let n=1;n<=10;n++){c.beginPath();c.arc(0,0,r*out(n),0,TAU);c.stroke()}
   c.font=`bold ${w*.03}px sans-serif`;c.textAlign='center';c.textBaseline='middle';
-  for(let n=1;n<=9;n++){const f=(10.5-n)/10;c.fillStyle=f>.76||(f>.23&&f<=.48)||f<=.23?'#1b241f':'#e9ebda';
+  for(let n=1;n<=9;n++){const f=(out(n)+out(n+1))/2;c.fillStyle=f>.76||(f>.23&&f<=.48)||f<=.23?'#1b241f':'#e9ebda';
    [[1,0],[-1,0],[0,1],[0,-1]].forEach(([a,b])=>c.fillText(String(n),a*r*f,b*r*f))}
  }));
  add(pl,new T.CircleGeometry(R1,64).rotateY(Math.PI),new T.MeshBasicMaterial({map:plTex,fog:false}),0,-R1,-.021);
