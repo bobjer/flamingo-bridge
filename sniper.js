@@ -195,7 +195,7 @@ export function startSniper(){
    {mark:'x',text:'X = −('+(dir*k).toFixed(2)+' × '+wind.toFixed(1)+' + '+T.sc.toFixed(2)+') ≈ '+signedMil(sx)+tr(' міл. Чим довше куля летить, тим більше її зносить.',' mil. The longer the flight, the more the wind carries it.')+tr(' Порив не враховую — він видно лише по тому, як зараз тріпочуть прапорці.',' I ignore the current gust — it shows only in how the flags are flapping right now.')},
    {mark:'y',dial:'y',text:tr('Кручу барабан підйому до ','Dialing elevation to ')+mil(sy)+tr(' міл.',' mil.')},
    {mark:'x',dial:'x',text:tr('Кручу барабан вітру до ','Dialing windage to ')+signedMil(sx)+tr(' міл.',' mil.')},
-   {mark:'aim',aim:true,text:again?tr('Барабани залишаю як є — поправка та сама, умови ті самі. Після віддачі лише заново наводжу мішень у центр сітки. Порив змінився — слідкую за прапорцями.','I keep the dial as it is — same correction, same conditions. After the recoil I only re-aim, target to the reticle center. The gust has moved on — I watch the flags.'):tr('Наводжу гвинтівку: ставлю мішень у центр сітки, бо поправки виставлені барабанами повністю.','Aiming the rifle: target to the reticle center, since the turrets carry the full correction.')},
+   {mark:'aim',aim:true,text:(again?tr('Барабани залишаю як є — поправка та сама, умови ті самі. Після віддачі лише заново наводжу мішень у центр сітки. Порив змінився — слідкую за прапорцями.','I keep the dial as it is — same correction, same conditions. After the recoil I only re-aim, target to the reticle center. The gust has moved on — I watch the flags.'):tr('Наводжу гвинтівку: ставлю мішень у центр сітки, бо поправки виставлені барабанами повністю.','Aiming the rifle: target to the reticle center, since the turrets carry the full correction.'))+tr(' Кратність ставлю ',' Magnification — ')+workZoom()+'×.'},
    {mark:'fire',text:tr('Натисніть і тримайте «Постріл» — затримка дихання; відпустіть у спокійне вікно (зелена смуга).','Press and hold Fire to hold your breath; release in the steady window (green bar).')},
    {mark:null,text:state.roundDone?(state.lastShot?.ring?tr('Влучання: ','Hit: ')+state.lastShot.ring+tr(' очок. ',' pts. ')+(state.lastShot.ring<10?tr(' Відхилення через порив і розкид — це нормально.',' The deviation comes from gusts and spread — that\'s normal.')+' ':''):tr('Промах: 0 очок. ','Miss: 0 pts. '))+(last?tr('Серію з '+seriesSize+' пострілів завершено.',seriesSize+'-shot series complete.'):tr('Переходжу до наступного раунду.','Moving to the next round.')):
     tr('Промах: ','Miss: ')+'X '+signedMil(miss?.dx??0)+' / Y '+signedMil(miss?.dy??0)+tr(' міл. Перевіряю розрахунок і виправляю.',' mil. Rechecking and correcting.')},
@@ -341,6 +341,7 @@ export function startSniper(){
   tick();
  }
  const reduced=()=>!!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+ const workZoom=()=>state.plane==='sfp'?10:16;
  function zoomTo(target,done){
   const tick=()=>{
    const d=target-state.zoom;
@@ -366,9 +367,9 @@ export function startSniper(){
  function runStep(){
   paintAutoplay();
   const s=apSteps()[ap.step];
-  if(s.mark==='fire')return; // autoplay waits for the player's shot
+  if(s.mark==='fire'){zoomTo(workZoom(),()=>{});return} // autoplay waits for the player's shot; keep the working zoom
   const wait=()=>schedule(advance,hold(s.text));
-  if(s.zoom)zoomTo(4,()=>schedule(()=>zoomTo(state.plane==='sfp'?10:16,wait),900));else if(s.aim)aimOut(wait);else if(s.dial)dial(s.dial,wait);else wait();
+  if(s.zoom)zoomTo(4,()=>schedule(()=>zoomTo(state.plane==='sfp'?10:16,wait),900));else if(s.aim)zoomTo(workZoom(),()=>aimOut(wait));else if(s.dial)dial(s.dial,wait);else wait();
  }
  function advance(){
   if(ap.step<12){ap.step++;runStep();return}
