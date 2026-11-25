@@ -66,13 +66,14 @@ export async function playFlight(host,o){
   hud.hidden=true;skipB.hidden=true;score.hidden=false;goB.focus();
   if(o.autoClose>0)autoT=setTimeout(close,o.autoClose*1000);
  };
- const skip=()=>{if(final)return;if(ctl)ctl.skip();else showFinal()};
+ const crash=err=>{console.error(err);cancelAnimationFrame(raf);showFinal()};
+ const skip=()=>{if(final)return;if(ctl){try{ctl.skip()}catch(err){crash(err)}}else showFinal()};
  const onKey=e=>{
   if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();final?close():skip()}
   else if(e.key===' '&&!final){e.preventDefault();e.stopImmediatePropagation();skip()}
   else if(e.key==='Tab'){e.preventDefault();(final?goB:skipB).focus()}
  };
- const onResize=()=>ctl?.resize();
+ const onResize=()=>{try{ctl?.resize()}catch(err){crash(err)}};
  addEventListener('keydown',onKey,true);addEventListener('resize',onResize);
  skipB.onclick=skip;goB.onclick=close;skipB.focus();
 
@@ -84,12 +85,12 @@ export async function playFlight(host,o){
   catch(e){try{ctl?.dispose()}catch{}ctl=null;console.warn('sniper-flight: WebGL unavailable',e)}
  }
  if(!ctl){root.classList.add('sf-nogl');canvas.remove();showFinal();return done}
- ctl.resize();
- if(reduced)ctl.skip();
+ try{ctl.resize();if(reduced)ctl.skip()}catch(err){crash(err);return done}
  const loop=t=>{
   if(closed)return;
   const dt=Math.min(.1,last?(t-last)/1000:0);last=t;
-  ctl.tick(dt);raf=requestAnimationFrame(loop);
+  try{ctl.tick(dt)}catch(err){crash(err);return}
+  raf=requestAnimationFrame(loop);
  };
  raf=requestAnimationFrame(loop);
  return done;
@@ -258,7 +259,7 @@ float a=smoothstep(1.,.2,length(gl_PointCoord-.5)*2.)*vC.a;if(a<.003)discard;gl_
  const freeArea=()=>{
   const w=root.clientWidth||innerWidth,h=root.clientHeight||innerHeight;fr={fx:1,fy:1,ox:0,oy:0};
   if(root.classList.contains('sf-nogl'))return;
-  const ch=score.offsetHeight||210;
+  const card=root.querySelector('.sf-score'),ch=card?.offsetHeight||210;
   if(w<=560){const top=Math.max(h*.35,h-64-ch-8);fr={fx:1,fy:top/h,ox:0,oy:1-top/h}}
   else{const left=Math.min(w*.6,Math.min(300,w-24)+24),fw=w-left;fr={fx:fw/w,fy:1,ox:(left+fw/2)/w*2-1,oy:0}}
  };
