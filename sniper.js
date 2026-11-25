@@ -1,25 +1,26 @@
 import {changeSide,languageButton,read,write} from './factions.js';
 import {tr} from './language.js';
+import {analysisHtml,shotColors} from './sniper-analysis.js';
 import './sniper.css';
 
 const saveKey='pop-sniper-v2';
 const optics=[['Ялинка','Tree'],['Точка','Dot'],['Сітка','Grid']];
 const gravity=10; // Game-world gravity, deliberately not 9.80665.
 const calibers=[ // v0 m/s, k = velocity decay per metre (v = v0·e^(−k·x))
- {name:'.338 Lapua Mag',v0:830,k:0.00035},
- {name:'.375 CheyTac',v0:900,k:0.00028},
- {name:'.416 Barrett',v0:940,k:0.0003},
- {name:'.50 BMG',v0:860,k:0.00028},
+ {name:'.338 Lapua Mag',v0:830,k:0.00052}, // 300 gr, ~2720 fps; ~515 m/s at 914 m
+ {name:'.375 CheyTac',v0:915,k:0.00038}, // 350 gr, ~3000 fps; ~660 m/s at 914 m
+ {name:'.416 Barrett',v0:990,k:0.00035}, // 395 gr, ~3250 fps, G1 BC ~.73
+ {name:'.50 BMG',v0:860,k:0.00038}, // 750 gr, ~2820 fps; ~724 m/s at 457 m
 ];
 const profiles=calibers.map(c=>c.name);
 const distances=[300,500,1000,2000,3000];
 const modeDistances=[[0,0,0,0,0],[1,1,1,1,1],[2,2,3,3,4]]; // series mode → distance index per round
-const tolerance=[12,8,5,4.5,6.5]; // hit tolerance in tenths of a mil, by distance index (2 km and 3 km: large ELR steel, plate Ø 1.8 m and 3.9 m)
+const tolerance=[12,8,5,4.1,6.2]; // hit tolerance in tenths of a mil, by distance index (2 km and 3 km: large ELR steel, plate Ø 1.6 m and 3.7 m)
 const ring10=[1.3,1.15,.95,.95,.95]; // 10-ring radius in tenths of a mil per distance index (constant ~0.1 mil angular size, a bit larger up close)
 const ringFrac=d=>ring10[d]/tolerance[d]; // 10-ring radius as a fraction of the plate (ring 1) radius
 const ringOf=(err,d)=>{const t=tolerance[d],r=ring10[d];return err>t?0:err<=r?10:Math.max(1,9-Math.floor(9*(err-r)/(t-r)))};
 // Random dispersion (sampled once per shot): expert wind call 0.5 m/s, muzzle velocity SD 2.1 m/s, rifle 0.05 mil/axis (~0.5 MOA group), hold 0.03 mil/axis plus the visible sway.
-const sigma={gust:.5,dv0:2.1,rand:.05,hold:.03,holdReduced:.05};
+const sigma={gust:.5,gustRead:.45,gustRes:.2,tau:4,dv0:2.1,rand:.05,hold:.03,holdReduced:.05};
 const gauss=()=>Math.sqrt(-2*Math.log(1-Math.random()))*Math.cos(2*Math.PI*Math.random());
 const swayAt=t=>({x:.05*Math.sin(2*Math.PI*.23*t)+.02*Math.sin(2*Math.PI*.9*t+1),y:.07*Math.sin(2*Math.PI*.17*t+.5)+.02*Math.sin(2*Math.PI*1.1*t)}); // mil
 const sgn=(v,d)=>(v<0?'−':v>0?'+':'')+Math.abs(v).toFixed(d);
@@ -40,10 +41,12 @@ const drift1=(c,x)=>1000*(flightTime(c,x)-x/c.v0)/x; // mil per 1 m/s crosswind
 const windSpeed=w=>w.flags.reduce((a,f)=>a+f*2,0)/3; // m/s, flag strength 1/2/3 = 2/4/6 m/s
 const xMax=Math.ceil(Math.max(...calibers.flatMap(c=>distances.flatMap(d=>weather.map(w=>drift1(c,d)*windSpeed(w)))))/5)*50;
 const yMax=Math.ceil(Math.max(...calibers.flatMap(c=>distances.map(d=>elevation(c,d))))/5)*50;
+const model={calibers,distances,tolerance,weather,windSpeed,flightTime,drop,elevation,drift1};
 const saved=read(saveKey);
 const validIndex=(value,length)=>Number.isInteger(value)&&value>=0&&value<length;
-const validDisp=d=>d===undefined||!!d&&[d.gust,d.dv0,d.rand?.x,d.rand?.y,d.hold?.x,d.hold?.y].every(Number.isFinite);
-const validShot=s=>!!s&&typeof s==='object'&&validDisp(s.disp)&&Number.isInteger(s.ring)&&s.ring>=0&&s.ring<=10&&typeof s.hit==='boolean'&&Number.isFinite(s.dx)&&Number.isFinite(s.dy)&&Number.isFinite(s.ms)&&s.ms>=0;
+const validDisp=d=>d===undefined||!!d&&[d.gust,d.dv0,d.rand?.x,d.rand?.y,d.hold?.x,d.hold?.y].every(Number.isFinite)&&(d.gustRead===undefined||Number.isFinite(d.gustRead));
+const validP=p=>p===undefined||!!p&&validIndex(p.di,distances.length)&&validIndex(p.ci,calibers.length)&&validIndex(p.wi,weather.length)&&Number.isFinite(p.x)&&Number.isFinite(p.y);
+const validShot=s=>!!s&&typeof s==='object'&&validDisp(s.disp)&&validP(s.p)&&Number.isInteger(s.ring)&&s.ring>=0&&s.ring<=10&&typeof s.hit==='boolean'&&Number.isFinite(s.dx)&&Number.isFinite(s.dy)&&Number.isFinite(s.ms)&&s.ms>=0;
 const validSeries=s=>!!s&&typeof s==='object'&&Array.isArray(s.rounds)&&s.rounds.length===seriesSize&&s.rounds.every(i=>validIndex(i,weather.length))&&
  Array.isArray(s.unassisted)&&s.unassisted.length<=seriesSize&&s.unassisted.every(v=>typeof v==='boolean')&&typeof s.usedCode==='boolean'&&
  Array.isArray(s.scores)&&s.scores.length<=seriesSize&&s.scores.every(v=>Number.isInteger(v)&&v>=0&&v<=10)&&
@@ -79,6 +82,7 @@ export function startSniper(){
  // Saves from before the round index existed used distance as the round.
  if(state.round===undefined&&validSeries(state.series)&&validIndex(state.distance,seriesSize))state.round=state.distance;
  delete state.best;
+ state.realtime=state.realtime===true;
  if(!validIndex(state.mode,3))state.mode=2;
  if(state.tutorialDone!==true)state.distance=modeDistances[state.mode][0];
  if(state.series&&Array.isArray(state.series.rounds)&&state.series.rounds.length!==seriesSize)delete state.bestScore; // record from an older series length
@@ -93,11 +97,25 @@ export function startSniper(){
  const root=document.createElement('main');
  root.className='sniper-board';document.body.append(root);
  const save=()=>write(saveKey,state);
- let gl=null,glLoop=0,scopeRO=null,dragging=false,pendingRender=false,flying=false,notice='',miss=null,mark=0,tabPick=null; // tabPick: reference tab chosen by the player or autoplay (not persisted)
+ // Continuous gust while aiming: Ornstein–Uhlenbeck g(t), m/s, mean 0, stationary σ gustRead, time constant tau. Exact update, so any elapsed time catches up. Never shown as a number: only the flags move.
+ const holes=[]; // bullet holes {D,lat,dy} of this series, redrawn on the plate whenever its world is rebuilt
+ const gp={g:0,t:0,h:[]};
+ const gustSeed=()=>{const now=performance.now();gp.g=gauss()*sigma.gustRead;gp.t=now;gp.h=[[now,gp.g]]};
+ const gustStep=now=>{
+  const dt=(now-gp.t)/1000;
+  if(!(dt>0))return;
+  const a=Math.exp(-dt/sigma.tau);
+  gp.g=gp.g*a+sigma.gustRead*Math.sqrt(1-a*a)*gauss();gp.t=now;gp.h.push([now,gp.g]);
+  while(gp.h.length>1&&gp.h[1][0]<now-2000)gp.h.shift();
+ };
+ const gustAt=ms=>{let v=gp.h[0][1];for(const [t,g] of gp.h){if(t<=ms)v=g;else break}return v};
+ const flagGusts=()=>[0,1,2].map(i=>gustAt(gp.t-500*i)); // each flag further down the range shows the gust ~0.5 s later
+ gustSeed();
+ let rt=null,analysisModal=null,gl=null,glLoop=0,scopeRO=null,dragging=false,pendingRender=false,flying=false,notice='',miss=null,mark=0,tabPick=null; // tabPick: reference tab chosen by the player or autoplay (not persisted)
  const hasResults=()=>state.tutorialDone===true&&!!state.series&&state.series.scores.length===seriesSize;
  const curTab=()=>tabPick&&(tabPick!=='results'||hasResults())?tabPick:state.tutorialDone!==true?'method':'table';
  // Aiming clock: runs only while a series shot is open, the page is visible and no flight overlay is up. Call after every state flip.
- const clockOn=()=>state.tutorialDone===true&&!!state.series&&state.series.started===true&&!state.roundDone&&!flying&&!document.hidden&&root.isConnected;
+ const clockOn=()=>state.tutorialDone===true&&!!state.series&&state.series.started===true&&!state.roundDone&&!flying&&!(rt&&rt.phase==='card')&&!document.hidden&&root.isConnected;
  function clock(){
   const now=performance.now();
   if(mark&&state.series)state.series.time+=now-mark;
@@ -120,7 +138,7 @@ export function startSniper(){
    glLoop=0;if(!glOn())return;
    glLoop=requestAnimationFrame(f);
    if(t-last<48)return;
-   try{gl.update(Math.min(.1,last?(t-last)/1000:.05));last=t;gl.draw(view())}catch(error){glFail(error)}
+   try{gustStep(performance.now());gl.setWind(flagGusts());gl.update(Math.min(.1,last?(t-last)/1000:.05));last=t;gl.draw(view())}catch(error){glFail(error)}
   };
   glLoop=requestAnimationFrame(f);
  }
@@ -130,7 +148,7 @@ export function startSniper(){
   try{
    const [T,{buildWorld}]=await Promise.all([import('three'),import('./sniper-world.js')]);
    if(!root.isConnected)return;
-   gl=createGL(T,buildWorld);
+   gl=createGL(T,buildWorld,holes);
    gl.canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();glDrop();render()});
   }catch(error){console.warn('sniper: WebGL unavailable, using 2D view',error);gl=null;return}
   if(dragging||flying)pendingRender=true;else render();
@@ -162,7 +180,7 @@ export function startSniper(){
     tr('Вітер дме E → W і зносить кулю ліворуч. Щоб компенсувати, X має бути додатним — ціль правіше.','The wind blows E → W and pushes the bullet left. To compensate, X must be positive — aim right.')},
    {mark:'table',text:tr('Таблиця для ','Table for ')+c.name+', '+distLabel(dk)+tr(': підйом ',': elevation ')+e.toFixed(1)+tr(' міл, знос ',' mil, drift ')+k.toFixed(2)+tr(' міл на кожен 1 м/с бокового вітру.',' mil per 1 m/s of crosswind.')},
    {mark:'y',text:tr('Куля падає під дією тяжіння (у світі гри g = 10 м/с²), тому ствол піднімаємо: Y = ','The bullet drops under gravity (g = 10 m/s² in the game world), so we raise the barrel: Y = ')+mil(sy)+tr(' міл.',' mil.')},
-   {mark:'x',text:'X = '+k.toFixed(2)+' × '+wind.toFixed(1)+' ≈ '+signedMil(sx)+tr(' міл. Чим довше куля летить, тим більше її зносить.',' mil. The longer the flight, the more the wind carries it.')},
+   {mark:'x',text:'X = '+k.toFixed(2)+' × '+wind.toFixed(1)+' ≈ '+signedMil(sx)+tr(' міл. Чим довше куля летить, тим більше її зносить.',' mil. The longer the flight, the more the wind carries it.')+tr(' Порив не враховую — він видно лише по тому, як зараз тріпочуть прапорці.',' I ignore the current gust — it shows only in how the flags are flapping right now.')},
    {mark:'y',dial:'y',text:tr('Кручу барабан підйому до ','Dialing elevation to ')+mil(sy)+tr(' міл.',' mil.')},
    {mark:'x',dial:'x',text:tr('Кручу барабан вітру до ','Dialing windage to ')+signedMil(sx)+tr(' міл.',' mil.')},
    {mark:'aim',aim:true,text:tr('Наводжу гвинтівку: ставлю мішень у центр сітки, бо поправки виставлені барабанами повністю.','Aiming the rifle: target to the reticle center, since the turrets carry the full correction.')},
@@ -346,7 +364,7 @@ export function startSniper(){
   runStep();
  }
 
- function resetShot(){state.misses=0;state.roundDone=false;delete state.lastShot;notice='';miss=null;state.aim=randomAim()}
+ function resetShot(){gustSeed();state.misses=0;state.roundDone=false;delete state.lastShot;notice='';miss=null;state.aim=randomAim()}
  function startSeries(){
   const rounds=[];
   let previous=state.weather;
@@ -355,6 +373,7 @@ export function startSniper(){
    previous=available[Math.floor(Math.random()*available.length)];
    rounds.push(previous);
   }
+  holes.length=0;
   state.series={rounds,unassisted:[],scores:[],shots:[],usedCode:false,time:0,started:false};
   resetShot();
   state.round=0;
@@ -373,34 +392,42 @@ export function startSniper(){
  const tickId=setInterval(()=>{
   if(!root.isConnected){clearInterval(tickId);document.removeEventListener('visibilitychange',glStart);glDrop();return}
   clock();paintTimer();
+  if(!glLoop){gustStep(performance.now());if(glOn()){try{gl.setWind(flagGusts());gl.draw(view())}catch(error){glFail(error)}}} // fallback when the animation loop is not running (reduced motion)
   const sec=state.series?Math.floor(state.series.time/1000):-1;
   if(mark&&sec!==savedSec){savedSec=sec;save()}
  },250);
 
  // Explicit shot: score by distance from the solution, play the 3D flight, then record the result.
  async function fire(){
-  if(state.roundDone||flying)return;
+  if(state.roundDone||flying||rt)return;
   begin();
   if(ap.on){clearTimeout(ap.timer);ap.fn=null}
   const [sx,sy]=solution(state),tol=tolerance[state.distance],w=weather[state.weather],tutorial=state.tutorialDone!==true;
-  const c=calibers[state.profile],D=distances[state.distance],sw=swayNow(),gust=gauss()*sigma.gust,dv0=gauss()*sigma.dv0,hs=reduced()?sigma.holdReduced:sigma.hold;
-  const disp={gust,dv0,rand:{x:gauss()*sigma.rand,y:gauss()*sigma.rand},hold:{x:gauss()*hs-sw.x,y:gauss()*hs-sw.y}}; // mil; hold is the impact error from the sway at the trigger pull
+  gustStep(performance.now());
+  const c=calibers[state.profile],D=distances[state.distance],sw=swayNow(),gustRead=gp.g,gust=gustRead+gauss()*sigma.gustRes,flagG=flagGusts(),dv0=gauss()*sigma.dv0,hs=reduced()?sigma.holdReduced:sigma.hold;
+  const disp={gust,gustRead,dv0,rand:{x:gauss()*sigma.rand,y:gauss()*sigma.rand},hold:{x:gauss()*hs-sw.x,y:gauss()*hs-sw.y}}; // mil; hold is the impact error from the sway at the trigger pull
   const dx=(state.x-sx)-state.aim.x+10*((w.east?1:-1)*drift1(c,D)*gust+disp.rand.x+disp.hold.x),
    dy=(state.y-sy)-state.aim.y+10*(elevation(c,D)-elevation({...c,v0:c.v0+dv0},D)+disp.rand.y+disp.hold.y),
    err=Math.hypot(dx,dy),ring=ringOf(err,state.distance);
   const note=tr('Порив ','Gust ')+sgn(gust,1)+tr(' м/с · швидкість ',' m/s · velocity ')+sgn(dv0,1)+tr(' м/с',' m/s')+'\n'+tr('розкид ','spread ')+sgn(disp.rand.x,2)+'/'+sgn(disp.rand.y,2)+tr(' · рука ',' · hold ')+sgn(disp.hold.x,2)+'/'+sgn(disp.hold.y,2)+tr(' міл',' mil');
-  flying=true;clock();
-  const button=root.querySelector('[data-fire]');
-  if(button)button.disabled=true;
-  try{
-   const {playFlight}=await import('./sniper-flight.js');
-   await playFlight(root,{
-    distance:distances[state.distance],caliber:calibers[state.profile],gravity,
-    aimMil:{x:state.x/10,y:state.y/10},impactMil:{x:dx/10,y:dy/10},targetRadiusMil:tol/10,ring10:ringFrac(state.distance),note,ring,hit:ring>0,
-    wind:{east:w.east,flags:w.flags,speed:windSpeed(w)},
-    duration:distances[state.distance]/100,autoClose:ap.on?4:0,tr,
-   });
-  }catch(error){console.warn(error)}
+  if(state.realtime){
+   if(ap.on)stopAutoplayTimerOnly();
+   await realtimeShot({D,dx,dy,ring,note,tof:flightTime({...c,v0:c.v0+dv0},D)});
+  }else{
+    flying=true;clock();
+    const button=root.querySelector('[data-fire]');
+    if(button)button.disabled=true;
+    try{
+     const {playFlight}=await import('./sniper-flight.js');
+     await playFlight(root,{
+      distance:distances[state.distance],caliber:calibers[state.profile],gravity,
+      aimMil:{x:state.x/10,y:state.y/10},impactMil:{x:dx/10,y:dy/10},targetRadiusMil:tol/10,ring10:ringFrac(state.distance),note,ring,hit:ring>0,
+      wind:{east:w.east,flags:w.flags,speed:windSpeed(w),gust:flagG},
+      duration:D<1000?D/100:10*Math.sqrt(D/1000),autoClose:ap.on?4:0,tr,
+     });
+    }catch(error){console.warn(error)}
+
+  }
   flying=false;pendingRender=false;
   if(tutorial){
    if(ring){state.roundDone=true;state.lastShot={ring,score:Math.max(1,ring-(state.misses||0))};state.misses=0;notice='';miss=null}
@@ -408,10 +435,10 @@ export function startSniper(){
   }else{
    const series=state.series;
    const before=series.shots.reduce((a,b)=>a+b.ms,0);
-   series.time+=1000*flightTime(calibers[state.profile],distances[state.distance]); // real time of flight replaces the animation time
+   if(!state.realtime)series.time+=1000*flightTime(calibers[state.profile],distances[state.distance]); // real time of flight replaces the animation time (in real-time mode it already elapsed)
    series.scores=[...series.scores,ring];
    series.unassisted=[...series.unassisted,!series.usedCode];
-   series.shots=[...series.shots,{ring,hit:ring>0,dx,dy,ms:Math.max(0,series.time-before),disp}];
+   series.shots=[...series.shots,{ring,hit:ring>0,dx,dy,ms:Math.max(0,series.time-before),disp,p:{di:state.distance,ci:state.profile,wi:state.weather,x:state.x,y:state.y}}];
    state.roundDone=true;state.lastShot={ring,score:ring};state.misses=0;notice='';miss=null;
    if(state.round===seriesSize-1){
     const total=series.scores.reduce((a,b)=>a+b,0),hits=series.shots.filter(v=>v.hit).length,hpm=series.time>0?hits/(series.time/60000):0;
@@ -425,6 +452,46 @@ export function startSniper(){
   save();render();scopeTop();
   if(state.roundDone&&!ap.on)root.querySelector('[data-next]')?.focus();
   if(ap.on){ap.step=11;runStep()}
+ }
+ const stopAutoplayTimerOnly=()=>{clearTimeout(ap.timer);ap.fn=null};
+ // Real-time shot: no replay. Countdown of the true time of flight, then the impact appears in the scope view and a result card waits for Continue.
+ function realtimeShot(o){
+  return new Promise(resolve=>{
+   const D=distances[state.distance],t0=performance.now();
+   let auto=0,tick=0;
+   rt={phase:'flight',left:o.tof,o};render(); // locks the controls and shows the countdown
+   const go=()=>{clearTimeout(auto);clearInterval(tick);rt=null;paintRt();resolve()};
+   const impact=()=>{
+    clearInterval(tick);rt.phase='card';clock();
+    const h={D,hit:o.ring>0,lat:o.dx/10*D/1000,dy:o.dy/10*D/1000};
+    try{gl?.impact({...h,still:reduced()})}catch(error){glFail(error)}
+    if(h.hit)holes.push({D,lat:h.lat,dy:h.dy});
+    rt.go=go;paintRt();
+    if(ap.on)auto=setTimeout(go,3000);
+   };
+   tick=setInterval(()=>{
+    if(!root.isConnected){clearInterval(tick);resolve();return}
+    rt.left=Math.max(0,o.tof-(performance.now()-t0)/1000);
+    if(rt.left<=0)impact();else paintRt();
+   },50);
+  });
+ }
+ function paintRt(){
+  const stage=root.querySelector('.sniper-stage');
+  if(!stage)return;
+  let el=stage.querySelector('.sniper-rt');
+  if(!rt){el?.remove();return}
+  if(!el){el=document.createElement('div');stage.append(el)}
+  if(rt.phase==='flight'){
+   if(el.dataset.p!=='f'){el.dataset.p='f';el.className='sniper-rt sniper-hud sniper-hud-flight';el.setAttribute('role','status');el.innerHTML='<span></span>'}
+   el.firstChild.textContent=tr('Куля в польоті… ','Bullet in flight… ')+rt.left.toFixed(1)+' '+tr('с','s');
+  }else if(el.dataset.p!=='c'){
+   const o=rt.o,hit=o.ring>0;
+   el.dataset.p='c';el.className='sniper-rt sniper-impact';el.setAttribute('role','status');
+   el.innerHTML=`<div class="sniper-impact-ring">${o.ring}</div><div class="sniper-impact-main"><b class="${hit?'is-hit':'is-miss'}">${hit?tr('Влучання','Hit'):tr('Промах','Miss')}</b> <span>${tr('Відхилення: ','Offset: ')}X ${sgn(o.dx/10,2)} / Y ${sgn(o.dy/10,2)} ${tr('міл','mil')}</span><small></small></div><button type="button" data-rt-go>${tr('Далі','Continue')}</button>`;
+   el.querySelector('small').textContent=o.note;
+   const b=el.querySelector('[data-rt-go]');b.onclick=()=>rt?.go?.();b.focus({preventScroll:true});
+  }
  }
  function nextRound(){
   if(tabPick==='results')tabPick=null;
@@ -447,7 +514,8 @@ export function startSniper(){
   <li>${tr('Кожен прапорець: › = 2 м/с, ›› = 4 м/с, ››› = 6 м/с. Вітер — середнє трьох.','Each flag: › = 2 m/s, ›› = 4 m/s, ››› = 6 m/s. Wind is the average of the three.')}</li>
   <li>${tr('Y = підйом з таблиці для вашої дистанції.','Y = elevation from the table for your distance.')}</li>
   <li>${tr('X = знос на 1 м/с × вітер. Вітер W → E зносить праворуч — X від’ємний; E → W — ліворуч, X додатний.','X = drift per 1 m/s × wind. A W → E wind pushes right, so X is negative; E → W pushes left, so X is positive.')}</li>
-  <li>${tr('Навіть ідеальний розрахунок не гарантує 10: реальний розкид — оцінка вітру експертом ±0,5 м/с (≈1 миля/год), розкид швидкості кулі ±2 м/с (≈7 фут/с), кучність гвинтівки ≈0,5 MOA і дихання стрільця — дає випадкове відхилення. За симуляцією ідеальний постріл дає 10 приблизно у 75% випадків на 300 м, 60% на 500 м, 30–40% на 1 км, 10–15% на 2 км і 3–6% на 3 км. Мішені на 2 і 3 км великі (сталева плита ⌀ 1,8 і 3,9 м), тож навіть тут ідеальний постріл влучає в плиту приблизно у 85–96% (2 км) і 70–93% (3 км) випадків залежно від калібру.','Even a perfect solution doesn\'t guarantee a 10. Realistic error adds up: an expert\'s wind call is off by about ±0.5 m/s (~1 mph), muzzle velocity varies by ±2 m/s (~7 fps), the rifle shoots about 0.5 MOA, and the shooter\'s breathing moves the hold. In simulation a perfect shot is a 10 about 75% of the time at 300 m, 60% at 500 m, 30–40% at 1 km, 10–15% at 2 km and 3–6% at 3 km. The 2 km and 3 km targets are large steel plates (1.8 m and 3.9 m across), so even there a perfect shot still hits the plate about 85–96% of the time at 2 km and 70–93% at 3 km, depending on the caliber.')}</li>
+  <li>${tr('Навіть ідеальний розрахунок не гарантує 10: реальний розкид — оцінка вітру експертом ±0,5 м/с (≈1 миля/год), розкид швидкості кулі ±2 м/с (≈7 фут/с), кучність гвинтівки ≈0,5 MOA і дихання стрільця — дає випадкове відхилення. За симуляцією ідеальний постріл дає 10 приблизно у 75% випадків на 300 м, 60% на 500 м, 20–35% на 1 км, 4–15% на 2 км і 1–5% на 3 км. Мішені на 2 і 3 км великі (сталева плита ⌀ 1,6 і 3,7 м): ідеальний постріл влучає в плиту приблизно у 50–90% (2 км) і 30–85% (3 км) випадків залежно від калібру — найкраще для .375 CheyTac і .416 Barrett, найгірше для .338 Lapua, яка на 2 км вже дозвукова.','Even a perfect solution doesn\'t guarantee a 10. Realistic error adds up: an expert\'s wind call is off by about ±0.5 m/s (~1 mph), muzzle velocity varies by ±2 m/s (~7 fps), the rifle shoots about 0.5 MOA, and the shooter\'s breathing moves the hold. In simulation a perfect shot is a 10 about 75% of the time at 300 m, 60% at 500 m, 20–35% at 1 km, 4–15% at 2 km and 1–5% at 3 km. The 2 km and 3 km targets are large steel plates (1.6 m and 3.7 m across): a perfect shot still hits the plate about 50–90% of the time at 2 km and 30–85% at 3 km, depending on the caliber — best for the .375 CheyTac and .416 Barrett, worst for the .338 Lapua, which is already subsonic at 2 km.')}</li>
+  <li>${tr('Вітер не постійний: порив повільно «дихає» (приблизно ±0,5 м/с, кілька секунд), і його видно лише по прапорцях. Прапорці випрямляються — вітер сильнішає: додайте поправку в бік вітру; обвисли — вітер слабшає: додайте проти вітру або зачекайте затишшя й стріляйте. Скільки міл на кожен +1 м/с: .375 CheyTac — 0,24 на 1 км, 0,54 на 2 км, 0,95 на 3 км; .338 Lapua — 0,38 / 0,91 / 1,70; .416 Barrett — 0,20 / 0,45 / 0,78; .50 BMG — 0,25 / 0,58 / 1,01. Тож порив ±0,5 м/с — це ≈±0,12 міл на 1 км і ≈±0,5 міл на 3 км для .375. Невидима частина вітру (≈0,2 м/с) лишається випадковою.','The wind is not constant: the gust slowly breathes (about ±0.5 m/s, over several seconds) and is visible only in the flags. Flags straighten out = stronger wind: add windage toward the wind side; flags droop = weaker wind: add against the wind, or wait for a lull and then fire. Mil per extra +1 m/s: .375 CheyTac 0.24 at 1 km, 0.54 at 2 km, 0.95 at 3 km; .338 Lapua 0.38 / 0.91 / 1.70; .416 Barrett 0.20 / 0.45 / 0.78; .50 BMG 0.25 / 0.58 / 1.01. So a ±0.5 m/s gust is about ±0.12 mil at 1 km and ±0.5 mil at 3 km for the .375. The unreadable part of the wind (about 0.2 m/s) stays random.')}</li>
   <li>${tr('Вологість на код не впливає.','Humidity does not affect the code.')}</li>
   <li>${tr('Можна не докручувати барабани: якщо бракує поправки, поставте мішень на поділку сітки на цю різницю (винос). Наприклад, бракує 0.7 міл підйому — мішень на поділці 0.7 нижче центру.','You don\'t have to dial everything: if the dial is short, put the target on the reticle mark at that difference (holdover). E.g. 0.7 mil elevation short — put the target on the 0.7 mark below center.')}</li>`;
 }
@@ -467,7 +535,7 @@ export function startSniper(){
     `<g transform="translate(${x} ${y})" class="miss"><path d="M-4-4L4 4M4-4L-4 4"/><text x="8" y="-5">${i+1}</text></g>`;
   }).join('');
   const rings=Array.from({length:10},(_,j)=>`<circle r="${(R*(fp+(1-fp)*j/9)).toFixed(1)}"${j===9?' class="edge"':''}/>`).join('');
-  const rows=shots.map((v,i)=>`<tr><td>${i+1}</td><td>${distLabel(distances[modeDistances[state.mode][i]])}</td><td>${v.ring}${v.hit?'':' ×'}</td><td>${(v.ms/1000).toFixed(1)} ${tr('с','s')}</td><td${v.disp?` title="${dispTip(v.disp)}"`:''}>${(Math.hypot(v.dx,v.dy)/10).toFixed(2)}</td></tr>`).join('');
+  const rows=shots.map((v,i)=>`<tr><td><span class="sa-dot" style="background:${shotColors[i%shotColors.length]}"></span>${i+1}</td><td>${distLabel(distances[modeDistances[state.mode][i]])}</td><td>${v.ring}${v.hit?'':' ×'}</td><td>${(v.ms/1000).toFixed(1)} ${tr('с','s')}</td><td${v.disp?` title="${dispTip(v.disp)}"`:''}>${(Math.hypot(v.dx,v.dy)/10).toFixed(2)}</td></tr>`).join('');
   return `<dl class="sniper-stats">
     ${cell(tr('Влучань','Hits'),hits+'/'+n)}${cell(tr('Точність','Accuracy'),Math.round(100*hits/n)+'%')}
     ${cell(tr('Бали','Score'),total+'/'+maxScore+badge(rec.score))}${cell(tr('Час серії','Series time'),clock2(time))}
@@ -478,6 +546,7 @@ export function startSniper(){
     <svg class="sniper-group" viewBox="-60 -60 120 120" width="120" height="120" role="img" aria-label="${tr('Розкид пострілів відносно допуску','Shot group relative to tolerance')}"><g class="rings">${rings}<path d="M-56 0H56M0-56V56"/></g>${marks}</svg>
     <table aria-label="${tr('Постріли серії','Series shots')}"><thead><tr><th scope="col">#</th><th scope="col">${tr('Дистанція','Distance')}</th><th scope="col">${tr('Кільце','Ring')}</th><th scope="col">${tr('Час','Time')}</th><th scope="col">${tr('Відхилення','Deviation')}</th></tr></thead><tbody>${rows}</tbody></table>
    </div>
+   ${analysisHtml(shots,model)}
    <p class="sniper-hint-note">${tr('Рекорд','Best')}: ${state.bestScore??0}/${maxScore} · ${(state.bestHpm??0).toFixed(1)} ${tr('влуч./хв','hits/min')}</p>`;
  }
  function render(){
@@ -493,6 +562,7 @@ export function startSniper(){
   const axisLabel=(axis,text)=>`<label class="sniper-axis"><span>${axis.toUpperCase()}</span><input type="range" min="${axis==='x'?-xMax:0}" max="${axis==='x'?xMax:yMax}" step="1" value="${state[axis]}" data-axis="${axis}" aria-label="${text}"><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-number="${axis}" aria-label="${text}"></label>`;
   const tabDefs=[...results?[['results',tr('Результати','Results')]]:[],['table',tr('Таблиця','Table')],['method',tr('Як рахувати','How to solve')],['settings',tr('Налаштування','Settings')]];
   const panelAttrs=id=>`role="tabpanel" id="sniper-panel-${id}" aria-labelledby="sniper-tab-${id}" tabindex="0"${id===cur?'':' hidden'}`;
+  analysisModal=null;
   root.innerHTML=`
    <header class="sniper-header"><div class="sniper-brand"><h1>${tr('Снайпер','Sniper')}</h1><small>POP SEASON</small></div>
     <nav>${languageButton()}<button data-autoplay aria-pressed="${ap.on}">${apLabel()}</button><button data-exit>${tr('Режими','Modes')}</button></nav>
@@ -563,6 +633,7 @@ export function startSniper(){
       <div class="sniper-settings sniper-tabpanel" ${panelAttrs('settings')}>
        <label>${tutorial?tr('Режим','Mode'):tr('Дистанція','Distance')} <select data-distance aria-label="${tutorial?tr('Режим','Mode'):tr('Дистанція','Distance')}"></select></label>
        <label>${tr('Калібр','Caliber')} <select data-profile aria-label="${tr('Калібр','Caliber')}"></select></label>
+       <label class="sniper-check"><input type="checkbox" data-realtime${state.realtime?' checked':''}> ${tr('Реальний час: без повтору польоту','Real time: no flight replay')}</label>
       </div>
      </section>
      <div class="sniper-actions">
@@ -612,7 +683,7 @@ export function startSniper(){
   }
 
   function paint(){
-   const complete=state.roundDone===true,shot=state.lastShot;
+   const complete=state.roundDone===true,shot=state.lastShot,busy=!!rt;
    drawScope(canvas,state,conditions,!!gl);
    if(gl){try{gl.draw(view());glStart()}catch(error){glFail(error)}}
    const zo=root.querySelector('[data-zoom-out]');if(zo)zo.textContent=state.zoom+'×';
@@ -622,20 +693,20 @@ export function startSniper(){
    if(turretHud)turretHud.innerHTML='X <b>'+signedMil(state.x)+'</b>&nbsp; Y <b>'+mil(state.y)+'</b>';
    for(const slider of sliders){
     slider.value=state[slider.dataset.axis];
-    slider.disabled=complete;
+    slider.disabled=complete||busy;
    }
    for(const number of numbers){
     if(document.activeElement!==number)number.value=(state[number.dataset.number]/10).toFixed(1);
-    number.disabled=complete;
+    number.disabled=complete||busy;
    }
    for(const step of steps){
     const value=state[step.dataset.step];
-    step.disabled=complete||clampAxis(step.dataset.step,value+Number(step.dataset.delta))===value;
+    step.disabled=complete||busy||clampAxis(step.dataset.step,value+Number(step.dataset.delta))===value;
    }
-   for(const select of settings)select.disabled=complete||(!tutorial&&select.hasAttribute('data-distance'));
-   for(const hint of root.querySelectorAll('[data-check-axis],[data-code]'))hint.disabled=complete;
+   for(const select of settings)select.disabled=complete||busy||(!tutorial&&select.hasAttribute('data-distance'));
+   for(const hint of root.querySelectorAll('[data-check-axis],[data-code]'))hint.disabled=complete||busy;
    for(const button of opticButtons)button.disabled=complete;
-   fireButton.disabled=complete||flying;fireButton.hidden=complete;
+   fireButton.disabled=complete||flying||busy;fireButton.hidden=complete;
    next.disabled=!complete;next.hidden=!complete;
    result.dataset.won=String(complete);
    let message=notice||tr('Знайдіть мішень, виставте X та Y, наведіть і стріляйте','Find the target, set X and Y, aim, then fire');
@@ -651,7 +722,7 @@ export function startSniper(){
    paintCalc();
   }
   function setAlignment(x,y,force){
-   if(state.roundDone)return;
+   if(state.roundDone||rt)return;
    x=clampAxis('x',x);y=clampAxis('y',y);
    if(x===state.x&&y===state.y)return;
    notice='';
@@ -660,7 +731,7 @@ export function startSniper(){
    save();paint();
   }
   function setAim(x,y){
-   if(state.roundDone)return;
+   if(state.roundDone||rt)return;
    x=clampAim(Math.round(x));y=clampAim(Math.round(y));
    if(x===state.aim.x&&y===state.aim.y)return;
    state.aim={x,y};save();paint();
@@ -716,7 +787,7 @@ export function startSniper(){
   let drag=null;
   canvas.onpointerdown=event=>{
    takeover();
-   if(event.button!==0||state.roundDone)return;
+   if(event.button!==0||state.roundDone||rt)return;
    drag={id:event.pointerId,left:event.clientX,top:event.clientY,x:state.aim.x,y:state.aim.y};
    dragging=true;canvas.setPointerCapture(event.pointerId);
   };
@@ -755,7 +826,21 @@ export function startSniper(){
     event.preventDefault();selectTab(tabs[n].dataset.tab);tabs[n].focus();
    };
   });
+  const rtBox=root.querySelector('[data-realtime]');
+  rtBox.disabled=!!rt;rtBox.onchange=()=>{state.realtime=rtBox.checked;save()};
   fireButton.onclick=()=>fire();
+  const expand=root.querySelector('[data-expand]');
+  if(expand)expand.onclick=()=>{
+   analysisModal?.remove();
+   const bg=document.createElement('div');analysisModal=bg;
+   bg.className='sniper-modal-bg';
+   bg.innerHTML=`<div class="sniper-modal" role="dialog" aria-modal="true" aria-label="${tr('Траєкторії','Trajectories')}" tabindex="-1"><div class="sa-head"><h3>${tr('Траєкторії','Trajectories')}</h3><button type="button" data-modal-close>${tr('Закрити','Close')}</button></div>${analysisHtml(state.series.shots,model,640,true)}</div>`;
+   const close=()=>{bg.remove();if(analysisModal===bg)analysisModal=null;expand.focus?.()};
+   bg.onclick=event=>{if(event.target===bg)close()};
+   bg.onkeydown=event=>{if(event.key==='Escape'){event.stopPropagation();close()}};
+   bg.querySelector('[data-modal-close]').onclick=close;
+   root.append(bg);bg.querySelector('.sniper-modal').focus();
+  };
   next.onclick=()=>{takeover();nextRound();root.querySelector('[data-axis="x"]').focus({preventScroll:true})};
   root.querySelector('[data-exit]').onclick=changeSide;
   root.querySelector('[data-autoplay]').onclick=()=>{if(ap.on)stopAutoplay();else startAutoplay()};
@@ -765,6 +850,7 @@ export function startSniper(){
   bindCalc();
   root.querySelector('[data-language]').onclick=()=>document.querySelector('.lang').click();
   paint();
+  paintRt();
   paintAutoplay();
  }
  document.addEventListener('siege-language',()=>{if(dragging||flying)pendingRender=true;else render()});
@@ -971,14 +1057,14 @@ function drawTree(c,center,u){
 }
 
 // WebGL range view. Magnification = vertical field of view (so the reticle mil scale is exact), aim = camera rotation.
-function createGL(T,buildWorld){
+function createGL(T,buildWorld,holes){
  const canvas=document.createElement('canvas');canvas.className='sniper-gl';canvas.setAttribute('aria-hidden','true');
  const renderer=new T.WebGLRenderer({canvas,antialias:true,alpha:false,logarithmicDepthBuffer:true});
  if(!renderer.getContext())throw new Error('no gl');
  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
  const camera=new T.PerspectiveCamera(10,1,.5,4500),aimAt=new T.Vector3(),right=new T.Vector3(),up=new T.Vector3();
  camera.position.set(0,1.5,0);
- let world=null,key='';
+ let world=null,key='',wind=[0,0,0];
  return{canvas,
   size(w,h){if(w>0&&h>0)renderer.setSize(w,h,false)},
   draw(state){
@@ -986,7 +1072,7 @@ function createGL(T,buildWorld){
    if(next!==key){ // distance, weather or target size changed
     world?.dispose();world=null;
     world=buildWorld(T,{distance:D,wind:{east:w.east,flags:w.flags},targetRadiusM:tol/10*D/1000,ring10:ringFrac(state.distance)});key=next;
-    renderer.setClearColor(world.clearColor);
+    renderer.setClearColor(world.clearColor);world.setWind(wind);for(const h of holes)if(h.D===D)world.addHole(h);
    }
    camera.fov=2*Math.atan(viewSize/2/uOf(state.zoom)/1000)*180/Math.PI;camera.updateProjectionMatrix();
    camera.lookAt(world.targetCenter);camera.updateMatrixWorld();
@@ -997,6 +1083,8 @@ function createGL(T,buildWorld){
    camera.lookAt(aimAt);
    renderer.render(world.scene,camera);
   },
+  setWind(g){wind=g;world?.setWind(g)},
+  impact(h){world?.addImpact(h)},
   update(dt){world?.update(dt)},
   dispose(){world?.dispose();world=null;renderer.dispose();renderer.forceContextLoss()}
  };

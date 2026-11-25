@@ -72,13 +72,19 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1,ring10:f10=.
  const flags=[.25,.5,.75].map((f,i)=>{
   const st=clamp(fl[i]||1,1,3),x=i%2?4.5:-4.5,z=D*f,grp=new T.Group();grp.position.set(x,0,z);scene.add(grp);
   add(grp,new T.CylinderGeometry(.03,.04,3.4,6),lam(0x292e22),0,1.7,0);
-  const N=10,L=.7+.55*st,pos=new Float32Array((N+1)*6),idx=[];
+  const N=10,pos=new Float32Array((N+1)*6),idx=[],base=2*st; // base: mean flag speed, m/s (1/2/3 marks = 2/4/6)
   for(let j=0;j<N;j++){const a=j*2;idx.push(a,a+1,a+2,a+1,a+3,a+2)}
   const geo=new T.BufferGeometry();geo.setAttribute('position',new T.BufferAttribute(pos,3));geo.setIndex(idx);
   const m=add(grp,geo,lam(0xf5ad53,{side:T.DoubleSide}),0,3.3,0);m.frustumCulled=false;
-  const upd=t=>{const A=.02+.05*st;for(let j=0;j<=N;j++){const u=j/N,px=-wd*L*u,py=-(1-(st-1)/2.2)*.35*u*u*L+A*.4*Math.sin(t*9-u*7+i)*u,pz=A*Math.sin(t*8-u*6+i)*u*L,w=.42*(1-.85*u);pos.set([px,py,pz,px,py-w,pz],j*6)}
+  const q={x,z,gust:W.gust||0,ph:i,last:0};
+  // effective speed = mean + shared gust; droop angle from the pole 25° at 1 m/s, +13° per m/s, saturating near 88°, flap frequency and cloth length grow with speed
+  q.upd=t=>{const dt=Math.min(.2,Math.max(0,t-q.last));q.last=t;
+   const s=Math.max(.3,base+q.gust),th=(s<5.5?25+13*(s-1):84+4*(1-Math.exp(-(s-5.5)/2)))*Math.PI/180,L=.7+.275*s,A=.02+.025*s;
+   q.ph+=dt*(2+1.7*s);
+   const sn=Math.sin(th),cs=Math.cos(th);
+   for(let j=0;j<=N;j++){const u=j/N,px=-wd*L*u*sn,py=-L*u*cs-.12*u*u*L+A*.4*Math.sin(q.ph-u*7)*u,pz=A*Math.sin(q.ph*.89-u*6)*u*L,w=.42*(1-.85*u);pos.set([px,py,pz,px,py-w,pz],j*6)}
    geo.attributes.position.needsUpdate=true;geo.computeVertexNormals()};
-  upd(0);return{x,z,upd};
+  q.upd(0);return q;
  });
 
  // ---- target, stand, berm ----
@@ -115,8 +121,33 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1,ring10:f10=.
   const om=new T.MeshBasicMaterial({color:0xff8a1f,fog:false,side:T.DoubleSide});
   add(pl,new T.BoxGeometry(pw,ph,pw),om,0,-R1+top+ph/2,bz+bt/2+pw/2);
   add(pl,new T.PlaneGeometry(.5*sD,.3*sD),om,.25*sD+pw/2,-R1+top+ph-.15*sD,bz+bt/2+pw/2)}
+ // ---- impact effects (real-time scope view): bullet holes persist, flash / swing / dust are short ----
+ const fx=[],glowTex=tex(64,64,(c,w)=>{const gr=c.createRadialGradient(32,32,0,32,32,32);gr.addColorStop(0,'#fff');gr.addColorStop(.35,'#ffd9a0cc');gr.addColorStop(1,'#ff8a3000');c.fillStyle=gr;c.fillRect(0,0,w,w)}),
+  puffTex=tex(64,64,(c,w)=>{const gr=c.createRadialGradient(32,32,0,32,32,32);gr.addColorStop(0,'#cfc6aecc');gr.addColorStop(.6,'#b8b09a77');gr.addColorStop(1,'#b8b09a00');c.fillStyle=gr;c.fillRect(0,0,w,w)}),
+  holeMat=new T.MeshBasicMaterial({color:0x090c0a,fog:false,polygonOffset:true,polygonOffsetFactor:-2}),holeR=Math.max(.012,D*.00008);
+ let swingT=9;
+ const burst=(map,add,x,y,z,size,life,grow)=>{
+  const sp=new T.Sprite(new T.SpriteMaterial({map,transparent:true,depthWrite:false,fog:false,blending:add?T.AdditiveBlending:T.NormalBlending}));
+  sp.position.set(x,y,z);sp.scale.set(size,size,1);scene.add(sp);fx.push({sp,age:0,life,size,grow});
+ };
+ const addHole=h=>{const m=new T.Mesh(new T.CircleGeometry(holeR,12).rotateY(Math.PI),holeMat);m.position.set(-h.lat,h.dy-R1,-.03);pl.add(m)};
+ // h: {hit, lat (m, + right), dy (m above the plate centre), still}
+ const addImpact=h=>{
+  const y=Ty+h.dy;
+  if(h.hit){addHole(h);if(!h.still){burst(glowTex,true,-h.lat,y,D-.15,Math.max(.4,D*.0008),.3,1.2);swingT=0}}
+  else if(!h.still){ // dust where the bullet lands: ground short of the plane when low, else the berm face, clamped to the berm
+   const onBerm=y>.1&&Math.abs(h.lat)<mound.a*.9,py=onBerm?Math.min(y,mound.h-.5):.08,pz=onBerm?mound.cz-mound.b*.8:D-2;
+   burst(puffTex,false,-h.lat,py,pz,Math.max(.8,D*.0012),1.3,3.2);
+  }
+ };
  let clock=0;
  return{scene,sky,plate:pl,flags,mound,R1,HS,clearColor:0xbfbc95,targetCenter:V(0,Ty,D),lam,add,tex,
-  update(dt){clock+=dt;for(const f of flags)f.upd(clock)},
+  update(dt){clock+=dt;for(const f of flags)f.upd(clock);
+   if(swingT<3){swingT+=dt;pl.rotation.x=.03*Math.sin(swingT*16)*Math.exp(-swingT*4)}else if(pl.rotation.x)pl.rotation.x=0;
+   for(let i=fx.length-1;i>=0;i--){const e=fx[i];e.age+=dt;const u=e.age/e.life;
+    if(u>=1){scene.remove(e.sp);e.sp.material.dispose();fx.splice(i,1);continue}
+    const sc=e.size*(1+e.grow*u);e.sp.scale.set(sc,sc,1);e.sp.material.opacity=(1-u)**1.5}},
+  addImpact,addHole,
+  setWind(g){flags.forEach((f,i)=>{f.gust=g[i]??g[0]??0})}, // gust per flag, m/s added to the mean flag speed
   dispose(){scene.traverse(m=>{m.geometry?.dispose();[].concat(m.material||[]).forEach(mt=>{mt.map?.dispose();mt.dispose()})})}};
 }
