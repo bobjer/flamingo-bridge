@@ -370,8 +370,8 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-hud-plane.is-true { color: var(--sniper-accent); border-color: var(--sniper-line); }
 .sniper-hud-plane[hidden] { display: none; }
 .sniper-pick { display: flex; align-items: center; gap: 4px 8px; margin-top: 6px; min-width: 0; }
-.sniper-pick-label { flex: none; min-width: 7.2em; white-space: nowrap; color: var(--sniper-muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
-.sniper-pills { display: flex; flex-wrap: wrap; gap: 3px; min-width: 0; }
+.sniper-pick-label { flex: none; width: 7.2em; white-space: nowrap; color: var(--sniper-muted); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.sniper-pills { display: flex; flex-wrap: nowrap; gap: 3px; min-width: 0; }
 .sniper-board .sniper-pills button { min-height: 24px; padding: 1px 6px; border: 1px solid var(--sniper-line); border-radius: 999px; background: #18211b; font-size: 11.5px; line-height: 1.3; white-space: nowrap; }
 .sniper-board .sniper-pills button[aria-pressed="true"] { background: var(--sniper-accent); color: #141b18; font-weight: 700; border-color: var(--sniper-accent); }
 .sniper-board .sniper-pills button:disabled { opacity: .55; }
@@ -393,3 +393,52 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-breath[data-phase="over"] { color: #f2b0a8; }
 .sniper-board .sniper-fire { touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .sniper-board .sniper-fire.is-holding { background: #5fd17a; border-color: #5fd17a; }
+
+.sniper-pick { margin-top: 4px; }
+.sniper-pick-plan { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sniper-worlds { gap: 6px; }
+.sniper-board .sniper-worlds button.sniper-world-btn { width: 26px; height: 26px; min-height: 26px; padding: 0; border-radius: 50%; border: 2px solid transparent; background: transparent; display: grid; place-items: center; }
+.sniper-board .sniper-worlds button.sniper-world-btn[aria-pressed="true"] { background: transparent; border-color: var(--sniper-accent); box-shadow: 0 0 0 1px #0006; }
+.sniper-world-btn .wi { width: 18px; height: 18px; }
+.wi { display: inline-block; vertical-align: -4px; width: 16px; height: 16px; border-radius: 50%; box-shadow: inset -2px -2px 3px #0005; }
+.wi-moon { background: radial-gradient(circle at 32% 30%, #0000002e 0 13%, transparent 14%), radial-gradient(circle at 66% 58%, #00000026 0 17%, transparent 18%), radial-gradient(circle at 34% 72%, #0000001f 0 9%, transparent 10%), #b4b7b5; }
+.wi-earth { background: radial-gradient(ellipse at 30% 36%, #58b866 0 24%, transparent 25%), radial-gradient(ellipse at 70% 68%, #4fa95e 0 20%, transparent 21%), #2f6fd0; }
+.wi-mars { background: radial-gradient(circle at 36% 34%, #8e3b1d66 0 18%, transparent 19%), radial-gradient(circle at 68% 66%, #e8946a55 0 20%, transparent 21%), #c4602f; }
+.wi-mercury { background: radial-gradient(circle at 30% 34%, #0000004d 0 13%, transparent 14%), radial-gradient(circle at 64% 60%, #00000040 0 17%, transparent 18%), radial-gradient(circle at 70% 26%, #0000003a 0 8%, transparent 9%), #62656a; }
+.sniper-world-now .wi { margin-right: 4px; }
+.sniper-autoplay .ap-speed { flex: none; min-height: 36px; height: 36px; padding: 0 10px; border-radius: 999px; font: 700 13px/1 var(--mono, monospace); }
+.sniper-speed-set { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+
+/* ---- compact status / conditions (desktop no-scroll) ---- */
+.sniper-pick-line { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 2px; min-height: 24px; overflow: hidden; white-space: nowrap; color: var(--sniper-muted); font: 12px var(--mono, monospace); }
+.sniper-pick-line > span { cursor: help; overflow: hidden; text-overflow: ellipsis; }
+.sniper-pick-line .sniper-world-now .wi { width: 14px; height: 14px; margin-right: 2px; vertical-align: -2px; }
+.sniper-pick-line .sniper-dot { font-style: normal; opacity: .6; }
+.sniper-pick { margin-top: 2px; gap: 4px 6px; min-height: 24px; }
+.sniper-pick-label { width: 5.6em; font-size: 9.5px; }
+.sniper-board .sniper-pills button { min-height: 22px; padding: 0 6px; }
+.sniper-board .sniper-worlds button.sniper-world-btn { width: 22px; height: 22px; min-height: 22px; }
+.sniper-world-btn .wi { width: 16px; height: 16px; }
+.sniper-weather { flex-wrap: nowrap; gap: 4px; }
+.sniper-weather > div { flex: 1 1 0; min-width: 0; padding: 1px 6px; }
+.sniper-weather dd { font-size: 13px; }
+.sniper-weather dt { font-size: 10px; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.sniper-conditions .sniper-label { margin-bottom: 2px; }
+.sniper-result { margin-top: 2px; }
+@media (min-width: 751px) {
+ .sniper-console { gap: 8px; padding: 10px 14px; }
+ .sniper-layout { padding-block: 8px; }
+ .sniper-header { padding-block: 5px; }
+ .sniper-series-row { margin-top: 2px; }
+ .sniper-result { margin-top: 0; }
+ .sniper-axis { min-height: 30px; }
+ .sniper-axis input { min-height: 24px; }
+ .sniper-zoom { min-height: 0; }
+ .sniper-board .sniper-zoom button { min-height: 30px; }
+ .sniper-calculator { gap: 2px; }
+ .sniper-calculator .sniper-label { margin-bottom: 0; }
+ .sniper-hints { margin-top: 2px; gap: 6px; }
+ .sniper-board .sniper-ghost { min-height: 30px; }
+ .sniper-board .sniper-fire, .sniper-board .sniper-next { min-height: 46px; }
+ .sniper-actions { padding-top: 8px; }
+}

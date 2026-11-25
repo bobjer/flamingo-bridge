@@ -2,13 +2,14 @@ import {changeSide,languageButton,read,write} from './factions.js';
 import {tr} from './language.js';
 import {analysisHtml,shotColors} from './sniper-analysis.js';
 import {ballisticsFor,WORLDS,WORLD_IDS,validWorld,ouPath,pathFn,GUST_DT} from './sniper-ballistics.js';
+import {createShotAudio,soundMuted,setSoundMuted} from './sniper-audio.js';
 import './sniper.css';
 
 const saveKey='pop-sniper-v2';
 const optics=[['Ялинка','Tree'],['Точка','Dot'],['Сітка','Grid']];
 // The selected game world (Moon, 'almost Earth' with g = 10, Mars, Mercury) sets gravity, air density, speed of sound, rotation and wind (WORLDS in sniper-ballistics.js); the G7 solver instance is per world.
 let worldId='earth';
-const WLD=()=>WORLDS[worldId],Bw=()=>ballisticsFor(worldId),worldName=(id=worldId)=>tr(...WORLDS[id].name);
+const WLD=()=>WORLDS[worldId],Bw=()=>ballisticsFor(worldId),worldName=(id=worldId)=>tr(...WORLDS[id].name),worldTip=id=>worldName(id)+' · g '+WORLDS[id].g+' '+tr('м/с²','m/s²');
 const calibers=ballisticsFor('earth').calibers; // {name,v0,bc7,…}: 300 gr .338 Lapua, 350 gr .375 CheyTac, 395 gr .416 Barrett, 750 gr .50 BMG
 const profiles=calibers.map(c=>c.name);
 const distances=[300,500,1000,2000,3000];
@@ -79,7 +80,8 @@ const clock2=ms=>{const t=Math.round(ms/100),m=Math.floor(t/600),sec=(t%600)/10;
 const clock1=ms=>{const t=Math.floor(ms/1000);return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0')};
 const maxScore=seriesSize*10;
 const clampAxis=(axis,value)=>axis==='x'?Math.max(-xMaxOf(),Math.min(xMaxOf(),value)):Math.max(0,Math.min(yMaxOf(),value));
-const initial=()=>({world:'earth',mode:defaultMode,modeV:3,plane:'ffp',distance:2,optic:0,profile:0,weather:0,x:0,y:0,aim:randomAim(),zoom:zoomMin});
+const apSpeeds=[0.5,1,1.5,2],speedLabel=v=>v+'×';
+const initial=()=>({apSpeed:1,world:'earth',mode:defaultMode,modeV:3,plane:'ffp',distance:2,optic:0,profile:0,weather:0,x:0,y:0,aim:randomAim(),zoom:zoomMin});
 const mil=value=>(Math.abs(value)/10).toFixed(1);
 const signedMil=value=>value<0?'−'+mil(value):value>0?'+'+mil(value):mil(0);
 
@@ -107,6 +109,7 @@ export function startSniper(){
  if(state.pendingProfile!==undefined&&!validIndex(state.pendingProfile,calibers.length))delete state.pendingProfile;
  state.world=worldId;if(state.pendingWorld!==undefined&&!validWorld(state.pendingWorld))delete state.pendingWorld;
  state.plane=state.plane==='sfp'?'sfp':'ffp';
+ if(!apSpeeds.includes(state.apSpeed))state.apSpeed=1;
  if(state.tutorialDone!==true)state.distance=modeDistances[state.mode][0];
  if(state.series&&Array.isArray(state.series.rounds)&&state.series.rounds.length!==seriesSize)delete state.bestScore; // record from an older series length
  if(state.bestScore!==undefined&&!(Number.isInteger(state.bestScore)&&state.bestScore>=0&&state.bestScore<=maxScore))delete state.bestScore;
@@ -191,7 +194,9 @@ export function startSniper(){
  const finalNow=()=>state.tutorialDone===true&&state.round===seriesSize-1;
  const solved=()=>{const [a,b]=solution(state),t=tolerance[state.distance];return Math.abs(a-state.x)<=t&&Math.abs(b-state.y)<=t};
  const aimed=()=>!state.aim.x&&!state.aim.y;
- const hold=text=>Math.max(3500,Math.min(9000,1800+45*text.length));
+ const shotAudio=createShotAudio();
+ const hold=text=>Math.max(1200,Math.min(9000,Math.max(3500,1800+45*text.length))/state.apSpeed); // reading time ÷ commentary speed
+ const spd=ms=>Math.max(8,Math.round(ms/state.apSpeed)); // animation tick intervals ÷ speed
  const marksText=()=>WLD().flagMs.map((v,i)=>'›'.repeat(i+1)+' = '+v).join(', ')+tr(' м/с',' m/s');
  const apSteps=()=>{
   const w=weather[state.weather],c=calibers[state.profile],dk=distances[state.distance],T=tabOf(state.profile,state.distance),sp=flagMs(w),wt=weightsShown(T),wind=windEff(w,wt),
@@ -215,7 +220,7 @@ export function startSniper(){
   ];
  };
  const apLabel=()=>ap.on?tr('✋ Грати самому','✋ Take over'):tr('Автогра','Autoplay');
- const apPanel=()=>`<section class="sniper-autoplay" aria-live="polite"><div class="ap-head"><span class="ap-pill"></span><span class="ap-bar" aria-hidden="true"></span><button type="button" class="ap-pause" data-autoplay-pause></button></div><p data-narration></p></section>`;
+ const apPanel=()=>`<section class="sniper-autoplay" aria-live="polite"><div class="ap-head"><span class="ap-pill"></span><span class="ap-bar" aria-hidden="true"></span><button type="button" class="ap-speed" data-ap-speed></button><button type="button" class="ap-pause" data-autoplay-pause></button></div><p data-narration></p></section>`;
  const escHtml=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
  const narrationHtml=t=>escHtml(t).replace(/[−+-]?\d+(?:[.,]\d+)?\s?(?:міл|mil|м\/с|m\/s|км|km|м|m|×|°|%)(?!\p{L})/gu,'<b class="ap-num">$&</b>');
  function paintAutoplay(){
@@ -228,6 +233,7 @@ export function startSniper(){
    panel.querySelector('.ap-pill').textContent=tr('Крок ','Step ')+(ap.step+1)+'/'+steps.length;
    panel.querySelector('.ap-bar').innerHTML=steps.map((_,i)=>`<i class="${i<ap.step?'is-done':i===ap.step?'is-cur':''}"></i>`).join('');
    panel.querySelector('[data-narration]').innerHTML=narrationHtml(s.text);
+   const sb=panel.querySelector('[data-ap-speed]'),sl=tr('Швидкість коментарів','Commentary speed');sb.textContent=speedLabel(state.apSpeed);sb.setAttribute('aria-label',sl);sb.title=sl+': '+speedLabel(state.apSpeed);
    const pb=panel.querySelector('[data-autoplay-pause]'),pl=ap.paused?tr('Далі','Resume'):tr('Пауза','Pause');
    pb.textContent=ap.paused?'▶':'⏸';pb.setAttribute('aria-label',pl);pb.title=pl;
    panel.classList.toggle('is-fire',s.mark==='fire');
@@ -242,6 +248,17 @@ export function startSniper(){
  function schedule(fn,ms){
   clearTimeout(ap.timer);ap.fn=fn;ap.remaining=ms;ap.startedAt=Date.now();
   if(!ap.paused)ap.timer=setTimeout(()=>{ap.fn=null;fn()},ms);
+ }
+ function setApSpeed(v){
+  if(!apSpeeds.includes(v)||v===state.apSpeed)return;
+  const old=state.apSpeed;state.apSpeed=v;save();
+  if(ap.fn){ // pending step: keep the same fraction of it left
+   const left=ap.paused?ap.remaining:Math.max(0,ap.remaining-(Date.now()-ap.startedAt));
+   const fn=ap.fn,rest=left*old/v;
+   if(ap.paused){ap.remaining=rest}else schedule(fn,rest);
+  }
+  paintAutoplay();
+  for(const r of root.querySelectorAll('[data-apspeed]'))r.checked=Number(r.dataset.apspeed)===v;
  }
  function togglePause(){
   if(ap.paused){ap.paused=false;if(ap.fn)schedule(ap.fn,ap.remaining)}
@@ -349,7 +366,7 @@ export function startSniper(){
    if(!rest){done();return}
    move(state[axis]+Math.sign(rest)*Math.min(size,Math.abs(rest)));
    if(target-state[axis]===rest){done();return}
-   schedule(tick,55);
+   schedule(tick,spd(55));
   };
   tick();
  }
@@ -361,7 +378,7 @@ export function startSniper(){
    if(!d){done();return}
    zoomer(reduced()?target:state.zoom+Math.sign(d),false);
    if(reduced()||state.zoom===target){done();return}
-   schedule(tick,40);
+   schedule(tick,spd(40));
   };
   tick();
  }
@@ -373,7 +390,7 @@ export function startSniper(){
    if(!x&&!y){done();return}
    if(reduced())aimer(0,0,true);else aimer(toward(x),toward(y),true);
    if(state.aim.x===x&&state.aim.y===y){done();return}
-   schedule(tick,55);
+   schedule(tick,spd(55));
   };
   tick();
  }
@@ -382,7 +399,7 @@ export function startSniper(){
   const s=apSteps()[ap.step];
   if(s.mark==='fire'){zoomTo(workZoom(),()=>{});return} // autoplay waits for the player's shot; keep the working zoom
   const wait=()=>schedule(advance,hold(s.text));
-  if(s.zoom)zoomTo(4,()=>schedule(()=>zoomTo(state.plane==='sfp'?10:16,wait),900));else if(s.aim)zoomTo(workZoom(),()=>aimOut(wait));else if(s.dial)dial(s.dial,wait);else wait();
+  if(s.zoom)zoomTo(4,()=>schedule(()=>zoomTo(state.plane==='sfp'?10:16,wait),spd(900)));else if(s.aim)zoomTo(workZoom(),()=>aimOut(wait));else if(s.dial)dial(s.dial,wait);else wait();
  }
  function advance(){
   if(ap.step<12){ap.step++;runStep();return}
@@ -423,6 +440,7 @@ export function startSniper(){
  // Restart the series when its saved history is missing, corrupt or out of step with the round.
  if(state.tutorialDone===true&&(!validSeries(state.series)||!validIndex(state.round,seriesSize)||state.distance!==modeDistances[state.mode][state.round]||
   state.weather!==state.series.rounds[state.round]||state.series.unassisted.length!==state.round+Number(state.roundDone)||state.series.scores.length!==state.series.unassisted.length||state.series.shots.length!==state.series.scores.length)){startSeries();save()}
+ if(state.tutorialDone===true&&state.roundDone&&state.round<seriesSize-1){state.series.usedCode=false;resetShot(true);state.round++;state.distance=modeDistances[state.mode][state.round];state.weather=state.series.rounds[state.round]} // a save taken on the result card: move on to the next round
  if(state.series&&typeof state.series.started!=='boolean')state.series.started=state.series.time>0||state.series.scores.length>0;
  clock();
  document.addEventListener('visibilitychange',clock);
@@ -474,6 +492,7 @@ export function startSniper(){
  const breathLoop=()=>{if(!breath.timer)breath.timer=setTimeout(breathTick,50)};
  function startHold(){
   if(breath.on||!canFire()||performance.now()<breath.recover)return false;
+  shotAudio.unlock(); // first user gesture creates the audio context
   begin();
   Object.assign(breath,{on:true,t0:performance.now(),pm:{x:0,y:0},km:{x:0,y:0},msg:'',msgUntil:0,key:false});
   updateFire();paintBreath();breathLoop();
@@ -539,6 +558,11 @@ export function startSniper(){
   const noGust=B.trajectory(ci,D,{...ang,dv0,wind:mean,dx:D}),noV=B.trajectory(ci,D,{...ang,dv0:0,wind:mean,dx:D});
   disp.gx=path.impact.x-noGust.impact.x;disp.vy=noGust.impact.y-noV.impact.y;disp.gust=Math.abs(T.drift1)>1e-9?disp.gx/(dir*T.drift1):0; // gust: effective along-wind m/s equivalent
   const dx=10*path.impact.x,dy=10*path.impact.y,err=Math.hypot(dx,dy),ring=ringOf(err,state.distance),tof=path.tof;
+  { // sound: muzzle blast now; the steel ting arrives after the flight plus the sound's travel time (FPV replay: at the impact of the replay, quieter)
+   const air=WLD().rho>0?(WLD().rho<.1?'thin':'air'):'vacuum',fpv=!state.realtime;
+   shotAudio.shot(ci,air,fpv?.8:1);
+   if(ring>0&&air!=='vacuum')shotAudio.ting(fpv?(D<1000?D/100:10*Math.sqrt(D/1000)):tof+D/WLD().sound,fpv?.6:1);
+  }
   const note=tr('Порив ','Gust ')+sgn(disp.gust,1)+tr(' м/с · швидкість ',' m/s · velocity ')+sgn(dv0,1)+tr(' м/с',' m/s')+'\n'+tr('розкид ','spread ')+sgn(disp.rand.x,2)+'/'+sgn(disp.rand.y,2)+tr(' · рука ',' · hold ')+sgn(disp.hold.x,2)+'/'+sgn(disp.hold.y,2)+tr(' міл',' mil')+(h>0?'\n'+tr('затримка дихання ','breath held ')+h.toFixed(1)+tr(' с · коеф. ',' s · factor ')+k.toFixed(2):'');
   if(state.realtime){
    if(ap.on)stopAutoplayTimerOnly();
@@ -579,7 +603,10 @@ export function startSniper(){
   }
   clock();
   save();render();scopeTop();
-  if(state.roundDone&&!ap.on)root.querySelector('[data-next]')?.focus();
+  if(state.roundDone&&!ap.on){
+   if(tutorial||state.round<seriesSize-1){nextRound();root.querySelector('[data-axis="x"]')?.focus({preventScroll:true})} // Continue was pressed: go straight to the next round (a tutorial hit starts the series; the 5th shot stays on its results)
+   else root.querySelector('[data-next]')?.focus();
+  }
   if(ap.on){ap.step=12;runStep()}
  }
  const stopAutoplayTimerOnly=()=>{clearTimeout(ap.timer);ap.fn=null};
@@ -702,15 +729,17 @@ export function startSniper(){
    lockTip=tr('Дистанцію можна змінити до першого пострілу або після серії','Distance can be changed before the first shot or after the series'),
    pills=(attr,labels,cur,titles)=>labels.map((l,i)=>`<button type="button" data-${attr}="${i}" aria-pressed="${i===cur}"${titles?` title="${titles[i]}"`:''}>${l}</button>`).join(''),
    plan=seriesSize+' × '+distLabel(distances[modeDistances[state.mode][0]]),
-   pickRows=`<div class="sniper-pick" role="group" aria-label="${tr('Дистанція','Distance')}"><span class="sniper-pick-label">${tr('Дистанція','Distance')}</span>${canPick?`<span class="sniper-pills">${pills('mode',modeLabels(),shownMode)}</span>`:`<span class="sniper-pick-plan" title="${lockTip}">${plan}</span>`}</div>
-   <div class="sniper-pick" role="group" aria-label="${tr('Калібр','Caliber')}"><span class="sniper-pick-label">${tr('Калібр','Caliber')}</span>${canPick?`<span class="sniper-pills">${pills('profile',caliberShort,shownProfile,profiles)}</span>`:`<span class="sniper-pick-plan" title="${tr('Калібр можна змінити до першого пострілу або після серії','Caliber can be changed before the first shot or after the series')}">${caliber.name}</span>`}</div>`;
+   pickRows=!canPick?`<div class="sniper-pick-line" role="group" aria-label="${tr('Серія','Series')}"><span title="${lockTip}">${plan}</span><i class="sniper-dot" aria-hidden="true">·</i><span title="${tr('Калібр можна змінити до першого пострілу або після серії','Caliber can be changed before the first shot or after the series')}">${caliber.name}</span><i class="sniper-dot" aria-hidden="true">·</i><span class="sniper-world-now" title="${worldTip(worldId)}"><i class="wi wi-${worldId}" aria-hidden="true"></i> ${worldName().replace(/\s*\(g\s*=.*?\)\s*$/,'')}</span></div>`:
+   `<div class="sniper-pick" role="group" aria-label="${tr('Дистанція','Distance')}"><span class="sniper-pick-label">${tr('Дистанція','Distance')}</span>${canPick?`<span class="sniper-pills">${pills('mode',modeLabels(),shownMode)}</span>`:`<span class="sniper-pick-plan" title="${lockTip}">${plan}</span>`}</div>
+   <div class="sniper-pick" role="group" aria-label="${tr('Калібр','Caliber')}"><span class="sniper-pick-label">${tr('Калібр','Caliber')}</span>${canPick?`<span class="sniper-pills">${pills('profile',caliberShort,shownProfile,profiles)}</span>`:`<span class="sniper-pick-plan" title="${tr('Калібр можна змінити до першого пострілу або після серії','Caliber can be changed before the first shot or after the series')}">${caliber.name}</span>`}</div>
+   <div class="sniper-pick" role="group" aria-label="${tr('Світ','World')}"><span class="sniper-pick-label">${tr('Світ','World')}</span>${canPick?`<span class="sniper-pills sniper-worlds">${WORLD_IDS.map(id=>`<button type="button" class="sniper-world-btn" data-world="${id}" aria-pressed="${shownWorld===id}" title="${worldTip(id)}" aria-label="${worldTip(id)}"><i class="wi wi-${id}" aria-hidden="true"></i></button>`).join('')}</span>`:`<span class="sniper-pick-plan sniper-world-now" title="${tr('Світ можна змінити до першого пострілу або після серії','The world can be changed before the first shot or after the series')}"><i class="wi wi-${worldId}" aria-hidden="true"></i> ${worldTip(worldId)}</span>`}</div>`;
   const axisLabel=(axis,text)=>`<label class="sniper-axis"><span>${axis.toUpperCase()}</span><input type="range" min="${axis==='x'?-xMaxOf():0}" max="${axis==='x'?xMaxOf():yMaxOf()}" step="1" value="${state[axis]}" data-axis="${axis}" aria-label="${text}"><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-number="${axis}" aria-label="${text}"></label>`;
   const tabDefs=[...results?[['results',tr('Результати','Results')]]:[],['table',tr('Таблиця','Table')],['method',tr('Як рахувати','How to solve')],['settings',tr('Налаштування','Settings')]];
   const panelAttrs=id=>`role="tabpanel" id="sniper-panel-${id}" aria-labelledby="sniper-tab-${id}" tabindex="0"${id===cur?'':' hidden'}`;
   analysisModal=null;
   root.innerHTML=`
    <header class="sniper-header"><div class="sniper-brand"><h1>${tr('Снайпер','Sniper')}</h1><small>POP SEASON</small></div>
-    <nav>${languageButton()}<button data-autoplay aria-pressed="${ap.on}">${apLabel()}</button><button data-exit>${tr('Нова гра','New game')}</button></nav>
+    <nav>${languageButton()}<button type="button" data-sound aria-pressed="${!soundMuted()}" aria-label="${tr('Звук','Sound')}" title="${tr('Звук пострілів','Shot sound')}">${soundMuted()?'🔇':'🔊'}</button><button data-autoplay aria-pressed="${ap.on}">${apLabel()}</button><button data-exit>${tr('Нова гра','New game')}</button></nav>
    </header>
    <div class="sniper-layout">
     <section class="sniper-scene" aria-label="${tr('Вид в оптику','Scope view')}">
@@ -748,7 +777,6 @@ export function startSniper(){
       <dl class="sniper-weather">
        <div><dt>${tr('Компас','Compass')}</dt><dd>${compass(conditions)}</dd></div>
        <div><dt>${tr('Вітер · прапорці','Wind · flags')}</dt><dd>${flagPattern(conditions)}</dd></div>
-       <div><dt>${tr('Світ','World')}</dt><dd>${worldName()}</dd></div>
        <div>${worldId==='earth'?`<dt>${tr('Вологість','Humidity')}</dt><dd>${conditions.humidity}%</dd>`:worldId==='mars'?`<dt>${tr('Тиск','Pressure')}</dt><dd>${tr('0,6 кПа','0.6 kPa')}</dd>`:`<dt>${tr('Атмосфера','Atmosphere')}</dt><dd>${tr('вакуум','vacuum')}</dd>`}</div>
       </dl>
      </section>
@@ -780,8 +808,8 @@ export function startSniper(){
        ${tutorial?'':`<p class="sniper-hint-note">${tr('«Перевірити X» безкоштовна. Повний код або автогра знімають бал за раунд. У серії кожен постріл остаточний.','Check X is free. The full code or autoplay costs that round\'s point. In a series every shot is final.')}</p>`}
       </div>
       <div class="sniper-settings sniper-tabpanel" ${panelAttrs('settings')}>
-       <fieldset class="sniper-plane sniper-world-pick"><legend>${tr('Світ','World')}</legend>
-        ${canPick?WORLD_IDS.map(id=>`<label><input type="radio" name="sniper-world" data-world="${id}"${shownWorld===id?' checked':''}> ${worldName(id)}${WORLDS[id].rho?'':' · '+tr('вакуум','vacuum')}</label>`).join('')+`<small>${tr('Фізика, вітер і краєвид залежать від світу. Можна змінити до першого пострілу або після серії.','Physics, wind and scenery depend on the world. It can be changed before the first shot or after the series.')}</small>`:`<span class="sniper-pick-plan" title="${tr('Світ можна змінити до першого пострілу або після серії','The world can be changed before the first shot or after the series')}">${worldName()} · g ${WLD().g}</span>`}
+       <fieldset class="sniper-plane sniper-speed-pick"><legend>${tr('Швидкість коментарів','Commentary speed')}</legend>
+        <span class="sniper-speed-set">${apSpeeds.map(v=>`<label><input type="radio" name="sniper-apspeed" data-apspeed="${v}"${state.apSpeed===v?' checked':''}> ${speedLabel(v)}</label>`).join('')}</span>
        </fieldset>
        <fieldset class="sniper-plane"><legend>${tr('Площина сітки','Reticle plane')}</legend>
         <label><input type="radio" name="sniper-plane" data-plane="ffp"${state.plane==='ffp'?' checked':''}> ${tr('Сітка: перша фокальна площина (FFP)','Reticle: first focal plane (FFP)')}</label>
@@ -790,7 +818,7 @@ export function startSniper(){
       </div>
      </section>
      <div class="sniper-actions">
-      <label class="sniper-switch" title="${tr('Увімкнено: після пострілу повільний 3D-повтор польоту. Вимкнено: реальний час, результат у приціл.','On: slow-motion 3D replay of the flight after the shot. Off: real time, the result shows in the scope.')}"><input type="checkbox" role="switch" data-realtime${state.realtime?'':' checked'}><i aria-hidden="true"></i><span>${tr('Повтор польоту','Flight replay')}</span></label>
+      <label class="sniper-switch" title="${tr('Політ кулі від першої особи (FPV) у сповільненій зйомці','First-person slow-motion bullet flight (FPV)')}"><input type="checkbox" role="switch" data-realtime${state.realtime?'':' checked'}><i aria-hidden="true"></i><span>FPV</span></label>
       <button type="button" class="sniper-fire" data-fire aria-pressed="false" aria-keyshortcuts="Space"><span aria-hidden="true">⊕</span> ${tr('Постріл','Fire')}</button>
       <button type="button" class="sniper-next" data-next>${tutorial?tr('Почати серію','Start series'):finalRound?tr('Нова серія','New series'):tr('Наступний раунд','Next round')}</button>
      </div>
@@ -869,7 +897,8 @@ export function startSniper(){
    for(const hint of root.querySelectorAll('[data-check-axis],[data-code]'))hint.disabled=complete||busy;
    for(const button of opticButtons)button.disabled=complete;
    updateFire();root.dataset.aim=(state.aim.x+microNow().x).toFixed(2)+','+(state.aim.y+microNow().y).toFixed(2);
-   next.disabled=!complete;next.hidden=!complete;
+   const nextShown=complete&&(finalRound||tutorial); // other rounds advance on their own after Continue
+   next.disabled=!nextShown;next.hidden=!nextShown;
    result.dataset.won=String(complete);
    let message=notice||tr('Знайдіть мішень, виставте X та Y, наведіть і стріляйте','Find the target, set X and Y, aim, then fire');
    if(complete&&shot){
@@ -974,13 +1003,13 @@ export function startSniper(){
    if(sel)state.pendingProfile=v;else{state.profile=v;state.x=state.y=0}
    save();render();root.querySelector('[data-profile="'+v+'"]')?.focus();
   });
-  root.querySelectorAll('[data-world]').forEach(r=>r.onchange=()=>{
+  root.querySelectorAll('[data-world]').forEach(r=>r.onclick=()=>{
    const v=r.dataset.world;
-   if(!r.checked||!validWorld(v))return;
+   if(!validWorld(v))return;
    takeover();
    if(sel){if(v===worldId)delete state.pendingWorld;else state.pendingWorld=v}
    else if(v!==worldId){setWorld(v);state.world=v;state.x=state.y=0;state.aim=randomAim();holes.length=0;gl?.reset()}
-   save();render();root.querySelector('[data-world="'+v+'"]')?.focus();selectTab('settings');
+   save();render();root.querySelector('[data-world="'+v+'"]')?.focus();
   });
   root.querySelectorAll('[data-plane]').forEach(r=>r.onchange=()=>{
    if(!r.checked)return;
@@ -1039,8 +1068,12 @@ export function startSniper(){
   next.onclick=()=>{takeover();nextRound();root.querySelector('[data-axis="x"]').focus({preventScroll:true})};
   root.querySelector('[data-exit]').onclick=changeSide;
   root.querySelector('[data-autoplay]').onclick=()=>{if(ap.on)stopAutoplay();else startAutoplay()};
+  root.querySelector('[data-sound]').onclick=e=>{const m=!soundMuted();setSoundMuted(m);e.currentTarget.textContent=m?'🔇':'🔊';e.currentTarget.setAttribute('aria-pressed',String(!m));if(!m)shotAudio.unlock()};
   const pauseButton=root.querySelector('[data-autoplay-pause]');
   if(pauseButton)pauseButton.onclick=togglePause;
+  const speedButton=root.querySelector('[data-ap-speed]');
+  if(speedButton)speedButton.onclick=()=>setApSpeed(apSpeeds[(apSpeeds.indexOf(state.apSpeed)+1)%apSpeeds.length]);
+  root.querySelectorAll('[data-apspeed]').forEach(r=>r.onchange=()=>{if(r.checked)setApSpeed(Number(r.dataset.apspeed))});
   align=setAlignment;aimer=setAim;zoomer=setZoom;painter=paint;
   bindCalc();
   root.querySelector('[data-language]').onclick=()=>document.querySelector('.lang').click();
