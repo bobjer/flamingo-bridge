@@ -1,18 +1,20 @@
 import './sniper-flight.css';
 import {buildWorld,moundOf,targetY} from './sniper-world.js';
+import {ballistics as BAL} from './sniper-ballistics.js';
 
 const sm=t=>(t=t<0?0:t>1?1:t,t*t*(3-2*t)),mix=(a,b,t)=>a+(b-a)*t,rnd=(a=0,b=1)=>a+Math.random()*(b-a),clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
 const sg=v=>{const r=Math.round(v*10)/10;return(r<0?'−':'+')+Math.abs(r).toFixed(1)};
 const TAU=Math.PI*2;
 
 const hit=o=>!!o.hit;
-// Pure ballistic model + time schedule (no three.js). World: +z downrange, +y up, world x = -(lateral right) so a camera looking +z sees +lateral on screen right.
+// Path + time schedule (no three.js). The path is the shared G7 solver trajectory (o.path, or computed here from o.ci/aimMil/wind); the end is nudged by a linear angle so it lands exactly on the recorded impact.
+// World: +z downrange, +y up, world x = -(lateral right) so a camera looking +z sees +lateral on screen right.
 function modelOf(o){
- const D=o.distance,{k,v0}=o.caliber,g=o.gravity,R1=o.targetRadiusMil*D/1000,Y0=1.5,Ty=targetY(R1),dur=o.duration||D/100,W=o.wind||{};
- const tOf=x=>(Math.exp(k*x)-1)/(k*v0),xOf=t=>Math.log(1+k*v0*t)/k,drop=x=>g*tOf(x)**2/2;
- const th=o.aimMil.y/1000+drop(100)/100;
- const wdir=(typeof W.east==='number'?Math.sign(W.east):W.east?1:-1)*(W.speed||0);
- const H0=x=>th*x-drop(x),L0=x=>o.aimMil.x/1000*x+wdir*(tOf(x)-x/v0);
+ const D=o.distance,R1=o.targetRadiusMil*D/1000,Y0=1.5,Ty=targetY(R1),dur=o.duration||D/100,W=o.wind||{};
+ const wdir=typeof W.east==='number'?Math.sign(W.east):W.east?1:-1;
+ const path=o.path||BAL.trajectory(o.ci??1,D,{elevMil:o.aimMil.y,windMil:o.aimMil.x,wind:{flags:(W.flags||[0,0,0]).map(f=>wdir*2*f)},beyond:60});
+ const tOf=x=>BAL.at(path,'t',x),xOf=t=>BAL.xAt(path,t),vOf=x=>BAL.at(path,'v',x),H0=x=>BAL.at(path,'y',x),L0=x=>BAL.at(path,'z',x);
+ const th=Math.atan2(path.y[1]-path.y[0],path.step),ps=Math.atan2(path.z[1]-path.z[0],path.step);
  const ix=o.impactMil.x*D/1000,iy=o.impactMil.y*D/1000,TD=tOf(D),ay=(Ty-Y0+iy-H0(D))/D,ax=(ix-L0(D))/D;
  const P=(x,out={})=>{out.x=-(L0(x)+ax*x);out.y=Y0+H0(x)+ay*x;out.z=x;return out};
  const mound=moundOf(D,R1);
@@ -32,7 +34,7 @@ function modelOf(o){
  const sw=Math.min(.04,sEnd/2),iSw=Math.max(1,Math.round(sw/sEnd*N)),swT=Math.min(dur*.45,clamp(dur*.22,1.5,2.6)),a0=tab[iSw],b0=tab[N]-a0;
  for(let i=0;i<=N;i++)tab[i]=i<=iSw?tab[i]*swT/a0:swT+(tab[i]-a0)*(dur-swT)/b0;
  const sAt=t=>{if(t<=0)return 0;if(t>=dur)return sEnd;let a=0,b=N;while(b-a>1){const m=(a+b)>>1;tab[m]<=t?a=m:b=m}return(a+(t-tab[a])/(tab[b]-tab[a]))/N*sEnd};
- return{tOf,xOf,P,endX,kind,sEnd,TD,ix,iy,th,ay,ax,mound,fsig,sched:{total:dur,swT,warp,sAt}};
+ return{tOf,xOf,vOf,P,endX,kind,sEnd,TD,ix,iy,th,ps,ay,ax,mound,fsig,sched:{total:dur,swT,warp,sAt}};
 }
 /** Pure schedule helper: sAt(tau) = flight progress (1 = at target distance) after tau wall seconds; sAt(total) = impact. */
 export function flightSchedule(o){const m=modelOf(o);return{total:m.sched.total,sEnd:m.sEnd,endX:m.endX,kind:m.kind,sAt:m.sched.sAt}}
@@ -98,10 +100,10 @@ export async function playFlight(host,o){
 
 function scene3d(T,o,root,canvas,onFinal,onHud){
  const V=(x=0,y=0,z=0)=>new T.Vector3(x,y,z);
- const D=o.distance,{k,v0}=o.caliber,g=o.gravity,R1=o.targetRadiusMil*D/1000,Y0=1.5,Ty=targetY(R1);
+ const D=o.distance,{v0}=o.caliber,g=o.gravity,R1=o.targetRadiusMil*D/1000,Y0=1.5,Ty=targetY(R1);
  const dur=o.duration||D/100,W=o.wind||{},cc=new T.Color();
 
- const M=modelOf(o),{tOf,xOf,P,endX,sEnd,TD,sched,ix,iy,th,ay,ax,mound,fsig}=M;let kind=M.kind;
+ const M=modelOf(o),{tOf,xOf,vOf,P,endX,sEnd,TD,sched,ix,iy,th,ps,ay,ax,mound,fsig}=M;let kind=M.kind;
  const E=P(endX,V());
  const C=V(-ix,Math.max(.1,Ty+iy),D); // bullet's crossing of the target plane: used for final framing + marker; E (ground/berm) only for debris
  const woodD=Math.min(Math.hypot(E.x,E.z-D-.06),Math.hypot(Math.abs(E.x)-R1-.3,E.z-D-.25));
@@ -121,7 +123,7 @@ function scene3d(T,o,root,canvas,onFinal,onHud){
  // ---- rifle muzzle ----
  const dark=lam(0x1c211d),steel=lam(0x2e3631);
  const rifle=new T.Group();rifle.position.set(0,Y0,0);rifle.rotation.order='YXZ';
- rifle.rotation.set(-(th+ay),-(o.aimMil.x/1000+ax),0);scene.add(rifle);
+ rifle.rotation.set(-(th+ay),-(ps+ax),0);scene.add(rifle);
  const cylZ=(r,len,m,x,y,z)=>add(rifle,new T.CylinderGeometry(r,r,len,12).rotateX(Math.PI/2),m,x,y,z);
  cylZ(.014,1.1,steel,0,0,-.55);cylZ(.024,.14,dark,0,0,-.07);
  [-.03,-.07,-.11].forEach(z=>cylZ(.026,.012,lam(0x4a544d),0,0,z));
@@ -325,7 +327,7 @@ float a=smoothstep(1.,.2,length(gl_PointCoord-.5)*2.)*vC.a;if(a<.003)discard;gl_
     setBullet(x);
     bMesh.rotation.z+=dt*mix(9.5,45,sm(clamp((tau-swT)/1.0,0,1))); // ~1.5 rev/s while the grooves are shown, then full spin
     if(!shown&&x>4.2){shown=true;lcd(Math.round(lcdAt)+' m/s')}
-    onHud(x,v0*Math.exp(-k*x),tOf(x));
+    onHud(x,vOf(x),tOf(x));
     // front-quarter close-up swings round to a chase cam behind the bullet (swT = slow-mo swing, then ease out to chase distance)
     // chase: ~1.4 m behind, 0.3 m above, <=0.25 m sideways, looking 8 m down the flight line so the 5x bullet sits low-centre; camera is slaved to B (no lag)
     const p=sm(clamp(tau/swT,0,1)),c=sm(clamp((tau-swT)/1.4,0,1)),az=mix(.55,Math.PI-.06,p),R=mix(.55,1.4,c),sway=Math.sin(clock*.9);

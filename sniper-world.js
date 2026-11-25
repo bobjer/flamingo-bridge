@@ -76,7 +76,7 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1,ring10:f10=.
   for(let j=0;j<N;j++){const a=j*2;idx.push(a,a+1,a+2,a+1,a+3,a+2)}
   const geo=new T.BufferGeometry();geo.setAttribute('position',new T.BufferAttribute(pos,3));geo.setIndex(idx);
   const m=add(grp,geo,lam(0xf5ad53,{side:T.DoubleSide}),0,3.3,0);m.frustumCulled=false;
-  const q={x,z,gust:W.gust||0,ph:i,last:0};
+  const q={x,z,gust:(Array.isArray(W.gust)?W.gust[i]:W.gust)||0,ph:i,last:0}; // W.gust: number or one value per flag
   // effective speed = mean + shared gust; droop angle from the pole 25° at 1 m/s, +13° per m/s, saturating near 88°, flap frequency and cloth length grow with speed
   q.upd=t=>{const dt=Math.min(.2,Math.max(0,t-q.last));q.last=t;
    const s=Math.max(.3,base+q.gust),th=(s<5.5?25+13*(s-1):84+4*(1-Math.exp(-(s-5.5)/2)))*Math.PI/180,L=.7+.275*s,A=.02+.025*s;

@@ -1,8 +1,9 @@
 import {tr} from './language.js';
+import {pathFn,GUST_DT} from './sniper-ballistics.js';
 
-// End-of-series trajectory analysis: pure SVG strings built from the ballistic model passed in by sniper.js.
+// End-of-series trajectory analysis: pure SVG strings. Every shot's path is re-integrated with the shared G7 solver (M.B) from its saved dial, wind and gust path.
 export const shotColors=['#e6c35c','#7fc3c0','#f08a6c','#a7c4ff','#c39ae6']; // categorical, colour-blind safe on the dark panel
-const hyp=Math.hypot,MOA=3.4377,SOUND=343;
+const hyp=Math.hypot,MOA=3.4377;
 let uid=0;
 const nice=(lo,hi,n)=>{
  const raw=(hi-lo||1)/n,p=10**Math.floor(Math.log10(raw)),q=raw/p,st=(q<1.5?1:q<3?2:q<7?5:10)*p,t=[];
@@ -23,20 +24,22 @@ function nudge(items,dx=46,gap=12){
 
 // Per-shot model: path functions and error components (all angular components in mil).
 export function prepShots(shots,M){
- const {calibers,distances,weather,windSpeed,flightTime,drop,elevation,drift1,tolerance}=M;
+ const {B,calibers,distances,weather,tolerance,tabOf,dirOf,flagMs}=M;
  return shots.flatMap((s,i)=>{
   const p=s.p,d=s.disp;
   if(!p||!d)return[];
-  const c=calibers[p.ci],D=distances[p.di],w=weather[p.wi],W=windSpeed(w),dir=w.east?1:-1,c2={...c,v0:c.v0+d.dv0},ex=s.dx/10,ey=s.dy/10;
-  const k1=dir*drift1(c,D),gr=Number.isFinite(d.gustRead)?d.gustRead:null,gx=k1*d.gust,gxR=gr===null?0:k1*gr,vy=elevation(c,D)-elevation(c2,D);
+  const c=calibers[p.ci],D=distances[p.di],w=weather[p.wi],dir=dirOf(w),T=tabOf(p.ci,p.di),flags=flagMs(w).map(v=>dir*v),ex=s.dx/10,ey=s.dy/10,gf=pathFn(d.gp,GUST_DT);
+  // Re-integrate with the dial, the rifle and hold angles, the muzzle velocity and the shot's own gust path; the aim offset is not saved, so any remainder is spread linearly over the range to end exactly at the recorded impact.
+  const ang={elevMil:p.y/10+d.rand.y+d.hold.y,windMil:p.x/10+d.rand.x+d.hold.x},act=B.trajectory(p.ci,D,{...ang,dv0:d.dv0,wind:{flags,gust:t=>dir*gf(t),res:dir*d.res},dx:D/60,dt:.002});
+  const exp=B.trajectory(p.ci,D,{elevMil:p.y/10,windMil:p.x/10,wind:{flags},dx:D/60,dt:.002}); // what the dialled solution expects in the mean wind
+  const rx=ex-act.impact.x,ry=ey-act.impact.y,gx=d.gx,gr=Number.isFinite(d.gustRead)?d.gustRead:null,gxR=gr===null?0:d.gxR,vy=d.vy;
   const px=ex-(gx+d.rand.x+d.hold.x),py=ey-(vy+d.rand.y+d.hold.y);
-  const A=ey+1000*drop(c2,D)/D,Xb=ex-dir*(W+d.gust)*drift1(c,D),Xd=p.x/10,lag=x=>flightTime(c,x)-x/c.v0;
-  return[{i,s,c,c2,D,W,dir,ex,ey,color:shotColors[i%shotColors.length],
-   h:x=>x*A/1000-drop(c2,x), // height above the line of sight, m; ends exactly at the recorded vertical impact
-   lat:x=>x*Xb/1000+dir*(W+d.gust)*lag(x), // actual lateral path with the gust, m
-   exp:x=>x*Xd/1000+dir*W*lag(x), // dialled windage in the mean wind only, m
-   tof:flightTime(c2,D),vD:c2.v0*Math.exp(-c2.k*D),r:D*tolerance[p.di]/10000, // plate radius, m
-   gxR,hasRead:gr!==null,px,
+  return[{i,s,c,ci:p.ci,D,dir,ex,ey,color:shotColors[i%shotColors.length],
+   h:x=>B.at(act,'y',x)-act.sight+x*ry/1000, // height above the line of sight, m; ends exactly at the recorded vertical impact
+   lat:x=>B.at(act,'z',x)+x*rx/1000, // actual lateral path with the gust, spin drift and Coriolis, m
+   exp:x=>B.at(exp,'z',x), // dialled windage in the mean wind only, m
+   tof:act.tof,vD:act.vImpact,r:D*tolerance[p.di]/10000, // plate radius, m
+   sc:T.sc,spin:T.spin,cor:T.coriolis,gxR,hasRead:gr!==null,px,
    comp:{gustR:[gxR,0],gustU:[gx-gxR,0],vel:[0,vy],rifle:[d.rand.x,d.rand.y],hold:[d.hold.x,d.hold.y],you:[px,py]}}];
  });
 }
@@ -116,13 +119,14 @@ function top(P,W,H){
  return svg(W,H,tr('Вигляд зверху: бічне зміщення кулі; пунктир — очікуване від середнього вітру, суцільна — фактичне з поривом','Top view: lateral bullet path; dashed = expected from the mean wind, solid = actual with the gust'),b);
 }
 
-function velocity(P,W,H){
- const Dm=Math.max(...P.map(q=>q.D)),cals=[...new Set(P.map(q=>q.c))],vmax=Math.max(...cals.map(c=>c.v0))*1.05;
+function velocity(P,W,H,M){
+ const {B}=M,Dm=Math.max(...P.map(q=>q.D)),cis=[...new Set(P.map(q=>q.ci))],cals=cis.map(ci=>M.calibers[ci]),vmax=Math.max(...cals.map(c=>c.v0))*1.05,SOUND=B.sound;
  const f=frame({W,H,x:[0,Dm*1.02],y:[0,vmax],xl:tr('Дистанція, м','Range, m'),yl:tr('Швидкість, м/с','Velocity, m/s'),r:16});
  let b=f.g+`<rect class="sa-trans" x="${f.m.l}" y="${f.sy(400).toFixed(1)}" width="${f.pw}" height="${(f.sy(300)-f.sy(400)).toFixed(1)}"><title>${tr('Трансзвукова зона 300–400 м/с','Transonic zone 300–400 m/s')}</title></rect><line class="sa-sound" x1="${f.m.l}" x2="${f.m.l+f.pw}" y1="${f.sy(SOUND).toFixed(1)}" y2="${f.sy(SOUND).toFixed(1)}"/><text class="sa-t sa-warn" x="${f.m.l+6}" y="${(f.sy(SOUND)-5).toFixed(1)}">${tr(`звуковий бар’єр ${SOUND} м/с`,`sound barrier ${SOUND} m/s`)}</text>`;
  const lab=[];
  cals.forEach((c,k)=>{
-  b+=`<path class="sa-vel" d="${path(samples(Dm,x=>c.v0*Math.exp(-c.k*x),40),f.sx,f.sy)}" stroke-dasharray="${k?'5 3':'none'}"/>`;
+  const nom=B.trajectory(cis[k],Dm,{dx:Dm/80,dt:.002});
+  b+=`<path class="sa-vel" d="${path(samples(Dm,x=>B.at(nom,'v',x),40),f.sx,f.sy)}" stroke-dasharray="${k?'5 3':'none'}"/>`;
   lab.push({x:f.m.l+4,y:f.sy(c.v0)-8,t:c.name,a:'start',c:'var(--sniper-ink)'});
  });
  for(const q of P)lab.push({x:f.sx(q.D),y:f.sy(q.vD)-9,t:`#${q.i+1} · ${q.tof.toFixed(1)} ${tr('с','s')}`,a:q.D>Dm*.7?'end':'start',c:q.color,q});
@@ -152,6 +156,10 @@ function bars(G,W){
  return svg(W,H,tr('Середній внесок джерел розкиду, міл RMS','Average contribution of each error source, mil RMS'),b);
 }
 
+function spinNote(P){
+ return`<p class="sa-note">${tr('Деривація + Коріоліс (завжди вправо, вже в таблиці): ','Spin drift + Coriolis (always right, already in the table): ')}${P.map(q=>`#${q.i+1} ${dist(q.D)} ${q.sc.toFixed(2)} ${tr('міл','mil')} (${q.spin.toFixed(2)} + ${q.cor.toFixed(2)})`).join(' · ')}</p>`;
+}
+
 function windRead(P){
  const R=P.filter(q=>q.hasRead);
  if(!R.length)return'';
@@ -176,9 +184,9 @@ export function analysisHtml(shots,M,W=420,wide=false){
  const body=`${legend}<div class="sa-grid">
   ${fig(tr('Вигляд збоку','Side view'),tr('висота над лінією прицілювання','height over the line of sight'),side(P,W,H))}
   ${fig(tr('Вигляд зверху','Top view'),tr('суцільна — фактично, пунктир — очікувано від вітру','solid = actual, dashed = expected from wind'),top(P,W,H))}
-  ${fig(tr('Швидкість кулі','Bullet velocity'),tr('звуковий бар’єр і час польоту','sound barrier and time of flight'),velocity(P,W,H))}
+  ${fig(tr('Швидкість кулі','Bullet velocity'),tr('звуковий бар’єр і час польоту','sound barrier and time of flight'),velocity(P,W,H,M))}
   ${G.n>1?fig(tr('Кучність','Group'),tr('міліани відносно точки прицілювання','mil relative to the aim point'),stats+groupPlot(P,G,W)):''}
-  ${fig(tr('Джерела розкиду','Error sources'),tr('середній внесок, міл RMS','average contribution, mil RMS'),bars(G,W)+windRead(P))}
+  ${fig(tr('Джерела розкиду','Error sources'),tr('середній внесок, міл RMS','average contribution, mil RMS'),bars(G,W)+windRead(P)+spinNote(P))}
   </div><p class="sa-insight">${insight(P,G)}</p>`;
  return wide?body:`<section class="sa-sec" aria-label="${tr('Траєкторії','Trajectories')}"><div class="sa-head"><h3>${tr('Траєкторії','Trajectories')}</h3><button type="button" data-expand>${tr('Розгорнути','Expand')}</button></div>${body}</section>`;
 }
