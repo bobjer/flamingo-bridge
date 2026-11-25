@@ -1,6 +1,6 @@
 import {readFile,mkdir,writeFile,readdir} from 'node:fs/promises';
 import {extname} from 'node:path';
-const types={'.txt':'text/plain','.jpg':'image/jpeg','.mp4':'video/mp4','.svg':'image/svg+xml','.js':'text/javascript','.css':'text/css','.html':'text/html'};
+const types={'.txt':'text/plain','.jpg':'image/jpeg','.mp4':'video/mp4','.mp3':'audio/mpeg','.svg':'image/svg+xml','.js':'text/javascript','.css':'text/css','.html':'text/html'};
 const assets={};
 for(const path of await readdir('dist',{recursive:true})){
  const type=types[extname(path)];
