@@ -2,13 +2,14 @@
 // World: shooter at the origin, +z downrange, +y up, world x = -(lateral right) so a camera looking +z sees +lateral on screen right.
 const clamp=(v,a,b)=>Math.min(b,Math.max(a,v)),rnd=(a=0,b=1)=>a+Math.random()*(b-a),TAU=Math.PI*2;
 export const Y0=1.5;
-export const moundOf=(D,R1)=>({a:Math.max(2.5,2*R1+2),b:3.5,h:3.5,cz:D+5});
+export const targetY=R1=>Math.max(Y0,1.1*R1+.3); // plate centre height: backer (2.2x plate) bottom edge stays >=0.3 m above ground
+export const moundOf=(D,R1)=>({a:Math.max(2.5,2.4*R1+2),b:3.5,h:Math.max(3.5,targetY(R1)+1.1*R1+.5),cz:D+5});
 
 /** Builds the range. Returns scene + handles; the caller owns the renderer and camera. */
 export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1,ring10:f10=.1}){
  const V=(x=0,y=0,z=0)=>new T.Vector3(x,y,z),fl=W.flags||[1,1,1],HS=clamp(D,600,1200); // HS scales hills / fog so short ranges still get depth
  const scene=new T.Scene();scene.fog=new T.Fog(0xbfbc95,Math.max(150,D*.35),D*2.4+600); // scaled to the real distance: target is only ~13-29% hazed at 300-3000 m
- const cc=new T.Color(),mound=moundOf(D,R1);
+ const cc=new T.Color(),mound=moundOf(D,R1),Ty=targetY(R1);
  const lam=(c,x={})=>{const m=new T.MeshLambertMaterial({color:c,...x});return m};
  const add=(par,geo,mat,x=0,y=0,z=0)=>{const m=new T.Mesh(geo,mat);m.position.set(x,y,z);par.add(m);return m};
  const tex=(w,h,draw)=>{const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);const t=new T.CanvasTexture(c);t.colorSpace=T.SRGBColorSpace;t.anisotropy=4;return t};
@@ -82,11 +83,11 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1,ring10:f10=.
 
  // ---- target, stand, berm ----
  const wood=lam(0x6b4a2f);
- const barY=Y0+R1+.12;
+ const barY=Ty+R1+.12;
  [-1,1].forEach(s=>{add(scene,new T.BoxGeometry(.12,barY,.12),wood,s*(R1+.3),barY/2,D+.25);
   const br=add(scene,new T.BoxGeometry(.08,barY*.9,.08),wood,s*(R1+.3),barY*.45,D+1.1);br.rotation.x=.45});
  add(scene,new T.BoxGeometry(2*R1+.8,.12,.14),wood,0,barY,D+.25);
- add(scene,new T.BoxGeometry(.12,Y0,.12),lam(0x2b3025),0,Y0/2,D+.08);
+ add(scene,new T.BoxGeometry(.12,Ty,.12),lam(0x2b3025),0,Ty/2,D+.08);
  const mk=(a,h,b,cx,cz,seed)=>{
   const g0=new T.SphereGeometry(1,12,8),p=g0.attributes.position;
   for(let i=0;i<p.count;i++){const x=p.getX(i),y=p.getY(i),z=p.getZ(i),j=1+.1*Math.sin(x*5+seed)*Math.cos(z*4+y*3);p.setXYZ(i,x*a*j,y*h*(.95+.05*j),z*b*j)}
@@ -95,7 +96,7 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1,ring10:f10=.
   ng.setAttribute('color',new T.BufferAttribute(col,3));ng.computeVertexNormals();
   add(scene,ng,lam(0xffffff,{vertexColors:true,flatShading:true}),cx,0,cz)};
  mk(mound.a,mound.h,mound.b,0,mound.cz,1);mk(mound.a*.55,2.4,mound.b*.85,mound.a*1.05,mound.cz+1,2);mk(mound.a*.55,2.2,mound.b*.85,-mound.a*1.1,mound.cz+.5,3);
- const pl=new T.Group();pl.position.set(0,Y0+R1,D);scene.add(pl);
+ const pl=new T.Group();pl.position.set(0,Ty+R1,D);scene.add(pl);
  const plTex=(tex(1024,1024,(c,w)=>{
   const r=w/2;c.translate(r,r);
   [[1,'#ded4a6'],[.76,'#3b4c45'],[.48,'#ded4a6'],[.23,'#d87249']].forEach(([f,col])=>{c.fillStyle=col;c.beginPath();c.arc(0,0,r*f,0,TAU);c.fill()});
@@ -115,7 +116,7 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1,ring10:f10=.
   add(pl,new T.BoxGeometry(pw,ph,pw),om,0,-R1+top+ph/2,bz+bt/2+pw/2);
   add(pl,new T.PlaneGeometry(.5*sD,.3*sD),om,.25*sD+pw/2,-R1+top+ph-.15*sD,bz+bt/2+pw/2)}
  let clock=0;
- return{scene,sky,plate:pl,flags,mound,R1,HS,clearColor:0xbfbc95,targetCenter:V(0,Y0,D),lam,add,tex,
+ return{scene,sky,plate:pl,flags,mound,R1,HS,clearColor:0xbfbc95,targetCenter:V(0,Ty,D),lam,add,tex,
   update(dt){clock+=dt;for(const f of flags)f.upd(clock)},
   dispose(){scene.traverse(m=>{m.geometry?.dispose();[].concat(m.material||[]).forEach(mt=>{mt.map?.dispose();mt.dispose()})})}};
 }

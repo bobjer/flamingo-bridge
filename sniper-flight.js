@@ -1,5 +1,5 @@
 import './sniper-flight.css';
-import {buildWorld,moundOf} from './sniper-world.js';
+import {buildWorld,moundOf,targetY} from './sniper-world.js';
 
 const sm=t=>(t=t<0?0:t>1?1:t,t*t*(3-2*t)),mix=(a,b,t)=>a+(b-a)*t,rnd=(a=0,b=1)=>a+Math.random()*(b-a),clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
 const sg=v=>{const r=Math.round(v*10)/10;return(r<0?'−':'+')+Math.abs(r).toFixed(1)};
@@ -8,12 +8,12 @@ const TAU=Math.PI*2;
 const hit=o=>!!o.hit;
 // Pure ballistic model + time schedule (no three.js). World: +z downrange, +y up, world x = -(lateral right) so a camera looking +z sees +lateral on screen right.
 function modelOf(o){
- const D=o.distance,{k,v0}=o.caliber,g=o.gravity,R1=o.targetRadiusMil*D/1000,Y0=1.5,dur=o.duration||D/100,W=o.wind||{};
+ const D=o.distance,{k,v0}=o.caliber,g=o.gravity,R1=o.targetRadiusMil*D/1000,Y0=1.5,Ty=targetY(R1),dur=o.duration||D/100,W=o.wind||{};
  const tOf=x=>(Math.exp(k*x)-1)/(k*v0),xOf=t=>Math.log(1+k*v0*t)/k,drop=x=>g*tOf(x)**2/2;
  const th=o.aimMil.y/1000+drop(100)/100;
  const wdir=(typeof W.east==='number'?Math.sign(W.east):W.east?1:-1)*(W.speed||0);
  const H0=x=>th*x-drop(x),L0=x=>o.aimMil.x/1000*x+wdir*(tOf(x)-x/v0);
- const ix=o.impactMil.x*D/1000,iy=o.impactMil.y*D/1000,TD=tOf(D),ay=(iy-H0(D))/D,ax=(ix-L0(D))/D;
+ const ix=o.impactMil.x*D/1000,iy=o.impactMil.y*D/1000,TD=tOf(D),ay=(Ty-Y0+iy-H0(D))/D,ax=(ix-L0(D))/D;
  const P=(x,out={})=>{out.x=-(L0(x)+ax*x);out.y=Y0+H0(x)+ay*x;out.z=x;return out};
  const mound=moundOf(D,R1);
  const hE=(x,z)=>{const u=(x/mound.a)**2+((z-mound.cz)/mound.b)**2;return u<1?mound.h*Math.sqrt(1-u):-1};
@@ -97,14 +97,14 @@ export async function playFlight(host,o){
 
 function scene3d(T,o,root,canvas,onFinal,onHud){
  const V=(x=0,y=0,z=0)=>new T.Vector3(x,y,z);
- const D=o.distance,{k,v0}=o.caliber,g=o.gravity,R1=o.targetRadiusMil*D/1000,Y0=1.5;
+ const D=o.distance,{k,v0}=o.caliber,g=o.gravity,R1=o.targetRadiusMil*D/1000,Y0=1.5,Ty=targetY(R1);
  const dur=o.duration||D/100,W=o.wind||{},cc=new T.Color();
 
  const M=modelOf(o),{tOf,xOf,P,endX,sEnd,TD,sched,ix,iy,th,ay,ax,mound,fsig}=M;let kind=M.kind;
  const E=P(endX,V());
- const C=V(-ix,Math.max(.1,Y0+iy),D); // bullet's crossing of the target plane: used for final framing + marker; E (ground/berm) only for debris
+ const C=V(-ix,Math.max(.1,Ty+iy),D); // bullet's crossing of the target plane: used for final framing + marker; E (ground/berm) only for debris
  const woodD=Math.min(Math.hypot(E.x,E.z-D-.06),Math.hypot(Math.abs(E.x)-R1-.3,E.z-D-.25));
- if(kind==='dirt'&&woodD<.4&&E.y<Y0+R1+.2)kind='wood';
+ if(kind==='dirt'&&woodD<.4&&E.y<Ty+R1+.2)kind='wood';
 
  // ---- renderer / scene ----
  const renderer=new T.WebGLRenderer({canvas,antialias:true,logarithmicDepthBuffer:true});
@@ -234,10 +234,10 @@ float a=smoothstep(1.,.2,length(gl_PointCoord-.5)*2.)*vC.a;if(a<.003)discard;gl_
  const burst=()=>{
   const sc2=Math.max(1,R1*2);
   if(kind==='plate'){
-   const p=[-ix,Y0+iy,D-.03];
+   const p=[-ix,Ty+iy,D-.03];
    for(let i=0;i<90;i++){const v=V(rnd(-.7,.7),rnd(-.5,.8),-rnd(.2,1)).normalize().multiplyScalar(rnd(3,14));sparks.add(p,v.toArray(),i%3?0xffe9a8:0xffb050,1,.05*sc2,rnd(.25,.7),{g:g})}
    for(let i=0;i<26;i++)addBox(p,[rnd(-3,3),rnd(-1,3),-rnd(1,4)],[rnd(.02,.05)*sc2,rnd(.02,.05)*sc2,.004],[0xded4a6,0x3b4c45,0xd87249][i%3],rnd(1.5,2.5));
-   for(let i=0;i<36;i++){const a=i/36*TAU;dust.add([-ix,Y0+iy,D-.05],[Math.cos(a)*1.6,Math.sin(a)*1.6,-.2],0xb9b69a,.55,.1*sc2,1.3,{drag:1.2,grow:4})}
+   for(let i=0;i<36;i++){const a=i/36*TAU;dust.add([-ix,Ty+iy,D-.05],[Math.cos(a)*1.6,Math.sin(a)*1.6,-.2],0xb9b69a,.55,.1*sc2,1.3,{drag:1.2,grow:4})}
   }else if(kind!=='air'){
    const n=E.y<=.03?V(0,1,0):V(E.x/mound.a**2,E.y/mound.h**2,(E.z-mound.cz)/mound.b**2).normalize(),wd2=kind==='wood',p=E.toArray();
    const cl=wd2?8:36,sp2=wd2?40:14;
@@ -265,9 +265,9 @@ float a=smoothstep(1.,.2,length(gl_PointCoord-.5)*2.)*vC.a;if(a<.003)discard;gl_
  const finalPose=()=>{
   freeArea();
   const t=Math.tan(cam.fov*Math.PI/360),asp=cam.aspect;
-  const far=!hit(o)&&Math.hypot(C.x,C.y-Y0)>R1*14;
+  const far=!hit(o)&&Math.hypot(C.x,C.y-Ty)>R1*14;
   const frame=withMarker=>{
-   let minx=-R1,maxx=R1,miny=Y0-R1,maxy=Y0+R1;edgeDir=null;
+   let minx=-R1,maxx=R1,miny=Ty-R1,maxy=Ty+R1;edgeDir=null;
    if(withMarker){
     const m=Math.max(.1,R1*.25);
     // plate + marker bounding box (marker centre +- margin); a very distant crossing is not framed, an edge arrow points to it instead
@@ -282,8 +282,8 @@ float a=smoothstep(1.,.2,length(gl_PointCoord-.5)*2.)*vC.a;if(a<.003)discard;gl_
     const ex=C.x-cx,ey=C.y-cy;
     if(!withMarker||far||Math.abs(ex)>dist*t*asp*fr.fx*.88||Math.abs(ey)>dist*t*fr.fy*.88)edgeDir=Math.atan2(-ey,-ex);
    }
-   // plate centre (0,Y0,D) projected through the pose (camera looks +z): must be inside the frustum
-   return Math.abs(sx)<dist*t*asp&&Math.abs(Y0-sy)<dist*t;
+   // plate centre (0,Ty,D) projected through the pose (camera looks +z): must be inside the frustum
+   return Math.abs(sx)<dist*t*asp&&Math.abs(Ty-sy)<dist*t;
   };
   if(!frame(true))frame(false);
  };
