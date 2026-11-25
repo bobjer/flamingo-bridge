@@ -99,5 +99,26 @@ export function createShotAudio(){
   }
   burst(t,.02,{freq:6000,type:'highpass',gain:.6,out:b.in});
  }
- return {unlock,shot,ting};
+ // Turret detent clicks (the scope's own mechanics, so they play in every world; muffled on Mars and in vacuum, where they come through the rifle).
+ // kind: 'x' windage (higher), 'y' elevation (lower), 'zoom' (softer, lower tick). n clicks, 18 ms apart; more than 12 become a 12-click ratchet roll over ~250 ms.
+ let nextFree=0;
+ function click(kind,n=1,atmosphere='air'){
+  n=Math.round(n);if(!(n>0))return;
+  if(!unlock())return;
+  const now=ctx.currentTime;
+  if(nextFree>now+.12)return; // sustained drag: never queue more than ~120 ms ahead (also caps at ~60 clicks/s)
+  const count=Math.min(n,12),gap=n>12?.25/11:.018,t0=Math.max(now+.005,nextFree);
+  const zoom=kind==='zoom',hz=zoom?1500:kind==='y'?3200:4000,ping=zoom?900:kind==='y'?2100:2600;
+  const muff=atmosphere==='vacuum'?[1200,.5]:atmosphere==='thin'?[1800,.7]:[16000,1];
+  const b=bus(.035*(zoom?.6:1)*muff[1],muff[0]);
+  for(let i=0;i<count;i++){
+   const t=t0+i*gap,v=1-.08*(i%2)+(Math.random()-.5)*.1; // slight per-click variation
+   burst(t,.008,{freq:hz*(1+(Math.random()-.5)*.06),type:'bandpass',q:1.6,gain:1.2*v,out:b.in});
+   const o=ctx.createOscillator(),e=ctx.createGain();o.type='sine';o.frequency.value=ping;
+   e.gain.setValueAtTime(.25*v,t);e.gain.exponentialRampToValueAtTime(.001,t+.009);
+   o.connect(e).connect(b.in);o.start(t);o.stop(t+.02);
+  }
+  nextFree=t0+count*Math.max(gap,1/60);
+ }
+ return {unlock,shot,ting,click};
 }

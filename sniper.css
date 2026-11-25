@@ -142,12 +142,13 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-calculator [data-answer] { color: var(--sniper-accent); font: 14px var(--mono, monospace); }
 .sniper-axis {
  display: grid;
- grid-template-columns: 20px minmax(0, 1fr) 76px;
+ grid-template-columns: 9.5em minmax(0, 1fr) 76px;
  align-items: center;
  gap: 8px;
  min-height: 40px;
  font: 15px var(--mono, monospace);
 }
+.sniper-axis > span { font-size: 12px; line-height: 1.15; }
 .sniper-axis input { width: 100%; margin: 0; accent-color: var(--sniper-accent); min-height: 28px; }
 .sniper-axis input[data-number] { background: #18211b; border: 1px solid #596750; color: var(--sniper-ink); border-radius: 6px; padding: 4px 6px; font: 15px var(--mono, monospace); text-align: right; min-height: 0; }
 .sniper-hints { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
