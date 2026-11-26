@@ -196,10 +196,12 @@ export function startSniper(){
  const scopeTop=()=>{if(window.matchMedia?.('(max-width: 750px)').matches)root.querySelector('.sniper-scope')?.scrollIntoView({block:'start',behavior:reduced()?'auto':'smooth'})};
  document.addEventListener('visibilitychange',glStart);
  const paintTimer=()=>{const el=root.querySelector('[data-timer]');if(el&&state.series)el.textContent=clock1(state.series.time)};
+ let moreUpdate=()=>{};
  function selectTab(id){
   tabPick=id;
   for(const t of root.querySelectorAll('[role="tab"]')){const on=t.dataset.tab===id;t.setAttribute('aria-selected',String(on));t.tabIndex=on?0:-1}
   for(const p of root.querySelectorAll('[role="tabpanel"]'))p.hidden=p.id!=='sniper-panel-'+id;
+  moreUpdate();
  }
 
  // Autoplay: a single controller; every timed action goes through schedule() so pause/resume can freeze it.
@@ -702,7 +704,7 @@ export function startSniper(){
    time=series.time,hpm=time>0?hits/(time/60000):0,rec=series.newRecord||{},R=40,E=54,fp=.25;
   const pick=(better)=>shots.reduce((b,v,i)=>better(v.ring,shots[b].ring)?i:b,0);
   const bi=pick((a,b)=>a>b),wi=pick((a,b)=>a<b);
-  const badge=on=>on?` <span class="sniper-badge">${tr('Новий рекорд','New record')}</span>`:'';
+  const badge=on=>on?` <span class="sniper-badge" title="${tr('Новий рекорд','New record')}" aria-label="${tr('Новий рекорд','New record')}"></span>`:'';
   const cell=(label,value)=>`<div><dt>${label}</dt><dd>${value}</dd></div>`;
   const marks=shots.map((v,i)=>{
    const di=modeDistances[state.mode][i],t=tolerance[di],r10=ring10[di],e=Math.hypot(v.dx,v.dy),len=e||1,
@@ -712,16 +714,16 @@ export function startSniper(){
     `<g transform="translate(${x} ${y})" class="miss"><path d="M-4-4L4 4M4-4L-4 4"/><text x="8" y="-5">${i+1}</text></g>`;
   }).join('');
   const rings=Array.from({length:10},(_,j)=>`<circle r="${(R*(fp+(1-fp)*j/9)).toFixed(1)}"${j===9?' class="edge"':''}/>`).join('');
-  const rows=shots.map((v,i)=>`<tr><td><span class="sa-dot" style="background:${shotColors[i%shotColors.length]}"></span>${i+1}</td><td>${distLabel(distances[modeDistances[state.mode][i]])}</td><td>${v.ring}${v.hit?'':' ×'}</td><td>${(v.ms/1000).toFixed(1)} ${tr('с','s')}</td><td${v.disp?` title="${dispTip(v.disp)}"`:''}>${(Math.hypot(v.dx,v.dy)/10).toFixed(2)} <small>· ${cmOf(Math.hypot(v.dx,v.dy)/10,distances[modeDistances[state.mode][i]])}</small></td></tr>`).join('');
+  const rows=shots.map((v,i)=>`<tr><td><span class="sa-dot" style="background:${shotColors[i%shotColors.length]}"></span>${i+1}</td><td>${v.ring}${v.hit?'':' ×'}</td><td class="nw">${(v.ms/1000).toFixed(1)} ${tr('с','s')}</td><td class="nw"${v.disp?` title="${dispTip(v.disp)}"`:''}>${(Math.hypot(v.dx,v.dy)/10).toFixed(2)} <small>· ${cmOf(Math.hypot(v.dx,v.dy)/10,distances[modeDistances[state.mode][i]])}</small></td></tr>`).join('');
   return `<dl class="sniper-stats">
-    ${cell(tr('Влучань','Hits'),hits+'/'+n)}${cell(tr('Точність','Accuracy'),Math.round(100*hits/n)+'%')}
-    ${cell(tr('Бали','Score'),total+'/'+maxScore+badge(rec.score))}${cell(tr('Час серії','Series time'),clock2(time))}
-    ${cell(tr('Влучань за хвилину','Hits per minute'),hpm.toFixed(1)+badge(rec.hpm))}${cell(tr('Середній час пострілу','Average per shot'),(time/n/1000).toFixed(1)+' '+tr('с','s'))}
+    ${cell(tr('Влучань','Hits'),hits+'/'+n)}${cell(tr('Точність','Accuracy'),Math.round(100*hits/n)+'%')}${cell(tr('Бали','Score'),total+'/'+maxScore+badge(rec.score))}
+    ${cell(tr('Час серії','Series time'),clock2(time))}${cell(tr('Влуч./хв','Hits/min'),hpm.toFixed(1)+badge(rec.hpm))}${cell(tr('Сер. постріл','Avg shot'),(time/n/1000).toFixed(1)+' '+tr('с','s'))}
     ${cell(tr('Найкращий','Best shot'),'#'+(bi+1)+' · '+shots[bi].ring)}${cell(tr('Найгірший','Worst shot'),'#'+(wi+1)+' · '+shots[wi].ring)}
    </dl>
+   <button type="button" class="sniper-cta" data-expand>${tr('📊 Повний аналіз серії: траєкторії, швидкість, кучність','📊 Full series analysis: trajectories, velocity, grouping')}</button>
    <div class="sniper-results-body">
     <svg class="sniper-group" viewBox="-60 -60 120 120" width="120" height="120" role="img" aria-label="${tr('Розкид пострілів відносно допуску','Shot group relative to tolerance')}"><g class="rings">${rings}<path d="M-56 0H56M0-56V56"/></g>${marks}</svg>
-    <table aria-label="${tr('Постріли серії','Series shots')}"><thead><tr><th scope="col">#</th><th scope="col">${tr('Дистанція','Distance')}</th><th scope="col">${tr('Кільце','Ring')}</th><th scope="col">${tr('Час','Time')}</th><th scope="col">${tr('Відхилення','Deviation')}</th></tr></thead><tbody>${rows}</tbody></table>
+    <table aria-label="${tr('Постріли серії','Series shots')}"><caption>${distLabel(distances[modeDistances[state.mode][0]])} · ${calibers[state.profile].name}</caption><thead><tr><th scope="col">#</th><th scope="col">${tr('Кільце','Ring')}</th><th scope="col">${tr('Час','Time')}</th><th scope="col">${tr('Відхилення','Deviation')}</th></tr></thead><tbody>${rows}</tbody></table>
    </div>
    ${analysisHtml(shots,model)}
    <p class="sniper-hint-note">${tr('Рекорд','Best')}: ${state.bestScore??0}/${maxScore} · ${(state.bestHpm??0).toFixed(1)} ${tr('влуч./хв','hits/min')}</p>`;
@@ -810,6 +812,7 @@ export function startSniper(){
      </section>
      <section class="sniper-tabs">
       <div class="sniper-tablist" role="tablist" aria-label="${tr('Довідка','Reference')}">${tabDefs.map(([id,label])=>`<button type="button" role="tab" id="sniper-tab-${id}" data-tab="${id}" aria-controls="sniper-panel-${id}" aria-selected="${id===cur}" tabindex="${id===cur?0:-1}">${label}</button>`).join('')}</div>
+      <div class="sniper-more-fade" data-more-fade hidden aria-hidden="true"></div><button type="button" class="sniper-more" data-more hidden></button>
       ${results?`<div class="sniper-results sniper-tabpanel" ${panelAttrs('results')}>${resultsHtml()}</div>`:''}
       <div class="sniper-field-table sniper-tabpanel" ${panelAttrs('table')}>
        <table aria-label="${tr('Балістична таблиця','Ballistic table')}">
@@ -1071,8 +1074,10 @@ export function startSniper(){
    if(event.key==='Enter'&&!event.ctrlKey&&!event.altKey&&!event.metaKey){event.preventDefault();if(!event.repeat&&!breath.on)fire()}
    else if(isSpace(event))event.preventDefault();
   };
-  const expand=root.querySelector('[data-expand]');
-  if(expand)expand.onclick=()=>{
+  const expands=[...root.querySelectorAll('[data-expand]')];
+  let expand=expands[0];
+  for(const btn of expands)btn.onclick=()=>{
+   expand=btn;
    analysisModal?.remove();
    const bg=document.createElement('div');analysisModal=bg;
    bg.className='sniper-modal-bg';
@@ -1083,6 +1088,29 @@ export function startSniper(){
    bg.querySelector('[data-modal-close]').onclick=close;
    root.append(bg);bg.querySelector('.sniper-modal').focus();
   };
+  { // scroll affordance: fade + "more below" pill for any overflowing tab panel
+   const tabs=root.querySelector('.sniper-tabs'),fade=root.querySelector('[data-more-fade]'),pill=root.querySelector('[data-more]');
+   const panels=[...root.querySelectorAll('.sniper-tabpanel')];
+   if(tabs&&fade&&pill){
+    const active=()=>panels.find(p=>!p.hidden);
+    const targets=p=>p.classList.contains('sniper-results')?[...p.querySelectorAll('.sniper-results-body table, .sa-sec')]:[];
+    moreUpdate=()=>{
+     const p=active(),more=!!p&&p.scrollHeight-p.clientHeight>6&&p.scrollTop+p.clientHeight<p.scrollHeight-6;
+     fade.hidden=pill.hidden=!more;
+     if(more){const res=p.classList.contains('sniper-results');pill.textContent=res?tr('↓ Ще нижче: таблиця пострілів, траєкторії','↓ More below: shot table, trajectories'):tr('↓ Прокрутіть нижче','↓ Scroll for more');fade.style.bottom='0';}
+    };
+    pill.onclick=()=>{
+     const p=active();if(!p)return;
+     const top=el=>el.getBoundingClientRect().top-p.getBoundingClientRect().top+p.scrollTop;
+     const next=targets(p).map(top).find(t=>t>p.scrollTop+p.clientHeight*.5);
+     const to=next!==undefined?next-4:p.scrollTop+p.clientHeight*.8;
+     p.scrollTo({top:Math.min(to,p.scrollHeight),behavior:reduced()?'auto':'smooth'});
+    };
+    const ro=typeof ResizeObserver==='function'?new ResizeObserver(moreUpdate):null;
+    for(const p of panels){p.addEventListener('scroll',moreUpdate,{passive:true});ro?.observe(p);for(const c of p.children)ro?.observe(c)}
+    moreUpdate();requestAnimationFrame(moreUpdate);
+   }
+  }
   next.onclick=()=>{takeover();nextRound();root.querySelector('[data-axis="x"]').focus({preventScroll:true})};
   root.querySelector('[data-exit]').onclick=changeSide;
   root.querySelector('[data-autoplay]').onclick=()=>{if(ap.on)stopAutoplay();else startAutoplay()};

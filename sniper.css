@@ -284,14 +284,29 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-board .sniper-zoom button { min-height: 30px; padding: 0; font-size: 18px; line-height: 1; }
 .sniper-zoom input { width: 100%; margin: 0; accent-color: var(--sniper-accent); }
 .sniper-zoom output { color: var(--sniper-accent); text-align: right; }
-.sniper-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 0; }
-.sniper-stats > div { padding: 2px 8px; border: 1px solid var(--sniper-line); border-radius: 8px; background: #18211b; }
-.sniper-stats dt { color: var(--sniper-muted); font: 11px/1.3 var(--body, system-ui); letter-spacing: .04em; text-transform: uppercase; }
-.sniper-stats dd { margin: 0; color: var(--sniper-accent); font: 14px var(--mono, monospace); }
-.sniper-badge { display: inline-block; padding: 0 6px; border-radius: 999px; background: var(--sniper-accent); color: #141b18; font: 700 10px/1.6 var(--body, system-ui); text-transform: uppercase; vertical-align: middle; }
-.sniper-results-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; margin-top: 8px; }
+.sniper-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 0; }
+.sniper-stats > div { padding: 4px 7px; border: 1px solid var(--sniper-line); border-radius: 6px; background: #18211b; min-width: 0; }
+.sniper-stats dt { color: var(--sniper-muted); font: 10px/1.2 var(--body, system-ui); letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sniper-stats dd { margin: 0; color: var(--sniper-accent); font: 16px/1.25 var(--mono, monospace); white-space: nowrap; }
+.sniper-badge { display: inline-block; width: 8px; height: 8px; margin-left: 4px; border-radius: 50%; background: var(--sniper-accent); box-shadow: 0 0 0 2px rgba(255,255,255,.18); vertical-align: middle; }
+.sniper-board .sniper-cta { display: block; width: 100%; margin-top: 6px; min-height: 34px; padding: 5px 8px; border: 1px solid var(--sniper-accent); border-radius: 8px; background: var(--sniper-accent); color: #141b18; font: 700 12.5px/1.25 var(--body, system-ui); cursor: pointer; }
+.sniper-board .sniper-cta:hover { filter: brightness(1.08); }
+.sniper-tabs { position: relative; }
+.sniper-more-fade { position: absolute; left: 0; right: 0; bottom: 0; height: 30px; background: linear-gradient(to top, var(--sniper-panel), transparent); pointer-events: none; z-index: 2; }
+.sniper-board .sniper-more { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); z-index: 3; min-height: 30px; max-width: calc(100% - 16px); padding: 4px 14px; border: 1px solid var(--sniper-accent); border-radius: 999px; background: #18211b; color: var(--sniper-accent); font: 700 12px/1.2 var(--body, system-ui); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.45); }
+.sniper-more[hidden], .sniper-more-fade[hidden] { display: none; }
+.sniper-results-body td.nw, .sniper-results-body th { white-space: nowrap; }
+.sniper-results-body caption { padding: 0 3px 2px; color: var(--sniper-muted); font: 11px var(--body, system-ui); text-align: left; }
+@media (min-width: 751px) {
+ .sniper-console:has(#sniper-panel-results:not([hidden])) { grid-template-rows: auto minmax(0, 1fr) auto; }
+ .sniper-console:has(#sniper-panel-results:not([hidden])) .sniper-conditions, .sniper-console:has(#sniper-panel-results:not([hidden])) .sniper-calculator { display: none; }
+}
+.sniper-results-body td small { display: inline; color: var(--sniper-muted); font-size: 11px; letter-spacing: 0; }
+.sniper-tabpanel { scroll-behavior: auto; }
+@media (max-width: 750px) { .sniper-more, .sniper-more-fade { display: none !important; } }
+.sniper-results-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-top: 6px; }
 .sniper-results-body table { flex: 1 1 160px; border-collapse: collapse; font: 13px/1.3 var(--mono, monospace); }
-.sniper-results-body th, .sniper-results-body td { padding: 3px 4px; text-align: left; border-bottom: 1px solid var(--sniper-line); }
+.sniper-results-body th, .sniper-results-body td { padding: 1px 3px; text-align: left; border-bottom: 1px solid var(--sniper-line); }
 .sniper-results-body th { color: var(--sniper-muted); font: 600 12px var(--body, system-ui); }
 .sniper-group { flex: none; background: #18211b; border: 1px solid var(--sniper-line); border-radius: 8px; }
 .sniper-group .rings circle { fill: none; stroke: var(--sniper-line); stroke-width: .6; }
