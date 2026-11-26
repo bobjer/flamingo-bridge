@@ -1,7 +1,7 @@
 // Point-mass exterior ballistics with G7 drag, shared by the game, the table, the 3D flight and the analysis. Pure: no DOM, no three.js.
 // Frame: x downrange, y up, z lateral (right = +). Bore at the origin, the sight line is the horizontal y = sightHeight.
 // Air: the selected world's density, speed of sound and rotation (WORLDS below); Earth = ICAO sea level, 15 C: 1.225 kg/m3, 340.3 m/s. The 'Earth' game world has the deliberate gravity g = 10 m/s2.
-// Spin drift (Litz) is an air effect: it is scaled by rho/1.225 (vacuum: 0, thin Mars air: tiny). Coriolis keeps latitude 48 N for every world, with the world's rotation rate.
+// Spin drift (Litz) is an air effect: it is scaled by rho/1.225 (vacuum: 0, thin Mars air: tiny). Coriolis uses latitude 48 N for every world (Mesklin: 40 N, world.lat), with the world's rotation rate.
 // Drag: a = (pi/8)*rho*Cd_G7(M)*v_rel^2 / BC_SI along the air-relative velocity, BC_SI = BC_G7[lb/in2]*703.07 kg/m2.
 // Spin drift (right-hand twist, always right): Litz approximation SD[in] = 1.25*(SG+1.2)*t^1.83, SG ~ 2.0. Empirical, fine for a game.
 // Coriolis: latitude 48 N, range pointing North (Eotvos term 0), deflection to the right = Omega*sin(lat)*D*t.
@@ -14,6 +14,10 @@ export const WORLDS={
  earth:{id:'earth',name:['Майже Земля (g = 10)','Almost Earth (g = 10)'],g:10,rho:1.225,sound:340.3,omega:OMEGA,flagMs:[2,4,6],gust:.5,tempC:15},
  mars:{id:'mars',name:['Марс','Mars'],g:3.71,rho:.02,sound:240,omega:7.088e-5,flagMs:[8,16,25],gust:3,tempC:-60},
  mercury:{id:'mercury',name:['Меркурій','Mercury'],g:3.7,rho:0,sound:null,omega:1.24e-6,flagMs:[0,0,0],gust:0,tempC:null},
+ // Science-fiction worlds. Pyrrus (Harrison, Deathworld): 2 g (19.6 m/s2 at the game's 9.8 per g), dense Earth-like N2/O2 air at ~1.3 atm, violent gusty storms.
+ pyrrus:{id:'pyrrus',name:['Піррус («Неприборкана планета», Гаррісон)','Pyrrus (Deathworld, Harrison)'],g:19.6,gMul:2,rho:1.45,sound:350,omega:OMEGA,flagMs:[4,8,12],gust:1.2,tempC:null},
+ // Mesklin (Clement, Mission of Gravity): effective gravity grows from 3 g at the equator to hundreds of g at the poles (~18-minute day); the range sits at latitude 40 where it is ~5.5 g (53.9 m/s2). Cold hydrogen at several bar.
+ mesklin:{id:'mesklin',name:['Месклін («Експедиція „Тяжіння“», Клемент)','Mesklin (Mission of Gravity, Clement)'],g:53.9,gMul:5.5,rho:1.2,sound:770,omega:2*Math.PI/(18*60),lat:40,flagMs:[2,4,6],gust:.5,tempC:-170},
 };
 export const WORLD_IDS=Object.keys(WORLDS);
 export const validWorld=v=>typeof v==='string'&&Object.hasOwn(WORLDS,v);
@@ -55,7 +59,7 @@ export const pathFn=(gp,dt)=>t=>{ // linear interpolation of a sampled path, cla
  return gp.length<2?(gp[0]||0):gp[i]+(gp[i+1]-gp[i])*Math.min(1,u-i);
 };
 
-export function makeBallistics({world=WORLDS.earth,sightHeight=.05,zeroRange=100,latitude=48,calibers=CALIBERS,distances=[300,500,1000,2000,3000]}={}){
+export function makeBallistics({world=WORLDS.earth,sightHeight=.05,zeroRange=100,latitude=world.lat??48,calibers=CALIBERS,distances=[300,500,1000,2000,3000]}={}){
  const gravity=world.g,rho=world.rho,sound=world.sound;
  const K=Math.PI/8*rho,invSnd=sound?1/sound:0,spin0=1.25*.0254*rho/AIR.rho,corK=world.omega*Math.sin(latitude*Math.PI/180),A=new Float64Array(3);
  const spinM=(c,t)=>spin0*(c.sg+1.2)*t**1.83; // spin drift, metres, to the right (scaled by rho/1.225)

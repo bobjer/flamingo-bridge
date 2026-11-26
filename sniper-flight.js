@@ -10,7 +10,7 @@ const hit=o=>!!o.hit;
 // Path + time schedule (no three.js). The path is the shared G7 solver trajectory (o.path, or computed here from o.ci/aimMil/wind); the end is nudged by a linear angle so it lands exactly on the recorded impact.
 // World: +z downrange, +y up, world x = -(lateral right) so a camera looking +z sees +lateral on screen right.
 function modelOf(o){
- const D=o.distance,R1=o.targetRadiusMil*D/1000,Y0=1.5,Ty=targetY(R1),dur=o.duration||D/100,W=o.wind||{};
+ const D=o.distance,R1=o.targetRadiusMil*D/1000,Y0=1.5,Ty=targetY(R1),W=o.wind||{};
  const wdir=typeof W.east==='number'?Math.sign(W.east):W.east?1:-1;
  const path=o.path||BAL.trajectory(o.ci??1,D,{elevMil:o.aimMil.y,windMil:o.aimMil.x,wind:{flags:(W.flags||[0,0,0]).map(f=>wdir*2*f)},beyond:60});
  const tOf=x=>BAL.at(path,'t',x),xOf=t=>BAL.xAt(path,t),vOf=x=>BAL.at(path,'v',x),H0=x=>BAL.at(path,'y',x),L0=x=>BAL.at(path,'z',x);
@@ -25,16 +25,9 @@ function modelOf(o){
   for(let x=1;x<D+60;x+=.25){P(x,q);if(q.y<=.02||(q.z>D&&hE(q.x,q.z)>0&&q.y<=hE(q.x,q.z))){endX=x;kind='dirt';break}}
  }
  const sEnd=tOf(endX)/TD,fz=[.25,.5,.75].map(f=>D*f),fsig=Math.max(15,D*.03);
- const prox=x=>Math.max(...fz.map(z=>Math.exp(-(((x-z)/fsig)**2))));
- // warp: slow-mo at launch and near each flag, then renormalised so muzzle->impact == duration exactly
- const warp=s=>(s<.04?.08+.92*sm(s/.04):1)*(1-.7*prox(xOf(Math.min(s,sEnd)*TD)));
- const N=2000,tab=new Float64Array(N+1);
- for(let i=0;i<N;i++)tab[i+1]=tab[i]+sEnd/N/warp((i+.5)/N*sEnd);
- // the launch swing (s < sw) gets a fixed wall-time slice swT; the rest is renormalised so muzzle->impact == duration exactly
- const sw=Math.min(.04,sEnd/2),iSw=Math.max(1,Math.round(sw/sEnd*N)),swT=Math.min(dur*.45,clamp(dur*.22,1.5,2.6)),a0=tab[iSw],b0=tab[N]-a0;
- for(let i=0;i<=N;i++)tab[i]=i<=iSw?tab[i]*swT/a0:swT+(tab[i]-a0)*(dur-swT)/b0;
- const sAt=t=>{if(t<=0)return 0;if(t>=dur)return sEnd;let a=0,b=N;while(b-a>1){const m=(a+b)>>1;tab[m]<=t?a=m:b=m}return(a+(t-tab[a])/(tab[b]-tab[a]))/N*sEnd};
- return{tOf,xOf,vOf,P,endX,kind,sEnd,TD,ix,iy,th,ps,ay,ax,mound,fsig,sched:{total:dur,swT,warp,sAt}};
+  // Uniform playback: ONE constant time scale (dur / real time of flight) for the whole muzzle->target flight, so the visible deceleration is only the real physics. No slow-mo, no warps.
+ const dur=clamp(3*TD,2.5,8),total=dur*sEnd,sAt=t=>t<=0?0:t>=total?sEnd:t/dur;
+ return{tOf,xOf,vOf,P,endX,kind,sEnd,TD,ix,iy,th,ps,ay,ax,mound,fsig,sched:{dur,total,sAt}};
 }
 /** Pure schedule helper: sAt(tau) = flight progress (1 = at target distance) after tau wall seconds; sAt(total) = impact. */
 export function flightSchedule(o){const m=modelOf(o);return{total:m.sched.total,sEnd:m.sEnd,endX:m.endX,kind:m.kind,sAt:m.sched.sAt}}
@@ -90,7 +83,7 @@ export async function playFlight(host,o){
  try{ctl.resize();if(reduced)ctl.skip()}catch(err){crash(err);return done}
  const loop=t=>{
   if(closed)return;
-  const dt=Math.min(.1,last?(t-last)/1000:0);last=t;
+  const dt=Math.min(.05,last?(t-last)/1000:0);last=t;
   try{ctl.tick(dt)}catch(err){crash(err);return}
   raf=requestAnimationFrame(loop);
  };
@@ -101,9 +94,9 @@ export async function playFlight(host,o){
 function scene3d(T,o,root,canvas,onFinal,onHud){
  const V=(x=0,y=0,z=0)=>new T.Vector3(x,y,z);
  const D=o.distance,{v0}=o.caliber,g=o.gravity,R1=o.targetRadiusMil*D/1000,Y0=1.5,Ty=targetY(R1);
- const dur=o.duration||D/100,W=o.wind||{},cc=new T.Color();
+ const W=o.wind||{},cc=new T.Color();
 
- const M=modelOf(o),{tOf,xOf,vOf,P,endX,sEnd,TD,sched,ix,iy,th,ps,ay,ax,mound,fsig}=M;let kind=M.kind;
+ const M=modelOf(o),{tOf,xOf,vOf,P,endX,sEnd,TD,sched,ix,iy,th,ps,ay,ax,mound,fsig}=M,dur=sched.total;let kind=M.kind;
  const E=P(endX,V());
  const C=V(-ix,Math.max(.1,Ty+iy),D); // bullet's crossing of the target plane: used for final framing + marker; E (ground/berm) only for debris
  const woodD=Math.min(Math.hypot(E.x,E.z-D-.06),Math.hypot(Math.abs(E.x)-R1-.3,E.z-D-.25));
@@ -255,7 +248,7 @@ float a=smoothstep(1.,.2,length(gl_PointCoord-.5)*2.)*vC.a;if(a<.003)discard;gl_
  };
 
  // ---- camera / state ----
- const camP=V(),lookV=V(),B=V(),tmp=V(),vel=V(),swT=sched.swT;
+ const camP=V(),lookV=V(),B=V(),tmp=V(),vel=V(),swT=.8; // swT: camera-only move from the front close-up to the chase position (the bullet's time scale never changes)
  let edgeDir=null,s=0,tau=0,clock=0,roll=0,mode='flight',impT=0,jolt=-1,fired=false,fin=0,finShown=false,shown=false;
  const fromP=V(),fromL=V(),toP=V(),toL=V();
  const arrow=document.createElement('div');arrow.className='sf-edge';arrow.hidden=true;arrow.textContent='\u27A4';root.append(arrow);
@@ -333,20 +326,20 @@ float a=smoothstep(1.,.2,length(gl_PointCoord-.5)*2.)*vC.a;if(a<.003)discard;gl_
     onHud(x,vOf(x),tOf(x));
     // front-quarter close-up swings round to a chase cam behind the bullet (swT = slow-mo swing, then ease out to chase distance)
     // chase: ~1.4 m behind, 0.3 m above, <=0.25 m sideways, looking 8 m down the flight line so the 5x bullet sits low-centre; camera is slaved to B (no lag)
-    const p=sm(clamp(tau/swT,0,1)),c=sm(clamp((tau-swT)/1.4,0,1)),az=mix(.55,Math.PI-.06,p),R=mix(.55,1.4,c),sway=Math.sin(clock*.9);
+    const p=sm(clamp(tau/swT,0,1)),c=p,az=mix(.55,Math.PI-.06,p),R=mix(.55,1.4,c),sway=Math.sin(clock*.9);
     camP.set(B.x+R*Math.sin(az)+c*(.1+.04*sway),Math.max(.4,B.y+mix(.1,.3,c)+.015*c*Math.sin(clock*.6)),B.z+R*Math.cos(az));
     lookV.copy(B).addScaledVector(vel,8*c);roll=.012*c*Math.sin(clock*.8);glow.scale.setScalar(mix(.1,.45,c));
     if(tau>=dur){mode='impact';impT=0;hide();bul.visible=false;burst();if(kind==='plate')jolt=0}
    }else if(mode==='impact'){
     impT+=dt;camP.z+=dt*.3;
-    if(impT>1.6)toFinal(false);
+    if(impT>1)toFinal(false);
    }
    if(mode==='final'&&fin<1){
-    fin=Math.min(1,fin+dt/1);const w=sm(fin);camP.lerpVectors(fromP,toP,w);lookV.lerpVectors(fromL,toL,w);
+    fin=Math.min(1,fin+dt/.8);const w=sm(fin);camP.lerpVectors(fromP,toP,w);lookV.lerpVectors(fromL,toL,w);
     if(fin>.5&&!finShown){finShown=true;onFinal()}
     if(fin>=1)pl.rotation.x=0;
    }
-   const sd=mode==='impact'?dt*(.2+.8*sm(impT/1.5)):mode==='flight'?dt*sched.warp(s):dt;
+   const sd=mode==='impact'?dt*.4:dt;
    if(jolt>=0&&mode!=='final'){jolt+=sd;pl.rotation.x=-.18*Math.exp(-2.5*jolt)*Math.sin(11*jolt)}
    else if(mode==='final'&&fin>=1)pl.rotation.x=0;
    if(flashL.intensity>0){flashL.intensity=Math.max(0,flashL.intensity-dt*110);flashS.scale.setScalar(Math.max(0,flashS.scale.x-dt*14))}

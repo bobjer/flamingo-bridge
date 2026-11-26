@@ -34,6 +34,7 @@ export async function chooseSide(){
     const old=read('pop-sniper-v2'),keep={}; // a new game resets the Sniper series but keeps its records
     if(old&&Number.isInteger(old.bestScore)&&old.bestScore>=0&&old.bestScore<=50)keep.bestScore=old.bestScore;
     if(old&&Number.isFinite(old.bestHpm)&&old.bestHpm>0)keep.bestHpm=old.bestHpm;
+    // 'pop-sniper-prefs' (speed, FPV mode, scope, caliber, world, distance, zoom) is deliberately left untouched
     localStorage.removeItem('pop-sniper-v2');
     if(Object.keys(keep).length)write('pop-sniper-v2',keep);
     rememberLevel(remembered.level); write(sideKey,remembered.restart);

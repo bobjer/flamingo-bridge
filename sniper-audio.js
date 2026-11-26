@@ -1,7 +1,7 @@
 // Rifle sounds for the Sniper range (WebAudio): a real .30-06 recording is the base of the muzzle blast in air, pitched and layered per caliber; synthesized fallback and vacuum thud. The context is created lazily on a user gesture.
-const KEY='pop-music-muted'; // the game-wide sound setting (chiptune.js): '0' = sound on
-export const soundMuted=()=>{try{return localStorage.getItem(KEY)!=='0'}catch{return true}};
-export const setSoundMuted=v=>{try{localStorage.setItem(KEY,v?'1':'0')}catch{}};
+const KEY='pop-sniper-sound'; // the Sniper's own setting (the chiptune music keeps 'pop-music-muted'): '1' on, '0' off, unset = on
+export const soundMuted=()=>{try{return localStorage.getItem(KEY)==='0'}catch{return false}};
+export const setSoundMuted=v=>{try{localStorage.setItem(KEY,v?'0':'1')}catch{}};
 
 // Per caliber: rate/gain = playback pitch and level of the recording (heavier = lower, bigger), layer = level of the synth thump added under it, crack = noise burst brightness (Hz) and length, body = low thump (Hz) and length, slap = muzzle-brake echo (s, gain), tail = reverb length (s), level.
 const SHOT_URL='/audio/rifle-shot.mp3';
@@ -53,7 +53,7 @@ export function createShotAudio(){
   g.gain.value=volume;f.type='lowpass';f.frequency.value=lowpass;f.connect(g).connect(master);
   return {in:f,gain:g};
  };
- // Muzzle blast. atmosphere: 'air' | 'thin' (Mars) | 'vacuum' (Moon, Mercury: only the recoil felt through the rifle).
+ // Muzzle blast. atmosphere: 'air' | 'hydrogen' (Mesklin: cold H2, higher and thinner) | 'thin' (Mars) | 'vacuum' (Moon, Mercury: only the recoil felt through the rifle).
  function shot(caliber,atmosphere,quiet=1){
   if(!unlock())return;
   const gun=GUNS[Math.max(0,Math.min(GUNS.length-1,caliber))]||GUNS[0],t=ctx.currentTime+.01;
@@ -61,14 +61,15 @@ export function createShotAudio(){
    const b=bus(.16*quiet,260);thump(t,60,.12,.9,b.in);burst(t,.05,{freq:180,gain:.5,out:b.in});
    return;
   }
-  const thin=atmosphere==='thin';
+  const thin=atmosphere==='thin',h2=atmosphere==='hydrogen',pr=h2?1.25:1; // cold hydrogen: sound travels faster, the blast is higher-pitched and thinner (pitch x1.25, high shelf, weaker low end)
+  const shelf=b=>{if(!h2)return;const sh=ctx.createBiquadFilter();sh.type='highshelf';sh.frequency.value=3200;sh.gain.value=9;sh.connect(b.in);b.in=sh};
   if(shotBuf){
    const b=bus(gun.gain*.55*quiet*(thin?.125:1),thin?900:20000),s=ctx.createBufferSource(),e=ctx.createGain();
-   s.buffer=shotBuf;s.playbackRate.value=gun.rate;
+   shelf(b);s.buffer=shotBuf;s.playbackRate.value=gun.rate*pr;
    e.gain.setValueAtTime(1,t);
    if(thin){e.gain.setValueAtTime(1,t+.45);e.gain.linearRampToValueAtTime(0,t+.75)} // Mars: shortened tail
    s.connect(e).connect(b.in);s.start(t);if(thin)s.stop(t+.8);
-   thump(t,gun.body,gun.bl,1.1*gun.layer,b.in); // synth low end under the recording: bigger calibers sound bigger
+   thump(t,gun.body*pr,gun.bl,1.1*gun.layer*(h2?.6:1),b.in); // synth low end under the recording: bigger calibers sound bigger
    if(gun.slap)burst(t+gun.slap,gun.cl*1.5,{freq:gun.crack*.6,type:'bandpass',q:1.2,gain:.45*gun.layer,out:b.in}); // muzzle-brake slap
    if(!thin&&gun.tail>=1.5){ // .50 BMG: longer rolling tail
     const conv=ctx.createConvolver(),wet=ctx.createGain(),lp=ctx.createBiquadFilter();
@@ -78,9 +79,10 @@ export function createShotAudio(){
    return;
   }
   const b=bus(gun.level*.55*quiet*(thin?.125:1),thin?420:16000); // Mars: -18 dB and strongly low-passed
-  burst(t,gun.cl,{freq:gun.crack,type:'highpass',q:.5,gain:1,out:b.in});
+  shelf(b);
+  burst(t,gun.cl,{freq:gun.crack*pr,type:'highpass',q:.5,gain:1,out:b.in});
   burst(t,gun.cl*2.2,{freq:gun.crack*.5,gain:.8,out:b.in});
-  thump(t,gun.body,gun.bl,1.1,b.in);burst(t,gun.bl,{freq:gun.body*3.5,gain:.7,out:b.in});
+  thump(t,gun.body*pr,gun.bl,1.1*(h2?.6:1),b.in);burst(t,gun.bl,{freq:gun.body*3.5,gain:.7,out:b.in});
   if(gun.slap)burst(t+gun.slap,gun.cl*1.5,{freq:gun.crack*.6,type:'bandpass',q:1.2,gain:.45,out:b.in}); // muzzle-brake slap
   const tail=thin?Math.min(.35,gun.tail*.25):gun.tail,conv=ctx.createConvolver(),wet=ctx.createGain();
   conv.buffer=reverbBuf(ctx,tail);wet.gain.value=.55;

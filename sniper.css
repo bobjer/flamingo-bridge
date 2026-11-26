@@ -357,6 +357,8 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-board .sniper-impact button { min-height: 36px; padding: 4px 14px; border-color: var(--sniper-accent); background: var(--sniper-accent); color: #141b18; font-weight: 800; }
 
 .sniper-actions { gap: 8px; }
+.sniper-fpv { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 13px; color: var(--sniper-ink); }
+.sniper-fpv .sniper-pills { flex: none; }
 .sniper-switch { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 13px; color: var(--sniper-ink); cursor: pointer; user-select: none; }
 .sniper-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .sniper-switch i { position: relative; flex: none; width: 34px; height: 18px; border-radius: 9px; border: 1px solid #596750; background: #18211b; transition: background .15s; }
@@ -406,6 +408,10 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .wi-earth { background: radial-gradient(ellipse at 30% 36%, #58b866 0 24%, transparent 25%), radial-gradient(ellipse at 70% 68%, #4fa95e 0 20%, transparent 21%), #2f6fd0; }
 .wi-mars { background: radial-gradient(circle at 36% 34%, #8e3b1d66 0 18%, transparent 19%), radial-gradient(circle at 68% 66%, #e8946a55 0 20%, transparent 21%), #c4602f; }
 .wi-mercury { background: radial-gradient(circle at 30% 34%, #0000004d 0 13%, transparent 14%), radial-gradient(circle at 64% 60%, #00000040 0 17%, transparent 18%), radial-gradient(circle at 70% 26%, #0000003a 0 8%, transparent 9%), #62656a; }
+.wi-pyrrus { background: radial-gradient(circle at 30% 70%, #ff7a1ccc 0 14%, transparent 22%), radial-gradient(circle at 70% 34%, #ff5a1099 0 11%, transparent 19%), radial-gradient(ellipse at 62% 74%, #2f7a3a 0 22%, transparent 24%), radial-gradient(ellipse at 28% 30%, #1f5a2a 0 18%, transparent 20%), #2a2522; }
+.wi-mesklin { height: 12px; margin-top: 3px; vertical-align: -3px; border-radius: 50%; background: radial-gradient(ellipse at 34% 32%, #f4f9ff 0 18%, transparent 40%), radial-gradient(ellipse at 66% 66%, #3a4f6e55 0 22%, transparent 24%), #a9c8e8; }
+.sniper-world-btn .wi-mesklin { height: 13px; margin: 0; }
+.sniper-pick-line .sniper-world-now .wi-mesklin { height: 10px; }
 .sniper-world-now .wi { margin-right: 4px; }
 .sniper-autoplay .ap-speed { flex: none; min-height: 36px; height: 36px; padding: 0 10px; border-radius: 999px; font: 700 13px/1 var(--mono, monospace); }
 .sniper-speed-set { display: flex; flex-wrap: wrap; gap: 6px 16px; }
