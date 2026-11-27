@@ -88,7 +88,10 @@ const clock1=ms=>{const t=Math.floor(ms/1000);return String(Math.floor(t/60)).pa
 const maxScore=seriesSize*10;
 const clampAxis=(axis,value)=>axis==='x'?Math.max(-xMaxOf(),Math.min(xMaxOf(),value)):Math.max(0,Math.min(yMaxOf(),value));
 const apSpeeds=[0.5,1,1.5,2],speedLabel=v=>v+'×';
-const initial=()=>({apSpeed:1,world:'earth',mode:defaultMode,modeV:3,plane:'ffp',distance:2,optic:0,profile:0,weather:0,wind:randomWind(),x:0,y:0,aim:randomAim(),zoom:zoomMin});
+const botModes=['off','coach','critic','auto'],botSaved=['off','coach','critic']; // bot: Off | Instructor (guides, the player acts) | Critic (silent, reviews each shot) | Autoplay; autoplay is never resumed from a save
+const botName=m=>m==='coach'?tr('Інструктор','Coach'):m==='critic'?tr('Критик','Critic'):m==='auto'?tr('Автогра','Autoplay'):tr('Вимк','Off');
+const SINGLE_COL='(max-width: 900px), (orientation: portrait) and (max-width: 1100px)',TOUCH_Q='(pointer: coarse), (max-width: 1024px)'; // single-column layout; touch controls
+const initial=()=>({apSpeed:1,bot:'off',world:'earth',mode:defaultMode,modeV:3,plane:'ffp',distance:2,optic:0,profile:0,weather:0,wind:randomWind(),x:0,y:0,aim:randomAim(),zoom:zoomMin});
 const mil=value=>(Math.abs(value)/10).toFixed(1);
 const signedMil=value=>value<0?'−'+mil(value):value>0?'+'+mil(value):mil(0);
 
@@ -129,6 +132,7 @@ export function startSniper(){
  state.world=worldId;if(state.pendingWorld!==undefined&&!validWorld(state.pendingWorld))delete state.pendingWorld;
  state.plane=state.plane==='sfp'?'sfp':'ffp';
  if(!apSpeeds.includes(state.apSpeed))state.apSpeed=1;
+ state.bot=botSaved.includes(state.bot)?state.bot:botSaved.includes(prefs?.bot)?prefs.bot:'off';
  if(state.tutorialDone!==true)state.distance=modeDistances[state.mode][0];
  if(state.series&&Array.isArray(state.series.rounds)&&state.series.rounds.length!==seriesSize)delete state.bestScore; // record from an older series length
  if(state.bestScore!==undefined&&!(Number.isInteger(state.bestScore)&&state.bestScore>=0&&state.bestScore<=maxScore))delete state.bestScore;
@@ -141,7 +145,8 @@ export function startSniper(){
  state.roundDone=state.roundDone===true&&!!state.lastShot;
  const root=document.createElement('main');
  root.className='sniper-board';document.body.append(root);
- const savePrefs=()=>write(prefsKey,{apSpeed:state.apSpeed,fpv:state.fpv,plane:state.plane,optic:state.optic,profile:state.profile,world:worldId,mode:state.mode,zoom:state.zoom});
+ const touchQ=window.matchMedia?.(TOUCH_Q),applyTouch=()=>root.classList.toggle('is-touch',!!touchQ?.matches);applyTouch();touchQ?.addEventListener?.('change',applyTouch); // touch controls: coarse pointer or width up to 1024 px
+ const savePrefs=()=>write(prefsKey,{bot:state.bot,apSpeed:state.apSpeed,fpv:state.fpv,plane:state.plane,optic:state.optic,profile:state.profile,world:worldId,mode:state.mode,zoom:state.zoom});
  const save=()=>{write(saveKey,state);savePrefs()};
  if(!prefs)savePrefs(); // migration: seed the preferences from the current save (or defaults)
  // Continuous gust while aiming: Ornstein–Uhlenbeck g(t), m/s, mean 0, stationary σ sigma.gust, time constant tau. Exact update, so any elapsed time catches up. Never shown as a number: only the flags move.
@@ -162,7 +167,7 @@ export function startSniper(){
  windNow=state.wind;applySigma();
  const putWind=w=>{state.wind=w;windNow=w;applySigma()}; // a new series: new wind and gust strength
  gustSeed();
- let rt=null,analysisModal=null,gl=null,glLoop=0,scopeRO=null,dragging=false,pendingRender=false,flying=false,notice='',miss=null,mark=0,tabPick=null; // tabPick: reference tab chosen by the player or autoplay (not persisted)
+ let critic=null,cardOpen=false,cardOver=false,cardKey='',glideId=0,thumbRO=null,rt=null,analysisModal=null,gl=null,glLoop=0,scopeRO=null,dragging=false,pendingRender=false,flying=false,notice='',miss=null,mark=0,tabPick=null; // tabPick: reference tab chosen by the player or autoplay (not persisted)
  const hasResults=()=>state.tutorialDone===true&&!!state.series&&state.series.scores.length===seriesSize;
  const curTab=()=>tabPick&&(tabPick!=='results'||hasResults())?tabPick:state.tutorialDone!==true?'method':'table';
  // Aiming clock: runs only while a series shot is open, the page is visible and no flight overlay is up. Call after every state flip.
@@ -204,7 +209,7 @@ export function startSniper(){
   }catch(error){console.warn('sniper: WebGL unavailable, using 2D view',error);gl=null;return}
   if(dragging||flying)pendingRender=true;else render();
  }
- const scopeTop=()=>{if(window.matchMedia?.('(max-width: 750px)').matches)root.querySelector('.sniper-scope')?.scrollIntoView({block:'start',behavior:reduced()?'auto':'smooth'})};
+ const scopeTop=()=>{if(window.matchMedia?.(SINGLE_COL).matches)root.querySelector('.sniper-scope')?.scrollIntoView({block:'start',behavior:reduced()?'auto':'smooth'})};
  document.addEventListener('visibilitychange',glStart);
  const paintTimer=()=>{const el=root.querySelector('[data-timer]');if(el&&state.series)el.textContent=clock1(state.series.time)};
  let moreUpdate=()=>{};
@@ -216,7 +221,7 @@ export function startSniper(){
  }
 
  // Autoplay: a single controller; every timed action goes through schedule() so pause/resume can freeze it.
- let align=()=>{},aimer=()=>{},zoomer=()=>{};
+ let align=()=>{},aimer=()=>{},zoomer=()=>{},fitThumbs=()=>{};
  const ap={shown:-1,on:false,paused:false,step:0,timer:0,remaining:0,startedAt:0,fn:null};
  const finalNow=()=>state.tutorialDone===true&&state.round===seriesSize-1;
  const solved=()=>{const [a,b]=solution(state),t=tolerance[state.distance];return Math.abs(a-state.x)<=t&&Math.abs(b-state.y)<=t};
@@ -248,30 +253,57 @@ export function startSniper(){
     tr('Промах: ','Miss: ')+'X '+signedMil(miss?.dx??0)+' / Y '+signedMil(miss?.dy??0)+tr(' міл. Перевіряю розрахунок і виправляю.',' mil. Rechecking and correcting.')},
   ];
  };
- const apLabel=()=>ap.on?tr('✋ Грати самому','✋ Take over'):tr('Автогра','Autoplay');
- const apPanel=()=>`<section class="sniper-autoplay" aria-live="polite"><div class="ap-head"><span class="ap-pill"></span><span class="ap-bar" aria-hidden="true"></span><button type="button" class="ap-speed" data-ap-speed></button><button type="button" class="ap-pause" data-autoplay-pause></button></div><p data-narration></p></section>`;
+ // ---- Bot card (shared by Autoplay, Instructor and Critic) ----
+ const cardKind=()=>ap.on?'auto':state.bot==='coach'?'coach':state.bot==='critic'&&critic&&!critic.closed?'critic':null;
+ const botPanel=()=>`<section class="sniper-autoplay" aria-live="polite"><div class="ap-head"><span class="ap-pill"></span><span class="ap-bar" aria-hidden="true"></span><button type="button" class="ap-speed" data-ap-speed></button><button type="button" class="ap-pause" data-autoplay-pause></button><button type="button" class="ap-more" data-ap-more aria-expanded="false" hidden>▾</button><button type="button" class="ap-close" data-bot-close hidden>×</button></div><p data-narration></p><ul class="ap-list" data-ap-list hidden></ul><div class="ap-tail"><p class="ap-hint" data-ap-hint hidden></p><div class="ap-foot" hidden><button type="button" class="ap-ok" data-coach-ok></button></div></div></section>`;
  const escHtml=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
  const narrationHtml=t=>escHtml(t).replace(/[−+-]?\d+(?:[.,]\d+)?\s?(?:міл|mil|м\/с|m\/s|км|km|м|m|×|°|%)(?!\p{L})/gu,'<b class="ap-num">$&</b>');
+ const markEl=m=>m==='x'||m==='y'?root.querySelector('[data-axis="'+m+'"]')?.closest('.sniper-axis'):m==='zoom'?root.querySelector('.sniper-zoom'):m==='aim'?root.querySelector('.sniper-scope'):m==='weather'?root.querySelector('.sniper-weather'):m==='fire'?root.querySelector('[data-fire]'):m==='table'?root.querySelector('tr.is-current'):null;
  function paintAutoplay(){
-  const button=root.querySelector('[data-autoplay]'),panel=root.querySelector('.sniper-autoplay');
-  button.textContent=apLabel();button.setAttribute('aria-pressed',String(ap.on));
+  const kind=cardKind(),panel=root.querySelector('.sniper-autoplay');
+  for(const b of root.querySelectorAll('[data-bot]'))b.setAttribute('aria-pressed',String(b.dataset.bot===state.bot));
+  const sel=root.querySelector('[data-bot-select]');if(sel)sel.value=state.bot;
+  const tk=root.querySelector('[data-takeover]');if(tk)tk.hidden=!ap.on;
   for(const old of root.querySelectorAll('.is-explained'))old.classList.remove('is-explained');
-  if(!ap.on){panel?.remove();ap.shown=-1;updateFire();return}
-  const steps=apSteps(),s=steps[ap.step];
-  if(panel){
-   panel.querySelector('.ap-pill').textContent=tr('Крок ','Step ')+(ap.step+1)+'/'+steps.length;
-   panel.querySelector('.ap-bar').innerHTML=steps.map((_,i)=>`<i class="${i<ap.step?'is-done':i===ap.step?'is-cur':''}"></i>`).join('');
-   panel.querySelector('[data-narration]').innerHTML=narrationHtml(s.text);
-   const sb=panel.querySelector('[data-ap-speed]'),sl=tr('Швидкість коментарів','Commentary speed');sb.textContent=speedLabel(state.apSpeed);sb.setAttribute('aria-label',sl);sb.title=sl+': '+speedLabel(state.apSpeed);
-   const pb=panel.querySelector('[data-autoplay-pause]'),pl=ap.paused?tr('Далі','Resume'):tr('Пауза','Pause');
-   pb.textContent=ap.paused?'▶':'⏸';pb.setAttribute('aria-label',pl);pb.title=pl;
-   panel.classList.toggle('is-fire',s.mark==='fire');
-   if(ap.shown!==ap.step){ap.shown=ap.step;panel.classList.remove('is-new');void panel.offsetWidth;panel.classList.add('is-new')}
+  if(!kind||!panel){if(!kind){panel?.remove();ap.shown=-1}updateFire();return}
+  const q=sel=>panel.querySelector(sel),p=q('[data-narration]');
+  panel.dataset.kind=kind;
+  let mark=null,key=kind,pill='',bar='',text='',hint='',hintOk=false,foot=null,list=null,fireStep=false,praise=false;
+  if(kind==='auto'){
+   const steps=apSteps(),s=steps[ap.step];mark=s.mark;key+=ap.step;text=s.text;fireStep=s.mark==='fire';
+   pill=tr('Крок ','Step ')+(ap.step+1)+'/'+steps.length;
+   bar=steps.map((_,i)=>`<i class="${i<ap.step?'is-done':i===ap.step?'is-cur':''}"></i>`).join('');
+  }else if(kind==='coach'){
+   const steps=coachSteps(),i=Math.min(coach.step,steps.length-1),s=steps[i];mark=s.mark;key+=i+(coach.praising?'p':'');fireStep=s.id==='fire';praise=coach.praising;
+   pill=tr('Інструктор · крок ','Coach · step ')+(i+1)+'/'+steps.length;
+   bar=steps.map((_,j)=>`<i class="${j<i?'is-done':j===i?'is-cur':''}"></i>`).join('');
+   text=coach.praising?'✓ '+coach.praise:s.text;
+   hint=coach.praising?coach.note:coach.hint||coach.note;hintOk=!!coach.hint&&!coach.praising;
+   foot=s.confirm&&!coach.praising?tr('Зрозуміло','Got it'):null;
+  }else{
+   const c={...critiqueOf(critic.o,critic.st),n:critic.tut?tr('навч.','tut.'):critic.round+1};key+=c.n;
+   pill=tr('Критик · постріл ','Critic · shot ')+c.n;
+   bar=`<span class="ap-stars" role="img" aria-label="${tr('Техніка','Technique')} ${c.stars}/5">${'★'.repeat(c.stars)}${'☆'.repeat(5-c.stars)}</span>`;
+   text=c.summary;list=c.items;
   }
-  if(s.mark==='table')selectTab('table');
-  const el=s.mark==='x'||s.mark==='y'?root.querySelector('[data-axis="'+s.mark+'"]')?.closest('.sniper-axis'):
-   s.mark==='zoom'?root.querySelector('.sniper-zoom'):s.mark==='aim'?root.querySelector('.sniper-scope'):s.mark==='weather'?root.querySelector('.sniper-weather'):s.mark==='fire'?root.querySelector('[data-fire]'):s.mark==='table'?root.querySelector('tr.is-current'):null;
-  el?.classList.add('is-explained');
+  if(cardKey!==key){cardKey=key;if(kind!=='critic')cardOpen=false}
+  q('.ap-pill').textContent=pill;q('.ap-bar').innerHTML=bar;
+  p.innerHTML=narrationHtml(text);
+  const sb=q('[data-ap-speed]'),sl=tr('Швидкість коментарів','Commentary speed'),pb=q('[data-autoplay-pause]'),pl=(kind==='coach'?coach.paused:ap.paused)?tr('Далі','Resume'):tr('Пауза','Pause'),paused=kind==='coach'?coach.paused:ap.paused;
+  sb.hidden=pb.hidden=kind==='critic';
+  sb.textContent=speedLabel(state.apSpeed);sb.setAttribute('aria-label',sl);sb.title=sl+': '+speedLabel(state.apSpeed);
+  pb.textContent=paused?'▶':'⏸';pb.setAttribute('aria-label',pl);pb.title=pl;
+  const cl=q('[data-bot-close]');cl.hidden=kind!=='critic';cl.setAttribute('aria-label',tr('Закрити','Close'));cl.title=tr('Закрити','Close');
+  const ul=q('[data-ap-list]');ul.hidden=!list||!cardOpen;ul.innerHTML=list?list.map(it=>`<li class="is-${it.k}"><span aria-hidden="true">${it.k==='ok'?'✓':it.k==='warn'?'!':'i'}</span> ${narrationHtml(it.text)}</li>`).join(''):'';
+  const h=q('[data-ap-hint]');h.hidden=!hint;h.textContent=hint||'';h.classList.toggle('is-tip',hintOk);
+  const f=q('.ap-foot');f.hidden=!foot;if(foot)q('[data-coach-ok]').textContent=foot;
+  panel.classList.toggle('is-fire',fireStep);panel.classList.toggle('is-praise',praise);panel.classList.toggle('is-open',cardOpen);
+  const mb=q('[data-ap-more]');
+  if(!cardOpen)cardOver=!!list||p.scrollHeight>p.clientHeight+2;
+  mb.hidden=!cardOver;mb.setAttribute('aria-expanded',String(cardOpen));mb.textContent=cardOpen?'▴':'▾';mb.setAttribute('aria-label',cardOpen?tr('Згорнути','Collapse'):tr('Розгорнути','Expand'));
+  if(ap.shown!==key){ap.shown=key;panel.classList.remove('is-new');void panel.offsetWidth;panel.classList.add('is-new')}
+  if(mark==='table')selectTab('table');
+  markEl(mark)?.classList.add('is-explained');
   updateFire();
  }
  function schedule(fn,ms){
@@ -290,6 +322,7 @@ export function startSniper(){
   for(const r of root.querySelectorAll('[data-apspeed]'))r.checked=Number(r.dataset.apspeed)===v;
  }
  function togglePause(){
+  if(state.bot==='coach'){coach.paused=!coach.paused;paintAutoplay();return}
   if(ap.paused){ap.paused=false;if(ap.fn)schedule(ap.fn,ap.remaining)}
   else{ap.paused=true;clearTimeout(ap.timer);ap.remaining=Math.max(0,ap.remaining-(Date.now()-ap.startedAt))}
   paintAutoplay();
@@ -297,6 +330,7 @@ export function startSniper(){
  function stopAutoplay(){
   clearTimeout(ap.timer);
   Object.assign(ap,{on:false,paused:false,timer:0,fn:null});
+  if(state.bot==='auto'){state.bot='off';save()}
   paintAutoplay();
  }
  const takeover=()=>{if(ap.on)stopAutoplay();begin()};
@@ -452,12 +486,119 @@ export function startSniper(){
   runStep();
  }
  function startAutoplay(){
-  ap.on=true;ap.paused=false;ap.fn=null;
+  ap.on=true;ap.paused=false;ap.fn=null;state.bot='auto';cardOpen=false;save();
   if(state.tutorialDone===true){state.series.usedCode=true;save()}
   ap.step=state.roundDone?12:solved()?(aimed()?11:10):0;
   begin();
-  render();root.querySelector('[data-autoplay]').focus();
+  render();root.querySelector('[data-autoplay]')?.focus();
   runStep();
+ }
+
+ // ---- Instructor: states each target and waits until the player reaches it; it never moves a control ----
+ const coach={noteLeft:0,step:0,praising:false,praiseLeft:0,idle:0,hint:'',note:'',paused:false,sig:'',praise:''};
+ const dialNow=()=>{const [ex,ey]=solutionExact(state);return Math.abs(state.x-ex)<=1&&Math.abs(state.y-ey)<=1}; // within 0.1 mil of the exact solution
+ const aimNow=()=>Math.hypot(state.aim.x,state.aim.y)<=2; // within 0.2 mil of the center
+ const dirTxt=(axis,d)=>axis==='y'?(d>0?tr('вгору','up'):tr('вниз','down')):(d>0?tr('вправо','right'):tr('вліво','left'));
+ function coachSteps(){
+  if(state.roundDone){
+   const total=state.series?state.series.scores.reduce((a,b)=>a+b,0):0,last=state.lastShot;
+   return [{id:'done',mark:null,text:state.series&&state.round===seriesSize-1?tr('Серію завершено: ','Series complete: ')+total+'/'+maxScore+tr('. Розбір — у вкладці «Результати». «Нова серія» — коли будете готові.','. The review is in the Results tab. Press New series when ready.'):tr('Влучання: ','Hit: ')+(last?.ring??0)+tr(' очок.',' pts.')}];
+  }
+  const w=state.wind,T=tabOf(state.profile,state.distance),sp=flagMs(w),wt=weightsShown(T),wind=windEff(w,wt),{kx,kz}=clockDir(w.clock),cw=kz*wind,hw=-kx*wind,none=noWind(),still=none||isCalm(w),[ex,ey]=solutionExact(state),tx=Math.round(ex)+0,ty=Math.round(ey)+0,wz=workZoom();
+  const hintDial=(axis,t)=>()=>{const d=t-state[axis];return Math.abs(d)<1?'':d>0?tr('Ще +','Another +')+mil(d)+tr(' міл ',' mil ')+dirTxt(axis,d):tr('Забагато на ','Overshot by ')+mil(d)+tr(' міл — назад (',' mil — back (')+dirTxt(axis,d)+')'};
+  return [
+   {id:'zoom',mark:'zoom',text:tr('Постав кратність ','Set the magnification to ')+wz+tr('× — так мішень добре видно.','× so the target is clearly visible.'),check:()=>state.zoom===wz,praise:()=>tr('Так — ','Yes — ')+state.zoom+'×.',hint:()=>{const d=wz-state.zoom;return d>0?tr('Ще +','Another +')+d+'×':tr('Забагато на ','Overshot by ')+(-d)+tr('×: зменш','×: reduce')}},
+   {id:'flags',mark:'weather',confirm:true,text:still?(none?tr('У цьому світі повітря немає, прапорці нерухомі: вітру немає. Поправка на вітер нульова.','This world has no air, the flags are rigid: no wind. The windage correction is zero.'):tr('Прапорці обвисли — штиль. Вітру немає, поправка на вітер нульова.','The flags hang limp — calm. No wind, the windage correction is zero.')):tr('Прочитай прапорці: скільки рисок ▮ на кожному? Риски: ','Read the flags: how many marks ▮ on each? Marks: ')+marksText()+tr('. Порахуй середнє зважене з вагами з таблиці: ','. Take the weighted average with the table weights: ')+wt.map(v=>v.toFixed(2)).join(' / ')+'.',hint:()=>still?'':tr('Підказка: ','Hint: ')+flagPattern(w)+' = '+sp.join(', ')+tr(' м/с → вітер ',' m/s → wind ')+wind.toFixed(1)+tr(' м/с.',' m/s.')},
+   ...still?[]:[{id:'dir',mark:'weather',confirm:true,text:tr('З якої години дме вітер? Розклади його: бічна = вітер × sin(година × 30°), поздовжня = вітер × cos.','Which o\'clock does the wind come from? Split it: crosswind = wind × sin(hour × 30°), head/tail = wind × cos.'),hint:()=>tr('Підказка: з ','Hint: from ')+w.clock+tr(' год: бічна ',' o\'clock: crosswind ')+Math.abs(cw).toFixed(1)+tr(' м/с (',' m/s (')+(Math.abs(kz)<.01?tr('немає',' none'):kz<0?tr('зносить ліворуч','pushes left'):tr('зносить праворуч','pushes right'))+tr('), поздовжня ','), head/tail ')+Math.abs(hw).toFixed(1)+tr(' м/с.',' m/s.')}],
+   {id:'calc',mark:'table',confirm:true,text:tr('Знайди в таблиці свою дистанцію й калібр і порахуй: Y = підйом + поправка на поздовжній вітер; X = −(знос × бічна + деривація + Коріоліс). Можна калькулятором.','Find your distance and caliber in the table and compute Y = elevation + head/tail correction; X = −(drift × crosswind + spin + Coriolis). The calculator helps.'),hint:()=>tr('Підказка: підйом ','Hint: elevation ')+T.elev.toFixed(1)+tr(' міл, знос ',' mil, drift ')+T.drift1.toFixed(2)+tr(' на 1 м/с, деривація + Коріоліс ',' per 1 m/s, spin + Coriolis ')+T.sc.toFixed(2)+tr(' міл.',' mil.')},
+   {id:'dialY',mark:'y',text:tr('Виставити вертикаль Y = ','Dial elevation Y = ')+mil(ty)+tr(' міл.',' mil.'),check:()=>Math.abs(state.y-ey)<=1,praise:()=>tr('Y = ','Y = ')+mil(state.y)+tr(' міл — збігається з розрахунком.',' mil — matches the solution.'),hint:hintDial('y',ty)},
+   {id:'dialX',mark:'x',text:tr('Бокова X = ','Windage X = ')+signedMil(tx)+tr(' міл.',' mil.'),check:()=>Math.abs(state.x-ex)<=1,praise:()=>tr('X = ','X = ')+signedMil(state.x)+tr(' міл — збігається з розрахунком.',' mil — matches the solution.'),hint:hintDial('x',tx)},
+   {id:'aim',mark:'aim',text:tr('Наведи мішень у центр сітки — перетягни зображення в прицілі.','Put the target on the reticle center — drag the scope view.'),check:aimNow,praise:()=>tr('Мішень у центрі.','Target centered.'),hint:()=>{const {x,y}=state.aim,p=[];if(Math.abs(x)>1)p.push(tr('мішень ','target ')+(x>0?tr('правіше','right of center'):tr('лівіше','left of center'))+' '+mil(x)+tr(' міл',' mil'));if(Math.abs(y)>1)p.push((y>0?tr('вище','above'):tr('нижче','below'))+' '+mil(y)+tr(' міл',' mil'));return p.length?p.join(', ')+tr(' — потягни приціл у протилежний бік.',' — drag the scope the other way.'):''}},
+   {id:'fire',mark:'fire',text:tr('Затримай дихання (тримай «Постріл») і відпусти у зеленому вікні.','Hold your breath (hold Fire) and release in the green window.'),hint:()=>tr('Тримай 1–4 с — зелена смуга; довше гойдання знову росте.','Hold for 1–4 s — the green band; longer and the sway grows again.')},
+  ];
+ }
+ function coachReset(){ // a new round (or the mode was switched on): start where the player still has work to do
+  Object.assign(coach,{step:0,praising:false,praiseLeft:0,idle:0,hint:'',sig:''});
+  if(!state.roundDone&&dialNow()&&state.zoom===workZoom()&&!windNote){const i=coachSteps().findIndex(s=>s.id==='aim');if(i>=0)coach.step=i}
+ }
+ function coachStart(){coach.paused=false;coach.note='';coachReset()}
+ function coachAdvance(){
+  const n=coachSteps().length;
+  Object.assign(coach,{praising:false,idle:0,hint:'',sig:''});
+  if(coach.step<n-1)coach.step++;
+  paintAutoplay();coachCheck();
+ }
+ function coachCheck(){ // the player's state satisfies the step: praise, then advance
+  if(state.bot!=='coach'||coach.praising)return;
+  const s=coachSteps()[coach.step];if(!s)return;
+  if(s.id==='dialY'&&state.tutorialDone===true&&state.series&&!state.series.usedCode){state.series.usedCode=true;save()} // the bot named the dial: this round counts as assisted
+  if(s.check?.()){coach.praising=true;coach.praiseLeft=1300;coach.praise=s.praise();paintAutoplay()}
+ }
+ function coachTick(dt){
+  if(state.bot!=='coach')return;
+  if(!coach.paused){
+   const k=dt*state.apSpeed;if(coach.note){coach.noteLeft-=dt;if(coach.noteLeft<=0){coach.note='';paintAutoplay()}} // pause and speed pace the text only: the checks below always run
+   if(coach.praising){coach.praiseLeft-=k;if(coach.praiseLeft<=0){coachAdvance();return}}
+   else{
+    const sig=[state.zoom,state.x,state.y,state.aim.x,state.aim.y].join();
+    if(sig!==coach.sig){coach.sig=sig;if(!coach.hint)coach.idle=0}
+    coach.idle+=k;
+    if(coach.idle>=6000){const h=coachSteps()[coach.step]?.hint?.()||'';if(h!==coach.hint){coach.hint=h;paintAutoplay()}}
+   }
+  }
+  coachCheck();
+ }
+ function coachShot(o){
+  coach.noteLeft=9000;coach.note=(o.ring?tr('Попередній постріл: ','Last shot: ')+o.ring:tr('Промах','Miss'))+' · X '+signedMil(Math.round(o.dx))+' / Y '+signedMil(Math.round(o.dy))+tr(' міл.',' mil.');
+  Object.assign(coach,{praising:false,hint:'',idle:0,sig:'',step:0});
+  if(!state.roundDone){coach.step=Math.max(0,coachSteps().findIndex(s=>s.id==='aim'))} // tutorial miss: the recoil moved the aim; re-aim and correct
+ }
+ // ---- Critic: silent while aiming; after the shot, compares the player's technique with the exact solution ----
+ const critCats=()=>({d:[tr('розрахунок поправок','dial solution'),tr('Перед пострілом перерахуй: X = −(знос × бічна складова + деривація + Коріоліс), Y = підйом + поправка на поздовжній вітер; звір знак X.','Recompute before the shot: X = −(drift × crosswind + spin + Coriolis), Y = elevation + head/tail correction; check the sign of X.')],a:[tr('наведення','aiming'),tr('Тримай мішень у центрі сітки: підправ перед пострілом, а під час затримки — мікрокорекція (стрілки або палець на «Постріл»).','Keep the target on the reticle center: fix it before the shot, and use the micro-adjust during the hold (arrows or a finger on Fire).')],b:[tr('дихання','breathing'),tr('Тримай «Постріл» 1–4 с і відпускай у зеленому вікні: довше за 4 с гойдання знову росте.','Hold Fire for 1–4 s and release in the green window: past 4 s the sway grows again.')],g:[tr('вибір моменту (порив)','timing (gust)'),tr('Під час затримки стеж за прапорцями й відпускай у затишшя, не на піку пориву.','Watch the flags during the hold and release in a lull, not on a gust peak.')],z:[tr('кратність','magnification'),tr('Підніми кратність до рекомендованої: мішень більша — наведення точніше.','Raise the magnification to the recommended one: a bigger target is easier to aim.')]});
+ function critiqueOf(o,st){ // o: {h,k,disp,ring,dx,dy,aim}, st: the dials and conditions of the shot (a snapshot, so the text can be rebuilt in another language); every angle in mil
+  const [ex,ey]=solutionExact(st),dX=st.x-ex,dY=st.y-ey,T=tabOf(st.profile,st.distance),w=st.wind,dry=noWind()||isCalm(w),d=o.disp,items=[],pen={d:0,a:0,b:0,g:0,z:0};
+  const em=Math.hypot(dX,dY)/10;
+  pen.d=em<=.1?0:em<=.2?.4:em<=.4?1:em<=.8?1.8:2.6;
+  const bad=[];
+  if(Math.abs(dX)>1){
+   const sx=Math.sign(Math.round(ex)),less=Math.abs(st.x)<Math.abs(ex),why=sx&&Math.sign(st.x)&&Math.sign(st.x)!==sx?tr('знак X протилежний: переплутано, з якого боку вітер','the sign of X is wrong: the wind side was mixed up'):less?(dry?tr('не враховано деривацію та Коріоліс','spin drift and Coriolis were left out'):tr('недооцінено боковий вітер (або деривацію/Коріоліс)','the crosswind (or spin/Coriolis) was underestimated')):tr('переоцінено боковий вітер','the crosswind was overestimated');
+   const flip=sx&&Math.sign(st.x)&&Math.sign(st.x)!==sx;
+   bad.push(flip?tr('X '+signedMil(st.x)+' проти розрахунку '+signedMil(Math.round(ex))+' — '+why+'.','X '+signedMil(st.x)+' vs solution '+signedMil(Math.round(ex))+' — '+why+'.'):tr('X на '+(Math.abs(dX)/10).toFixed(1)+' міл '+(less?'менше':'більше')+' за розрахунок ('+signedMil(st.x)+' проти '+signedMil(Math.round(ex))+') — '+why+'.','X is '+(Math.abs(dX)/10).toFixed(1)+' mil '+(less?'below':'above')+' the solution ('+signedMil(st.x)+' vs '+signedMil(Math.round(ex))+') — '+why+'.'));
+  }
+  if(Math.abs(dY)>1){
+   const htm=ey/10-T.elev,miss=Math.abs(htm)>=.15&&Math.abs(dY/10+htm)<=.15;
+   bad.push(tr('Y на '+(Math.abs(dY)/10).toFixed(1)+' міл '+(dY<0?'менше':'більше')+' за розрахунок ('+mil(st.y)+' проти '+mil(Math.round(ey))+') — '+(dY<0?'замало підйому, куля пішла нижче':'забагато підйому, куля пішла вище')+(miss?'; схоже, не враховано поздовжній вітер ('+sgn(htm,2)+' міл)':'')+'.','Y is '+(Math.abs(dY)/10).toFixed(1)+' mil '+(dY<0?'below':'above')+' the solution ('+mil(st.y)+' vs '+mil(Math.round(ey))+') — '+(dY<0?'too little elevation, the bullet went low':'too much elevation, the bullet went high')+(miss?'; the head/tail wind seems left out ('+sgn(htm,2)+' mil)':'')+'.'));
+  }
+  items.push(bad.length?{k:'warn',cat:'d',text:tr('Поправки: ','Dials: ')+bad.join(' ')}:{k:'ok',cat:'d',text:tr('Поправки: X і Y в межах ±0,1 міл від розрахунку (ΔX '+sgn(dX/10,1)+', ΔY '+sgn(dY/10,1)+').','Dials: X and Y are within ±0.1 mil of the solution (ΔX '+sgn(dX/10,1)+', ΔY '+sgn(dY/10,1)+').')});
+  const ao=Math.hypot(o.aim.x,o.aim.y)/10;
+  pen.a=ao<=.1?0:ao<=.2?.3:ao<=.4?.8:1.4;
+  items.push(ao<=.15?{k:'ok',cat:'a',text:tr('Наведення: мішень у центрі сітки (відхилення '+ao.toFixed(1)+' міл).','Aiming: the target on the center (offset '+ao.toFixed(1)+' mil).')}:{k:'warn',cat:'a',text:tr('Наведення: у момент пострілу мішень була не в центрі (','Aiming: at the trigger the target was off center (')+[o.aim.x?(o.aim.x>0?tr('правіше','right'):tr('лівіше','left')):'',o.aim.y?(o.aim.y>0?tr('вище','above'):tr('нижче','below')):''].filter(Boolean).join(', ')+tr(') на ',') by ')+ao.toFixed(1)+tr(' міл.',' mil.')});
+  const h=o.h,ph=breathPhase(h),hm=Math.hypot(d.hold.x,d.hold.y),k=o.k;
+  pen.b=h<=0?.8:ph==='settle'?.6:ph==='steady'?0:ph==='strain'?.6:1.2;
+  items.push({k:pen.b?'warn':'ok',cat:'b',text:tr('Дихання: ','Breathing: ')+(h<=0?tr('миттєвий постріл без затримки — гойдання прицілу повне (×1,0), помилка руки ','instant shot with no breath hold — the full sway (×1.0), hold error ')+hm.toFixed(2)+tr(' міл.',' mil.'):ph==='settle'?tr('відпустив на '+h.toFixed(1)+' с, ще в дихальній паузі (гойдання ×'+k.toFixed(2)+') — дочекайся зеленого вікна.','released at '+h.toFixed(1)+' s, still settling (sway ×'+k.toFixed(2)+') — wait for the green window.'):ph==='steady'?tr('затримка '+h.toFixed(1)+' с — у зеленому вікні (гойдання ×'+k.toFixed(2)+'), помилка руки '+hm.toFixed(2)+' міл.','held '+h.toFixed(1)+' s — in the green window (sway ×'+k.toFixed(2)+'), hold error '+hm.toFixed(2)+' mil.'):ph==='strain'?tr('затримка '+h.toFixed(1)+' с — перетримав: після 4 с кисневий борг, гойдання ×'+k.toFixed(1)+'.','held '+h.toFixed(1)+' s — too long: oxygen debt after 4 s, sway ×'+k.toFixed(1)+'.'):tr('затримка '+h.toFixed(1)+' с — глибокий кисневий борг: гойдання ×'+k.toFixed(1)+' і тремор.','held '+h.toFixed(1)+' s — deep oxygen debt: sway ×'+k.toFixed(1)+' and tremor.'))});
+  if(noWind()||w.regime==='calm')items.push({k:'ok',cat:'g',text:tr('Порив: ','Gust: ')+(noWind()?tr('вітру немає.','there is no wind.'):tr('штиль — порив не впливав.','calm — no gust to read.'))});
+  else{
+   const gr=d.gustRead,peak=Math.abs(gr)>=1.1*sigma.gust&&Math.abs(gr)>=.25,late=d.gx-d.gxR;
+   pen.g=peak?.6:0;
+   items.push({k:peak?'warn':'ok',cat:'g',text:tr('Порив: ','Gust: ')+(peak?tr('у момент пострілу прапорці показували порив '+sgn(gr,1)+' м/с від середнього (σ '+sigma.gust.toFixed(1)+') — це пік; краще було відпустити в затишшя.','at the trigger the flags showed a gust of '+sgn(gr,1)+' m/s from the mean (σ '+sigma.gust.toFixed(1)+') — a peak; better to release in a lull.'):tr('на пострілі '+sgn(gr,1)+' м/с — у межах норми.','at the trigger '+sgn(gr,1)+' m/s — within the normal range.'))+(Math.abs(late)>=.15?tr(' За час польоту порив змінився й змістив влучання на '+sgn(late,2)+' міл — це з прапорців не прочитати.',' During the flight the gust changed and moved the hit by '+sgn(late,2)+' mil — impossible to read from the flags.'):'')});
+  }
+  const rec=[8,12,16,20,25][st.distance]||16,low=st.zoom<rec-3;
+  pen.z=low?.3:0;
+  items.push({k:low?'warn':'ok',cat:'z',text:tr('Кратність: ','Magnification: ')+st.zoom+'×'+(low?tr(' — замала для цієї дистанції (рекомендовано ≈'+rec+'×): мішень дрібна, наведення неточне.',' — too low for this distance (about '+rec+'× recommended): the target is small, aiming is coarse.'):tr(' — добре.',' — fine.'))});
+  items.push({k:'info',cat:'r',text:tr('Випадкова частина (не твоя вина): швидкість кулі '+sgn(d.dv0,1)+' м/с → '+sgn(d.vy,2)+' міл по вертикалі; розкид гвинтівки '+sgn(d.rand.x,2)+' / '+sgn(d.rand.y,2)+' міл.','The random part (not your fault): muzzle velocity '+sgn(d.dv0,1)+' m/s → '+sgn(d.vy,2)+' mil vertically; rifle spread '+sgn(d.rand.x,2)+' / '+sgn(d.rand.y,2)+' mil.')});
+  const total=pen.d+pen.a+pen.b+pen.g+pen.z,stars=Math.max(1,Math.min(5,Math.round(5-total))),top=Object.keys(pen).reduce((a,c)=>pen[c]>pen[a]?c:a,'d'),cats=critCats();
+  const main=pen[top]>0?items.find(i=>i.cat===top):null,tip=pen[top]>0?cats[top][1]:tr('Так тримати: розрахунок, наведення й дихання без зауважень.','Keep it up: dials, aiming and breathing without remarks.');
+  const summary=tr('Кільце ','Ring ')+o.ring+(o.ring?'':tr(' (промах)',' (miss)'))+' · '+tr('відхилення ','offset ')+(Math.hypot(o.dx,o.dy)/10).toFixed(2)+tr(' міл. ',' mil. ')+(main?tr('Головне: ','Main: ')+main.text+' ':'')+tr('Порада: ','Tip: ')+tip;
+  return {stars,items,summary,ring:o.ring,c:{s:stars,d:+pen.d.toFixed(1),a:+pen.a.toFixed(1),b:+pen.b.toFixed(1),g:+pen.g.toFixed(1),z:+pen.z.toFixed(1)}};
+ }
+ function setBot(m){
+  if(!botModes.includes(m)||m===state.bot)return;
+  if(state.bot==='auto'){clearTimeout(ap.timer);Object.assign(ap,{on:false,paused:false,timer:0,fn:null,shown:-1})}
+  if(m==='auto'){startAutoplay();return}
+  state.bot=m;cardOpen=false;cardKey='';
+  if(m==='coach')coachStart();
+  save();
+  if(dragging||flying)pendingRender=true;else render();
  }
 
  function resetShot(next=false){ // next: another shot of the same series: the gust process keeps evolving and recoil moves the aim off the target
@@ -490,7 +631,7 @@ export function startSniper(){
  const tickId=setInterval(()=>{
   if(!root.isConnected){clearInterval(tickId);clearTimeout(breath.timer);document.removeEventListener('visibilitychange',glStart);document.removeEventListener('visibilitychange',onLeave);document.removeEventListener('keydown',onKeyDown);document.removeEventListener('keyup',onKeyUp);window.removeEventListener('blur',onLeave);glDrop();return}
   if(breath.on&&holdSec()>=breathMax)cancelHold(true);
-  clock();paintTimer();
+  clock();paintTimer();coachTick(250);
   if(!glLoop){gustStep(performance.now());if(glOn()){try{gl.setWind(flagGusts());gl.draw(view())}catch(error){glFail(error)}}} // fallback when the animation loop is not running (reduced motion)
   const sec=state.series?Math.floor(state.series.time/1000):-1;
   if(mark&&sec!==savedSec){savedSec=sec;save()}
@@ -600,6 +741,7 @@ export function startSniper(){
   const noGust=B.trajectory(ci,D,{...ang,dv0,wind:mean,dx:D}),noV=B.trajectory(ci,D,{...ang,dv0:0,wind:mean,dx:D});
   disp.gx=path.impact.x-noGust.impact.x;disp.gy=path.impact.y-noGust.impact.y;disp.vy=noGust.impact.y-noV.impact.y;disp.gust=Math.abs(kz)>.25&&Math.abs(T.drift1)>1e-9?disp.gx/(kz*T.drift1):gustRead; // gust: effective along-wind m/s equivalent (from the crosswind part; a head/tail wind shows the gust speed itself)
   const dx=10*path.impact.x,dy=10*path.impact.y,err=Math.hypot(dx,dy),ring=ringOf(err,state.distance),tof=path.tof;
+  const critIn={h,k,disp,ring,dx,dy,aim:{...state.aim}},critSt={x:state.x,y:state.y,zoom:state.zoom,profile:state.profile,distance:state.distance,wind:state.wind},crit=critiqueOf(critIn,critSt); // the Critic's review of this shot (the dials and aim of the trigger pull)
   const useFpv=state.fpv==='always'||(state.fpv==='auto'&&(ring===10||ring===0)); // Auto: slow-motion flight only for a 10 or a complete miss, otherwise real time
   { // sound: muzzle blast now; the steel ting arrives after the flight plus the sound's travel time (FPV replay: at the impact of the replay, quieter)
    const air=airOf(),fpv=useFpv;
@@ -634,7 +776,7 @@ export function startSniper(){
    if(useFpv)series.time+=1000*tof; // real time of flight replaces the animation time (in real-time mode it already elapsed)
    series.scores=[...series.scores,ring];
    series.unassisted=[...series.unassisted,!series.usedCode];
-   series.shots=[...series.shots,{ring,hit:ring>0,dx,dy,ms:Math.max(0,series.time-before),disp,p:{di:state.distance,ci:state.profile,wi:state.weather,wind:{regime:w.regime,clock:w.clock,flags:[...w.flags]},x:state.x,y:state.y}}];
+   series.shots=[...series.shots,{ring,hit:ring>0,dx,dy,ms:Math.max(0,series.time-before),disp,c:crit.c,p:{di:state.distance,ci:state.profile,wi:state.weather,wind:{regime:w.regime,clock:w.clock,flags:[...w.flags]},x:state.x,y:state.y}}];
    state.roundDone=true;state.lastShot={ring,score:ring};state.misses=0;notice='';miss=null;
    if(state.round===seriesSize-1){
     const total=series.scores.reduce((a,b)=>a+b,0),hits=series.shots.filter(v=>v.hit).length,hpm=series.time>0?hits/(series.time/60000):0;
@@ -644,6 +786,8 @@ export function startSniper(){
     tabPick='results';
    }
   }
+  if(state.bot==='critic'){critic={o:critIn,st:critSt,tut:tutorial,round:state.round,closed:false};cardOpen=false}
+  if(state.bot==='coach')coachShot({ring,dx,dy});
   clock();
   save();render();scopeTop();
   if(state.roundDone&&!ap.on){
@@ -714,6 +858,7 @@ export function startSniper(){
  function nextRound(){
   if(tabPick==='results')tabPick=null;
   if(state.tutorialDone!==true||state.round===seriesSize-1){
+   if(state.tutorialDone===true)critic=null; // a new series: drop the old review
    state.tutorialDone=true;
    startSeries();
   }else{
@@ -724,6 +869,7 @@ export function startSniper(){
    state.weather=state.series.rounds[state.round]; // same conditions; the turrets and zoom stay as the player left them
    windNote='';driftWind();if(windNote)notice=windNote;
   }
+  if(state.bot==='coach')coachReset();
   clock();
   save();render();scopeTop();
  }
@@ -746,6 +892,14 @@ export function startSniper(){
 }
  const cmOf=(milValue,D)=>Math.round(milValue*D/10)+' '+tr('см','cm'); // mil at the target, metric
  const dispTip=d=>tr('Порив ','Gust ')+sgn(d.gust,1)+tr(' м/с · швидкість ',' m/s · velocity ')+sgn(d.dv0,1)+tr(' м/с · розкид ',' m/s · spread ')+sgn(d.rand.x,2)+'/'+sgn(d.rand.y,2)+tr(' · рука ',' · hold ')+sgn(d.hold.x,2)+'/'+sgn(d.hold.y,2)+tr(' міл',' mil');
+ function criticSummary(shots){ // Critic mode: the series-wide review shown on the Results tab
+  const rated=shots.filter(v=>v.c);
+  if(state.bot!=='critic'||!rated.length)return '';
+  const cats=critCats(),keys=Object.keys(cats),count=k=>rated.filter(v=>v.c[k]>=.5).length,sum=k=>rated.reduce((a,v)=>a+(v.c[k]||0),0),
+   top=keys.reduce((a,k)=>count(k)>count(a)||(count(k)===count(a)&&sum(k)>sum(a))?k:a,keys[0]),avg=rated.reduce((a,v)=>a+v.c.s,0)/rated.length;
+  const body=count(top)?`<b>${tr('Найчастіша помилка: ','Most frequent mistake: ')}${cats[top][0]}</b> (${count(top)} ${tr('з','of')} ${rated.length}). ${cats[top][1]}`:tr('Найчастіша помилка: не знайдено — техніка стабільна.','Most frequent mistake: none found — a steady technique.');
+  return `<section class="sniper-critic-sum" aria-label="${tr('Підсумок критика','Critic summary')}"><div class="sa-head"><h3>${tr('Критик','Critic')}</h3><span class="ap-stars" role="img" aria-label="${avg.toFixed(1)}/5">${'★'.repeat(Math.round(avg))}${'☆'.repeat(5-Math.round(avg))}</span></div><p>${tr('Середня оцінка техніки: ','Average technique grade: ')}${avg.toFixed(1)}/5. ${body}</p></section>`;
+ }
  function resultsHtml(){
   const series=state.series,shots=series.shots,n=shots.length,hits=shots.filter(v=>v.hit).length,total=series.scores.reduce((a,b)=>a+b,0),
    time=series.time,hpm=time>0?hits/(time/60000):0,rec=series.newRecord||{},R=40,E=54,fp=.25;
@@ -772,18 +926,20 @@ export function startSniper(){
     <svg class="sniper-group" viewBox="-60 -60 120 120" width="120" height="120" role="img" aria-label="${tr('Розкид пострілів відносно допуску','Shot group relative to tolerance')}"><g class="rings">${rings}<path d="M-56 0H56M0-56V56"/></g>${marks}</svg>
     <table aria-label="${tr('Постріли серії','Series shots')}"><caption>${distLabel(distances[modeDistances[state.mode][0]])} · ${calibers[state.profile].name}</caption><thead><tr><th scope="col">#</th><th scope="col">${tr('Кільце','Ring')}</th><th scope="col">${tr('Час','Time')}</th><th scope="col">${tr('Відхилення','Deviation')}</th></tr></thead><tbody>${rows}</tbody></table>
    </div>
+   ${criticSummary(shots)}
    ${analysisHtml(shots,model)}
    <p class="sniper-hint-note">${tr('Рекорд','Best')}: ${state.bestScore??0}/${maxScore} · ${(state.bestHpm??0).toFixed(1)} ${tr('влуч./хв','hits/min')}</p>`;
  }
  function render(){
   if(breath.on)cancelHold(false); // the button is about to be rebuilt
+  cancelAnimationFrame(glideId);glideId=0;thumbRO?.disconnect();thumbRO=null;
   const conditions=weather[state.weather],wnd=state.wind;
   const tutorial=state.tutorialDone!==true;
   const finalRound=!tutorial&&state.round===seriesSize-1;
   const caliber=calibers[state.profile];
   const tableRows=distances.map((d,i)=>{const T=tabOf(state.profile,i);return '<tr'+(i===state.distance?' class="is-current"':'')+'><td>'+distLabel(d)+'</td><td>'+T.elev.toFixed(1)+'</td><td>'+T.drift1.toFixed(2)+'</td><td>'+T.ht.toFixed(3)+'</td><td>'+T.sc.toFixed(2)+'</td></tr>'}).join('');
   const curT=tabOf(state.profile,state.distance),curW=weightsShown(curT).map(v=>v.toFixed(2)).join(' / ');
-  const cur=curTab(),dragHint=tr('Перетягніть зображення, щоб навести мішень на сітку; колесо миші — кратність.','Drag the view to aim at the target; mouse wheel zooms.');
+  const cur=curTab(),dragHint=tr('Перетягніть зображення, щоб навести мішень на сітку; колесо миші або щипок двома пальцями — кратність.','Drag the view to aim at the target; the mouse wheel or a two-finger pinch zooms.');
   const roundTitle=tutorial?tr('Навчальний раунд — спробуйте без балів','Tutorial round — practice, no score'):tr('Раунд ','Round ')+(state.round+1)+'/'+seriesSize;
   const pips=tutorial?'':Array.from({length:seriesSize},(_,i)=>{const v=state.series.scores[i];return`<li class="${v===undefined?(i===state.round?'is-now':''):v>0?'is-hit':'is-miss'}">${v??'·'}</li>`}).join('');
   const results=hasResults();
@@ -797,13 +953,18 @@ export function startSniper(){
    `<div class="sniper-pick" role="group" aria-label="${tr('Дистанція','Distance')}"><span class="sniper-pick-label">${tr('Дистанція','Distance')}</span>${canPick?`<span class="sniper-pills">${pills('mode',modeLabels(),shownMode)}</span>`:`<span class="sniper-pick-plan" title="${lockTip}">${plan}</span>`}</div>
    <div class="sniper-pick" role="group" aria-label="${tr('Калібр','Caliber')}"><span class="sniper-pick-label">${tr('Калібр','Caliber')}</span>${canPick?`<span class="sniper-pills">${pills('profile',caliberShort,shownProfile,profiles)}</span>`:`<span class="sniper-pick-plan" title="${tr('Калібр можна змінити до першого пострілу або після серії','Caliber can be changed before the first shot or after the series')}">${caliber.name}</span>`}</div>
    <div class="sniper-pick" role="group" aria-label="${tr('Світ','World')}"><span class="sniper-pick-label">${tr('Світ','World')}</span>${canPick?`<span class="sniper-pills sniper-worlds">${WORLD_IDS.map(id=>`<button type="button" class="sniper-world-btn" data-world="${id}" aria-pressed="${shownWorld===id}" title="${worldTip(id)}" aria-label="${worldTip(id)}"><i class="wi wi-${id}" aria-hidden="true"></i></button>`).join('')}</span>`:`<span class="sniper-pick-plan sniper-world-now" title="${tr('Світ можна змінити до першого пострілу або після серії','The world can be changed before the first shot or after the series')}"><i class="wi wi-${worldId}" aria-hidden="true"></i> ${worldTip(worldId)}</span>`}</div>`;
-  const axisLabel=(axis,text)=>`<label class="sniper-axis"><span>${axis==='x'?tr('Горизонталь, вітер (X)','Windage (X)'):tr('Вертикаль (Y)','Elevation (Y)')}</span><input type="range" min="${axis==='x'?-xMaxOf():0}" max="${axis==='x'?xMaxOf():yMaxOf()}" step="1" value="${state[axis]}" data-axis="${axis}" aria-label="${text}"><input type="text" inputmode="decimal" autocomplete="off" spellcheck="false" data-number="${axis}" aria-label="${text}"></label>`;
+  const axisLabel=(axis,text)=>{
+   const full=axis==='x'?tr('Горизонталь, вітер (X)','Windage (X)'):tr('Вертикаль (Y)','Elevation (Y)'),short=axis==='x'?tr('Вітер X','Wind X'):tr('Вертикаль Y','Elev. Y'),d=axis==='x'?tr('X','X'):tr('Y','Y');
+   return `<div class="sniper-axis" role="group" aria-label="${text}"><span class="ax-l" title="${full}"><i class="l-full">${full}</i><i class="l-short">${short}</i></span><button type="button" class="sniper-nudge ax-m" data-nudge="${axis}" data-delta="-1" aria-label="${d} −0,1 ${tr('міл','mil')}" title="${d} −0,1 ${tr('міл','mil')}">−</button><input type="range" class="ax-s" min="${axis==='x'?-xMaxOf():0}" max="${axis==='x'?xMaxOf():yMaxOf()}" step="1" value="${state[axis]}" data-axis="${axis}" aria-label="${text}"><button type="button" class="sniper-nudge ax-p" data-nudge="${axis}" data-delta="1" aria-label="${d} +0,1 ${tr('міл','mil')}" title="${d} +0,1 ${tr('міл','mil')}">+</button><input type="text" class="ax-n" inputmode="decimal" autocomplete="off" spellcheck="false" data-number="${axis}" aria-label="${text}"></div>`;
+  };
   const tabDefs=[...results?[['results',tr('Результати','Results')]]:[],['table',tr('Таблиця','Table')],['method',tr('Як рахувати','How to solve')],['settings',tr('Налаштування','Settings')]];
   const panelAttrs=id=>`role="tabpanel" id="sniper-panel-${id}" aria-labelledby="sniper-tab-${id}" tabindex="0"${id===cur?'':' hidden'}`;
   analysisModal=null;
   root.innerHTML=`
    <header class="sniper-header"><div class="sniper-brand"><h1>${tr('Снайпер','Sniper')}</h1><small>POP SEASON</small></div>
-    <nav>${languageButton()}<button type="button" data-sound aria-pressed="${!soundMuted()}" aria-label="${tr('Звук','Sound')}" title="${tr('Звук пострілів','Shot sound')}">${soundMuted()?'🔇':'🔊'}</button><button data-autoplay aria-pressed="${ap.on}">${apLabel()}</button><button data-exit>${tr('Нова гра','New game')}</button></nav>
+    <nav>${languageButton()}<button type="button" data-sound aria-pressed="${!soundMuted()}" aria-label="${tr('Звук','Sound')}" title="${tr('Звук пострілів','Shot sound')}">${soundMuted()?'🔇':'🔊'}</button>
+     <div class="sniper-bot" role="group" aria-label="${tr('Бот','Bot')}"><span class="sniper-bot-label">${tr('Бот','Bot')}</span><span class="sniper-seg">${botModes.map(m=>`<button type="button" data-bot="${m}"${m==='auto'?' data-autoplay':''} aria-pressed="${m===state.bot}">${botName(m)}</button>`).join('')}</span><select data-bot-select aria-label="${tr('Бот','Bot')}">${botModes.map(m=>`<option value="${m}"${m===state.bot?' selected':''}>${tr('Бот: ','Bot: ')+botName(m)}</option>`).join('')}</select></div>
+     <button type="button" data-takeover${ap.on?'':' hidden'}>${tr('✋ Грати самому','✋ Take over')}</button><button data-exit>${tr('Нова гра','New game')}</button></nav>
    </header>
    <div class="sniper-layout">
     <section class="sniper-scene" aria-label="${tr('Вид в оптику','Scope view')}">
@@ -813,20 +974,10 @@ export function startSniper(){
       <div class="sniper-hud sniper-hud-turret" aria-hidden="true"></div>
       <div class="sniper-hud sniper-hud-plane" aria-hidden="true" hidden></div>
       <div class="sniper-hud sniper-breath" aria-hidden="true" hidden><span data-breath-label></span><i class="sniper-breath-bar"><b data-breath-fill></b></i></div>
-      ${ap.on?apPanel():''}
      </div>
      <div class="sniper-reticle" role="group" aria-label="${tr('Сітка','Reticle')}">${optics.map((label,i)=>`<button type="button" class="sniper-thumb" data-optic="${i}" aria-pressed="${i===state.optic}" aria-label="${tr(...label)}" title="${tr(...label)}"><canvas aria-hidden="true"></canvas></button>`).join('')}</div>
      <span id="sniper-drag-desc" class="sniper-sr">${dragHint}</span>
-     <div class="sniper-pad" role="group" aria-label="${tr('Налаштування оптики','Scope adjustment')}">
-      <button type="button" data-step="x" data-delta="-10" aria-label="${tr('X −1 міл','X −1 mil')}">«</button>
-      <button type="button" data-step="x" data-delta="-1" aria-label="${tr('X −0,1 міл','X −0.1 mil')}">‹</button>
-      <button type="button" data-step="x" data-delta="1" aria-label="${tr('X +0,1 міл','X +0.1 mil')}">›</button>
-      <button type="button" data-step="x" data-delta="10" aria-label="${tr('X +1 міл','X +1 mil')}">»</button>
-      <button type="button" data-step="y" data-delta="10" aria-label="${tr('Y +1 міл (підйом вгору)','Y +1 mil (elevation up)')}">⇈</button>
-      <button type="button" data-step="y" data-delta="1" aria-label="${tr('Y +0,1 міл (підйом вгору)','Y +0.1 mil (elevation up)')}">↑</button>
-      <button type="button" data-step="y" data-delta="-1" aria-label="${tr('Y −0,1 міл (підйом вниз)','Y −0.1 mil (elevation down)')}">↓</button>
-      <button type="button" data-step="y" data-delta="-10" aria-label="${tr('Y −1 міл (підйом вниз)','Y −1 mil (elevation down)')}">⇊</button>
-     </div>
+     ${cardKind()?botPanel():''}
     </section>
     <aside class="sniper-console">
      <section class="sniper-status">
@@ -900,7 +1051,7 @@ export function startSniper(){
   const turretHud=root.querySelector('.sniper-hud-turret');
   const sliders=[...root.querySelectorAll('[data-axis]')];
   const numbers=[...root.querySelectorAll('[data-number]')];
-  const steps=[...root.querySelectorAll('[data-step]')];
+  const nudges=[...root.querySelectorAll('[data-nudge]')];
   const opticButtons=[...root.querySelectorAll('[data-optic]')];
   opticButtons.forEach((b,i)=>paintThumb(b.querySelector('canvas'),i));
   const result=root.querySelector('.sniper-result');
@@ -946,10 +1097,11 @@ export function startSniper(){
     if(document.activeElement!==number)number.value=(state[number.dataset.number]/10).toFixed(1);
     number.disabled=complete||busy;
    }
-   for(const step of steps){
-    const value=state[step.dataset.step];
-    step.disabled=complete||busy||clampAxis(step.dataset.step,value+Number(step.dataset.delta))===value;
+   for(const n of nudges){
+    const value=state[n.dataset.nudge];
+    n.disabled=complete||busy||clampAxis(n.dataset.nudge,value+Number(n.dataset.delta))===value;
    }
+   coachCheck();
    for(const b of root.querySelectorAll('[data-mode],[data-profile]'))b.disabled=busy||flying;
    for(const r of root.querySelectorAll('[data-world]'))r.disabled=busy||flying;
    for(const r of root.querySelectorAll('[data-plane]'))r.disabled=busy;
@@ -1003,7 +1155,6 @@ export function startSniper(){
    state.zoom=v;save();paint();
   }
   root.querySelector('[data-zoom]').oninput=event=>setZoom(Number(event.target.value));
-  for(const b of root.querySelectorAll('[data-zoom-step]'))b.onclick=()=>setZoom(state.zoom+Number(b.dataset.zoomStep));
   let wheelAt=0;
   canvas.addEventListener('wheel',event=>{
    event.preventDefault();
@@ -1038,26 +1189,78 @@ export function startSniper(){
    number.onchange=commit;
    number.onkeydown=event=>{if(event.key==='Enter')commit()};
   }
-  for(const step of steps)step.onclick=()=>{
-   takeover();
-   const delta=Number(step.dataset.delta);
-   if(step.dataset.step==='x')setAlignment(state.x+delta,state.y);
-   else setAlignment(state.x,state.y+delta);
+  // Touch −/+ buttons: a tap steps 0.1 mil, a long press repeats and accelerates. Keyboard activation arrives as a click with detail 0.
+  const holdRepeat=(btn,act,first=380,slow=150,fast=32)=>{
+   let t=0,iv=slow,on=false;
+   const stop=()=>{on=false;clearTimeout(t)},loop=()=>{if(!on||btn.disabled){stop();return}act();iv=Math.max(fast,iv*.88);t=setTimeout(loop,iv)};
+   btn.onpointerdown=event=>{
+    if(event.pointerType==='mouse'&&event.button!==0)return;
+    event.preventDefault();if(btn.disabled)return;
+    on=true;iv=slow;act();t=setTimeout(loop,first);
+    try{btn.setPointerCapture(event.pointerId)}catch{}
+   };
+   btn.onpointerup=btn.onpointercancel=btn.onlostpointercapture=stop;
+   btn.onclick=event=>{if(!event.detail)act()};
+   btn.oncontextmenu=event=>event.preventDefault();
   };
+  for(const n of nudges)holdRepeat(n,()=>{
+   takeover();
+   const delta=Number(n.dataset.delta);
+   if(n.dataset.nudge==='x')setAlignment(state.x+delta,state.y);
+   else setAlignment(state.x,state.y+delta);
+  });
+  for(const b of root.querySelectorAll('[data-zoom-step]'))holdRepeat(b,()=>setZoom(state.zoom+Number(b.dataset.zoomStep)),420,240,70);
   const aimStep=()=>uOf(state.zoom)*canvas.clientWidth/viewSize/10; // px per tenth of a mil
-  let drag=null;
+  // Aim by pointer: one finger or the mouse drags (touch ends with a light inertia), two fingers pinch the zoom; while Fire is held a finger on the scope applies the breath-hold micro-adjust.
+  let drag=null,pinch=null,micro=null,vel={x:0,y:0,t:0,px:0,py:0};
+  const ptrs=new Map();
+  const glide=(vx,vy)=>{ // px/ms in the page → tenths of a mil per ms
+   const k=1/aimStep(),cap=.5;let ux=Math.max(-cap,Math.min(cap,vx*k)),uy=Math.max(-cap,Math.min(cap,-vy*k)),last=performance.now(),fx=state.aim.x,fy=state.aim.y;
+   if(Math.hypot(ux,uy)<.02||reduced())return;
+   const f=t=>{
+    glideId=0;const dt=Math.min(32,t-last);last=t;
+    fx+=ux*dt;fy+=uy*dt;const d=Math.pow(.93,dt/16);ux*=d;uy*=d;
+    setAim(fx,fy);
+    if(Math.hypot(ux,uy)>.004&&!state.roundDone&&!rt&&!drag)glideId=requestAnimationFrame(f);
+   };
+   glideId=requestAnimationFrame(f);
+  };
   canvas.onpointerdown=event=>{
    takeover();
+   cancelAnimationFrame(glideId);glideId=0;
    if(event.button!==0||state.roundDone||rt)return;
-   drag={id:event.pointerId,left:event.clientX,top:event.clientY,x:state.aim.x,y:state.aim.y};
-   dragging=true;canvas.setPointerCapture(event.pointerId);
+   dragging=true;try{canvas.setPointerCapture(event.pointerId)}catch{}
+   if(breath.on&&event.pointerType!=='mouse'){micro={id:event.pointerId,sx:event.clientX,sy:event.clientY,px:breath.pm.x,py:breath.pm.y};return}
+   ptrs.set(event.pointerId,{x:event.clientX,y:event.clientY});
+   if(ptrs.size===1){drag={id:event.pointerId,left:event.clientX,top:event.clientY,x:state.aim.x,y:state.aim.y};vel={x:0,y:0,t:performance.now(),px:event.clientX,py:event.clientY}}
+   else if(ptrs.size===2){drag=null;const [a,b]=[...ptrs.values()];pinch={d0:Math.hypot(a.x-b.x,a.y-b.y)||1,z0:state.zoom}}
   };
   canvas.onpointermove=event=>{
+   if(micro?.id===event.pointerId){
+    const step=aimStep();
+    breath.pm.x=clampMicro(micro.px+(event.clientX-micro.sx)*microScale/step);breath.pm.y=clampMicro(micro.py-(event.clientY-micro.sy)*microScale/step);painter();return;
+   }
+   const p=ptrs.get(event.pointerId);if(!p)return;
+   p.x=event.clientX;p.y=event.clientY;
+   if(pinch&&ptrs.size>=2){const [a,b]=[...ptrs.values()];setZoom(pinch.z0*Math.hypot(a.x-b.x,a.y-b.y)/pinch.d0);return}
    if(drag?.id!==event.pointerId)return;
-   const step=aimStep();
+   const step=aimStep(),now=performance.now(),dt=Math.max(1,now-vel.t);
+   vel={x:.7*(event.clientX-vel.px)/dt+.3*vel.x,y:.7*(event.clientY-vel.py)/dt+.3*vel.y,t:now,px:event.clientX,py:event.clientY};
    setAim(drag.x+Math.round((event.clientX-drag.left)/step),drag.y-Math.round((event.clientY-drag.top)/step));
   };
-  canvas.onlostpointercapture=()=>{drag=null;dragging=false;if(pendingRender){pendingRender=false;render()}};
+  const endPointer=event=>{
+   ptrs.delete(event.pointerId);
+   if(micro?.id===event.pointerId)micro=null;
+   if(pinch&&ptrs.size<2)pinch=null;
+   if(drag?.id===event.pointerId){
+    const v=vel,fresh=performance.now()-v.t<90;
+    drag=null;
+    if(event.type==='pointerup'&&event.pointerType!=='mouse'&&fresh&&!ptrs.size)glide(v.x,v.y);
+   }
+   if(ptrs.size===1&&!drag){const [id,p]=[...ptrs][0];drag={id,left:p.x,top:p.y,x:state.aim.x,y:state.aim.y};vel={x:0,y:0,t:performance.now(),px:p.x,py:p.y}} // one finger of a pinch stays: keep dragging
+   if(!ptrs.size&&!micro){dragging=false;if(pendingRender){pendingRender=false;render()}}
+  };
+  canvas.onpointerup=canvas.onpointercancel=canvas.onlostpointercapture=endPointer;
   root.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>{
    const v=Number(b.dataset.mode);
    takeover();
@@ -1160,7 +1363,29 @@ export function startSniper(){
   }
   next.onclick=()=>{takeover();nextRound();root.querySelector('[data-axis="x"]').focus({preventScroll:true})};
   root.querySelector('[data-exit]').onclick=changeSide;
-  root.querySelector('[data-autoplay]').onclick=()=>{if(ap.on)stopAutoplay();else startAutoplay()};
+  root.querySelectorAll('[data-bot]').forEach(b=>b.onclick=()=>setBot(b.dataset.bot));
+  root.querySelector('[data-bot-select]').onchange=event=>setBot(event.target.value);
+  root.querySelector('[data-takeover]').onclick=()=>{if(ap.on)stopAutoplay();root.querySelector('[data-bot="off"]')?.focus()};
+  { // bot card: tap the text (or the chevron) to expand; the critic card can be closed; the coach asks for a confirmation on reading steps
+   const card=root.querySelector('.sniper-autoplay');
+   if(card){
+    const toggle=()=>{cardOpen=!cardOpen;paintAutoplay()};
+    card.querySelector('[data-narration]').onclick=()=>{if(cardOver||cardOpen)toggle()};
+    card.querySelector('[data-ap-more]').onclick=toggle;
+    card.querySelector('[data-bot-close]').onclick=()=>{if(critic)critic.closed=true;card.remove();ap.shown=-1;cardKey='';fitThumbs()};
+    card.querySelector('[data-coach-ok]').onclick=coachAdvance;
+   }
+  }
+  { // reticle thumbnails: a vertical stack in the left gutter when the circle leaves room for it, else a row under the scope (single-column layouts always use the row)
+   const scene=root.querySelector('.sniper-scene'),stage=scene.querySelector('.sniper-stage'),ret=scene.querySelector('.sniper-reticle'),single=window.matchMedia?.(SINGLE_COL);
+   fitThumbs=()=>{
+    if(single?.matches){if(scene.dataset.thumbs!=='row')scene.dataset.thumbs='row';return}
+    const row=scene.dataset.thumbs==='row',w=stage.clientWidth,h=stage.clientHeight+(row?ret.offsetHeight+8:0),next=(w-Math.min(w,h))/2>=54?'side':'row';
+    if(scene.dataset.thumbs!==next)scene.dataset.thumbs=next;
+   };
+   if(typeof ResizeObserver==='function'){thumbRO=new ResizeObserver(fitThumbs);thumbRO.observe(scene);thumbRO.observe(stage)}
+   fitThumbs();
+  }
   root.querySelector('[data-sound]').onclick=e=>{const m=!soundMuted();setSoundMuted(m);e.currentTarget.textContent=m?'🔇':'🔊';e.currentTarget.setAttribute('aria-pressed',String(!m));if(!m)shotAudio.unlock()};
   const pauseButton=root.querySelector('[data-autoplay-pause]');
   if(pauseButton)pauseButton.onclick=togglePause;
@@ -1175,6 +1400,7 @@ export function startSniper(){
   paintAutoplay();
  }
  document.addEventListener('siege-language',()=>{if(dragging||flying)pendingRender=true;else render()});
+ if(state.bot==='coach')coachStart();
  render();window.dispatchEvent(new Event('game-ready'));
  glLoad();
 }

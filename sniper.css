@@ -80,14 +80,14 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-scope { position: relative; background: #bfbc95; }
 .sniper-scope canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
 .sniper-scope canvas.sniper-gl { pointer-events: none; }
-.sniper-pad { display: none; }
-/* reticle picker: round previews, vertical stack on the left edge of the scene */
+/* reticle picker: round previews, vertical stack on the left edge of the scene; a row under the scope when the circle leaves no gutter (set by JS: data-thumbs) */
 .sniper-reticle { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); z-index: 2; display: flex; flex-direction: column; gap: 8px; }
 .sniper-board .sniper-reticle button.sniper-thumb { box-sizing: border-box; width: 44px; height: 44px; min-height: 0; padding: 0; position: relative; border: 2px solid transparent; border-radius: 50%; background: transparent; line-height: 0; transition: border-color .15s, box-shadow .15s; }
 .sniper-thumb canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; }
 .sniper-board .sniper-reticle button.sniper-thumb:not(:disabled):hover { border-color: #d6d69a80; }
 .sniper-board .sniper-reticle button.sniper-thumb[aria-pressed="true"] { border-color: var(--sniper-accent); box-shadow: 0 0 10px #d6d69a66; }
 .sniper-board .sniper-reticle button.sniper-thumb:disabled { opacity: .45; }
+.sniper-scene[data-thumbs="row"] .sniper-reticle { position: static; transform: none; flex-direction: row; justify-content: center; flex: none; }
 .sniper-hud { position: absolute; z-index: 1; top: 10px; max-width: calc(50% - 15px); padding: 4px 8px; border: 1px solid var(--sniper-line); border-radius: 8px; background: #101712cc; font: 13px var(--mono, monospace); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .sniper-hud-wind { left: 10px; }
 .sniper-hud-turret { right: 10px; }
@@ -95,9 +95,6 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 @media (pointer: fine) {
  .sniper-scope canvas { cursor: grab; }
  .sniper-scope canvas:active { cursor: grabbing; }
-}
-@media (max-width: 750px), (pointer: coarse) {
- .sniper-pad { display: grid; grid-template-columns: repeat(4, minmax(44px, 1fr)); grid-template-rows: repeat(2, auto); gap: 8px; width: 100%; max-width: 340px; }
 }
 .sniper-console {
  display: grid;
@@ -131,7 +128,6 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 }
 .sniper-board button { cursor: pointer; }
 .sniper-board button:not(:disabled):hover { border-color: var(--sniper-accent); }
-.sniper-board .sniper-pad button { min-height: 54px; font-size: 24px; }
 .sniper-board :is(button, select, input):focus-visible, .sniper-board [role="tabpanel"]:focus-visible { outline: 2px solid var(--sniper-accent); outline-offset: 2px; }
 .sniper-weather { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; }
 .sniper-weather div { display: flex; flex-direction: column; flex: 1 1 auto; align-items: center; border-radius: 8px; white-space: normal; }
@@ -149,6 +145,9 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
  font: 15px var(--mono, monospace);
 }
 .sniper-axis > span { font-size: 12px; line-height: 1.15; }
+.sniper-axis .l-short { display: none; font-style: normal; }
+.sniper-axis .l-full { font-style: normal; }
+.sniper-axis .sniper-nudge { display: none; }
 .sniper-axis input { width: 100%; margin: 0; accent-color: var(--sniper-accent); min-height: 28px; }
 .sniper-axis input[data-number] { background: #18211b; border: 1px solid #596750; color: var(--sniper-ink); border-radius: 6px; padding: 4px 6px; font: 15px var(--mono, monospace); text-align: right; min-height: 0; }
 .sniper-hints { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
@@ -182,7 +181,7 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .is-explained { outline: 2px solid var(--sniper-accent); outline-offset: 3px; border-radius: 6px; }
 .sniper-weather, .sniper-axis, .sniper-field-table tr { transition: outline-color .25s, outline-offset .25s; }
 /* bot commentary card */
-.sniper-autoplay { position: absolute; z-index: 1; left: 60px; right: 60px; bottom: 0; max-width: 640px; margin: 0 auto; display: grid; gap: 8px; padding: 10px 14px 12px; border: 1px solid #8f9a6a66; border-left: 4px solid var(--sniper-accent); border-radius: 12px; background: #0f1511ee; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); box-shadow: 0 8px 24px #0008; }
+.sniper-autoplay { position: relative; z-index: 3; flex: none; width: 100%; max-height: min(25%, 230px); overflow: hidden; max-width: none; margin: 0; display: grid; gap: 8px; padding: 10px 14px 12px; border: 1px solid #8f9a6a66; border-left: 4px solid var(--sniper-accent); border-radius: 12px; background: #0f1511ee; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); box-shadow: 0 8px 24px #0008; }
 .sniper-autoplay .ap-head { display: flex; align-items: center; gap: 10px; }
 .sniper-autoplay .ap-pill { flex: none; padding: 2px 8px; border-radius: 999px; background: #d6d69a1f; color: var(--sniper-accent); font: 600 11px/1.5 var(--mono, monospace); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
 .sniper-autoplay .ap-bar { flex: 1; min-width: 0; display: flex; gap: 3px; }
@@ -200,32 +199,34 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 @keyframes ap-glow { 0%, 100% { box-shadow: 0 8px 24px #0008, -3px 0 8px #d6d69a55; } 50% { box-shadow: 0 8px 24px #0008, -4px 0 20px #f0f0a8cc; } }
 @keyframes ap-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .sniper-autoplay, .sniper-autoplay.is-new, .sniper-autoplay.is-fire, .sniper-autoplay .ap-bar i.is-cur { animation: none; } .sniper-autoplay.is-fire { box-shadow: 0 8px 24px #0008, -4px 0 14px #f0f0a8aa; } }
-@media (min-width: 751px) and (max-height: 639px) {
+@media (min-width: 901px) and (orientation: landscape) and (max-height: 639px), (min-width: 1101px) and (max-height: 639px) {
  .sniper-board { overflow: auto; grid-template-rows: auto minmax(600px, 1fr); }
 }
-@media (max-width: 750px) {
+/* ---- single column: phones and portrait tablets (width <= 900 px, or portrait up to 1100 px) ---- */
+@media (max-width: 900px), (orientation: portrait) and (max-width: 1100px) {
  .sniper-hud { padding: 3px 6px; font-size: 12px; }
  .sniper-hud-wind { max-width: 58%; }
  .sniper-hud-turret { max-width: 42%; }
  .sniper-board { display: block; height: auto; overflow: auto; font-size: 15px; }
- .sniper-header { padding: 8px 12px; min-height: 48px; }
+ .sniper-header { padding: 8px 12px; min-height: 48px; flex-wrap: wrap; }
  .sniper-header h1 { font-size: 20px; }
  .sniper-header small { display: none; }
- .sniper-header nav { gap: 4px; }
+ .sniper-header nav { gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
  .sniper-header nav > * { padding: 4px 8px; font-size: 13px; }
- .sniper-layout { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; gap: 12px; max-width: 560px; padding: 12px 12px 0; }
+ .sniper-layout { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; gap: 12px; max-width: 720px; padding: 12px 12px 0; }
  .sniper-scene { padding: 8px; gap: 8px; }
  .sniper-stage { flex: none; container-type: normal; height: auto; }
- .sniper-scope { width: min(100%, 46dvh); }
- .sniper-reticle { position: static; transform: none; flex-direction: row; justify-content: center; }
- .sniper-board .sniper-reticle button.sniper-thumb { width: 40px; height: 40px; }
- .sniper-autoplay { left: 8px; right: 8px; padding: 8px 10px 10px; }
+ .sniper-scope { width: min(100%, 55dvh); }
+ .sniper-scene .sniper-reticle { position: static; transform: none; flex-direction: row; justify-content: center; flex: none; }
+ .sniper-board .sniper-reticle button.sniper-thumb { width: 44px; height: 44px; }
+ .sniper-scene .sniper-autoplay { position: static; z-index: auto; left: auto; right: auto; width: 100%; max-width: none; max-height: none; margin: 0; flex: none; padding: 8px 10px 10px; }
  .sniper-autoplay p { font-size: 16px; }
  .sniper-console { display: contents; }
  .sniper-console > section { padding: 12px; border: 1px solid var(--sniper-line); border-radius: 12px; background: var(--sniper-panel); }
  .sniper-tabs { border-top-width: 1px; }
  .sniper-tabpanel { overflow: visible; }
  .sniper-actions { position: sticky; bottom: 0; z-index: 3; margin: 0 -12px; padding: 12px 12px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid var(--sniper-line); background: var(--sniper-panel); }
+ .sniper-more, .sniper-more-fade { display: none !important; }
 }
 @media (prefers-reduced-motion: reduce) { .sniper-weather, .sniper-axis, .sniper-field-table tr { transition: none; } }
 
@@ -301,13 +302,12 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-more[hidden], .sniper-more-fade[hidden] { display: none; }
 .sniper-results-body td.nw, .sniper-results-body th { white-space: nowrap; }
 .sniper-results-body caption { padding: 0 3px 2px; color: var(--sniper-muted); font: 11px var(--body, system-ui); text-align: left; }
-@media (min-width: 751px) {
+@media (min-width: 901px) and (orientation: landscape), (min-width: 1101px) {
  .sniper-console:has(#sniper-panel-results:not([hidden])) { grid-template-rows: auto minmax(0, 1fr) auto; }
  .sniper-console:has(#sniper-panel-results:not([hidden])) .sniper-conditions, .sniper-console:has(#sniper-panel-results:not([hidden])) .sniper-calculator { display: none; }
 }
 .sniper-results-body td small { display: inline; color: var(--sniper-muted); font-size: 11px; letter-spacing: 0; }
 .sniper-tabpanel { scroll-behavior: auto; }
-@media (max-width: 750px) { .sniper-more, .sniper-more-fade { display: none !important; } }
 .sniper-results-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-top: 6px; }
 .sniper-results-body table { flex: 1 1 160px; border-collapse: collapse; font: 13px/1.3 var(--mono, monospace); }
 .sniper-results-body th, .sniper-results-body td { padding: 1px 3px; text-align: left; border-bottom: 1px solid var(--sniper-line); }
@@ -452,7 +452,7 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-weather dt { font-size: 10px; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .sniper-conditions .sniper-label { margin-bottom: 2px; }
 .sniper-result { margin-top: 2px; }
-@media (min-width: 751px) {
+@media (min-width: 901px) and (orientation: landscape), (min-width: 1101px) {
  .sniper-console { gap: 8px; padding: 10px 14px; }
  .sniper-layout { padding-block: 8px; }
  .sniper-header { padding-block: 5px; }
@@ -468,4 +468,97 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
  .sniper-board .sniper-ghost { min-height: 30px; }
  .sniper-board .sniper-fire, .sniper-board .sniper-next { min-height: 46px; }
  .sniper-actions { padding-top: 8px; }
+}
+
+/* ---- bot control in the header ---- */
+.sniper-bot { display: flex; align-items: center; gap: 8px; }
+.sniper-bot-label { color: var(--sniper-muted); font: 600 11px var(--body, system-ui); letter-spacing: .08em; text-transform: uppercase; }
+.sniper-seg { display: inline-flex; border: 1px solid #596750; border-radius: 8px; overflow: hidden; }
+.sniper-board .sniper-seg button { min-height: 36px; padding: 4px 10px; border: 0; border-right: 1px solid #596750; border-radius: 0; font-size: 13px; white-space: nowrap; }
+.sniper-board .sniper-seg button:last-child { border-right: 0; }
+.sniper-board .sniper-seg button[aria-pressed="true"] { background: var(--sniper-accent); color: #141b18; font-weight: 700; }
+.sniper-bot select { display: none; min-height: 36px; max-width: 100%; padding: 4px 8px; border: 1px solid #596750; border-radius: 6px; background: #18211b; color: var(--sniper-ink); font: 13px var(--body, system-ui); }
+.sniper-board .sniper-header nav button[data-takeover] { border-color: var(--sniper-accent); background: var(--sniper-accent); color: #141b18; font-weight: 700; }
+.sniper-header nav > .sniper-bot { padding: 0; }
+@media (max-width: 700px) {
+ .sniper-seg, .sniper-bot-label { display: none; }
+ .sniper-bot select { display: block; }
+}
+
+/* ---- bot card: instructor and critic parts ---- */
+.sniper-board .sniper-autoplay .ap-more, .sniper-board .sniper-autoplay .ap-close { flex: none; width: 36px; min-height: 36px; height: 36px; padding: 0; border-radius: 50%; font-size: 15px; line-height: 1; }
+.sniper-autoplay .ap-stars { flex: none; color: var(--sniper-accent); font: 700 17px/1 var(--body, system-ui); letter-spacing: 2px; white-space: nowrap; }
+.sniper-autoplay .ap-tail { display: flex; align-items: center; gap: 8px; }
+.sniper-autoplay .ap-tail:not(:has(> :not([hidden]))) { display: none; }
+.sniper-autoplay .ap-hint { flex: 1; min-width: 0; margin: 0; padding-left: 8px; border-left: 2px solid #8f9a6a; color: #cfd6b9; font: 500 14px/1.35 var(--body, system-ui); }
+.sniper-autoplay .ap-hint.is-tip { border-left-color: var(--sniper-accent); color: var(--sniper-accent); }
+.sniper-board .sniper-autoplay .ap-ok { flex: none; min-height: 40px; padding: 0 16px; border-color: var(--sniper-accent); background: var(--sniper-accent); color: #141b18; font-weight: 700; }
+.sniper-autoplay.is-praise { border-left-color: #5fd17a; }
+.sniper-autoplay.is-praise p[data-narration] { color: #9fe8b0; }
+.sniper-autoplay .ap-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; font: 14px/1.4 var(--body, system-ui); }
+.sniper-autoplay .ap-list[hidden] { display: none; }
+.sniper-autoplay .ap-list li { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 6px; color: var(--sniper-ink); }
+.sniper-autoplay .ap-list li > span { display: grid; place-items: center; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; font: 700 11px/1 var(--mono, monospace); background: #ffffff1a; }
+.sniper-autoplay .ap-list li.is-ok > span { background: #2f6f3f; color: #cdf3d5; }
+.sniper-autoplay .ap-list li.is-warn > span { background: #7a5f1f; color: #ffe7a6; }
+.sniper-autoplay[data-kind="critic"] { border-left-color: #f0b43c; }
+.sniper-autoplay[data-kind="critic"]:not(.is-open) p[data-narration] { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; font-size: 15px; }
+.sniper-autoplay.is-open { max-height: 70%; overflow: auto; }
+.sniper-critic-sum { margin-top: 10px; padding: 8px 10px; border-left: 3px solid #f0b43c; background: #18211b; font-size: 14px; }
+.sniper-critic-sum p { margin: 4px 0 0; }
+.sniper-critic-sum .ap-stars { font-size: 15px; }
+.sniper-critic-sum .sa-head { align-items: center; }
+
+/* ---- touch controls (phones, tablets: coarse pointer or width up to 1024 px; the class is set from JS) ---- */
+.sniper-board.is-touch .sniper-header nav > * { min-height: 40px; }
+.sniper-board.is-touch .sniper-seg button { min-height: 40px; }
+.sniper-board.is-touch .sniper-axis .l-full { display: none; }
+.sniper-board.is-touch .sniper-axis .l-short { display: inline; }
+.sniper-board.is-touch .sniper-axis { grid-template-columns: 5.6em 44px minmax(0, 1fr) 44px 72px; grid-template-areas: "l m s p n"; gap: 6px; min-height: 48px; }
+.sniper-board.is-touch .sniper-axis .ax-l { grid-area: l; font-size: 13px; }
+.sniper-board.is-touch .sniper-axis .ax-m { grid-area: m; }
+.sniper-board.is-touch .sniper-axis .ax-s { grid-area: s; }
+.sniper-board.is-touch .sniper-axis .ax-p { grid-area: p; }
+.sniper-board.is-touch .sniper-axis .ax-n { grid-area: n; }
+.sniper-board.is-touch .sniper-axis .sniper-nudge { display: block; width: 44px; min-height: 44px; height: 44px; padding: 0; font-size: 24px; line-height: 1; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.sniper-board.is-touch .sniper-axis input[data-number] { min-height: 44px; height: 44px; font-size: 16px; }
+.sniper-board.is-touch .sniper-zoom { grid-template-columns: auto 44px minmax(0, 1fr) 44px 48px; gap: 6px; min-height: 48px; }
+.sniper-board.is-touch .sniper-zoom button { min-height: 44px; height: 44px; font-size: 24px; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.sniper-board.is-touch .sniper-zoom output { font-size: 15px; }
+.sniper-board.is-touch input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 36px; margin: 0; padding: 0; background: transparent; }
+.sniper-board.is-touch input[type="range"]::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; background: #3b4538; box-shadow: inset 0 0 0 1px #596750; }
+.sniper-board.is-touch input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 28px; height: 28px; margin-top: -10px; border: 2px solid #141b18; border-radius: 50%; background: var(--sniper-accent); box-shadow: 0 1px 4px #0008; }
+.sniper-board.is-touch input[type="range"]::-moz-range-track { height: 8px; border-radius: 4px; background: #3b4538; box-shadow: inset 0 0 0 1px #596750; }
+.sniper-board.is-touch input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; border: 2px solid #141b18; border-radius: 50%; background: var(--sniper-accent); }
+.sniper-board.is-touch input[type="range"]:disabled { opacity: .5; }
+.sniper-board.is-touch .sniper-pick { flex-wrap: wrap; gap: 4px 8px; margin-top: 4px; }
+.sniper-board.is-touch .sniper-pills { flex-wrap: wrap; gap: 6px; }
+.sniper-board.is-touch .sniper-pills button { min-height: 44px; padding: 0 10px; font-size: 14px; }
+.sniper-board.is-touch .sniper-worlds button.sniper-world-btn { width: 44px; height: 44px; min-height: 44px; }
+.sniper-board.is-touch .sniper-world-btn .wi { width: 26px; height: 26px; }
+.sniper-board.is-touch .sniper-pick-label { font-size: 10.5px; }
+.sniper-board.is-touch .sniper-tablist button { min-height: 44px; }
+.sniper-board.is-touch .sniper-ghost { min-height: 44px; }
+.sniper-board.is-touch .sniper-fire, .sniper-board.is-touch .sniper-next { min-height: 52px; }
+.sniper-board.is-touch .sniper-fpv { min-height: 44px; }
+.sniper-board.is-touch .sniper-calc-clockpills span { padding: 10px 0; }
+.sniper-board.is-touch .sniper-switch { min-height: 44px; }
+@media (max-width: 600px) {
+ .sniper-board.is-touch .sniper-axis { grid-template-columns: 44px minmax(0, 1fr) 72px; grid-template-areas: "l l n" "m s p"; row-gap: 2px; }
+ .sniper-board.is-touch .sniper-axis .ax-p { justify-self: end; }
+ .sniper-board.is-touch .sniper-axis .ax-n { align-self: end; }
+}
+
+/* ---- bot card in flow: never over the scope circle ---- */
+@media (max-width: 900px), (orientation: portrait) and (max-width: 1100px) {
+ .sniper-scene .sniper-autoplay:not(.is-open) p[data-narration] { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+ .sniper-scene .sniper-autoplay:not(.is-open) .ap-hint { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+ .sniper-scene .sniper-autoplay.is-open { max-height: none; overflow: visible; }
+}
+@media (min-width: 901px) and (orientation: landscape), (min-width: 1101px) {
+ .sniper-scene .sniper-autoplay { min-height: 112px; padding: 8px 12px 10px; gap: 6px; }
+ .sniper-autoplay p[data-narration] { font-size: 16px; }
+ .sniper-autoplay:not(.is-open) p[data-narration] { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+ .sniper-autoplay:not(.is-open) .ap-hint { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+ .sniper-scene .sniper-autoplay.is-open { position: absolute; left: 12px; right: 12px; bottom: 12px; width: auto; max-height: 70%; overflow: auto; }
 }
