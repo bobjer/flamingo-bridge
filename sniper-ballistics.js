@@ -23,6 +23,26 @@ export const WORLD_IDS=Object.keys(WORLDS);
 export const validWorld=v=>typeof v==='string'&&Object.hasOwn(WORLDS,v);
 export const GUST_DT=.25; // spacing (s) of stored gust paths
 
+// ---- Wind of a series: {regime, clock, flags:[s1,s2,s3]} ----
+// regime: calm (all flags 0, no gust), steady (the three flags equal, gust sigma x0.15), gusty (flags may differ, full gust sigma). Flag strength 0..3 -> m/s through the world's flagMs.
+// clock: 1..12, the wind comes FROM that clock position relative to the line of fire (shooter faces 12): 12 = headwind, 6 = tailwind, 3 = from the right (pushes the bullet left), 9 = from the left (pushes it right).
+export const REGIMES=['calm','steady','gusty'];
+export const GUST_SCALE={calm:0,steady:.15,gusty:1};
+export const REGIME_P={calm:.2,steady:.3,gusty:.5};
+const snap=v=>Math.abs(v)<1e-9?0:v;
+// Unit vector the air moves along in the ballistic frame: kx > 0 = tailwind (downrange), kz > 0 = pushes the bullet right.
+export const clockDir=c=>{const a=c*Math.PI/6;return{kx:snap(-Math.cos(a)),kz:snap(-Math.sin(a))}};
+export const validWind=w=>!!w&&typeof w==='object'&&REGIMES.includes(w.regime)&&Number.isInteger(w.clock)&&w.clock>=1&&w.clock<=12&&Array.isArray(w.flags)&&w.flags.length===3&&
+ w.flags.every(f=>Number.isInteger(f)&&f>=0&&f<=3)&&(w.regime==='calm'?w.flags.every(f=>f===0):w.flags.every(f=>f>=1))&&(w.regime!=='steady'||w.flags.every(f=>f===w.flags[0]));
+export const windMs=(w,world=WORLDS.earth)=>w.flags.map(f=>f?world.flagMs[f-1]:0); // m/s per flag
+export function randomWind(rng=Math.random){
+ const u=rng(),regime=u<REGIME_P.calm?'calm':u<REGIME_P.calm+REGIME_P.steady?'steady':'gusty',clock=1+Math.floor(rng()*12),pick=()=>1+Math.floor(rng()*3);
+ if(regime==='calm')return{regime,clock,flags:[0,0,0]};
+ if(regime==='steady'){const s=pick();return{regime,clock,flags:[s,s,s]}}
+ let flags;do{flags=[pick(),pick(),pick()]}while(flags[0]===flags[1]&&flags[1]===flags[2]);
+ return{regime,clock,flags};
+}
+
 // Standard G7 drag coefficient vs Mach (public JPG/BRL G7 table).
 export const G7=[[0,.1198],[.05,.1197],[.1,.1196],[.15,.1194],[.2,.1193],[.25,.1194],[.3,.1194],[.35,.1194],[.4,.1193],[.45,.1193],[.5,.1194],[.55,.1193],[.6,.1194],[.65,.1197],
  [.7,.1202],[.725,.1207],[.75,.1215],[.775,.1226],[.8,.1242],[.825,.1266],[.85,.1306],[.875,.1368],[.9,.1464],[.925,.166],[.95,.2054],[.975,.2993],[1,.3803],[1.025,.4015],
@@ -64,13 +84,13 @@ export function makeBallistics({world=WORLDS.earth,sightHeight=.05,zeroRange=100
  const K=Math.PI/8*rho,invSnd=sound?1/sound:0,spin0=1.25*.0254*rho/AIR.rho,corK=world.omega*Math.sin(latitude*Math.PI/180),A=new Float64Array(3);
  const spinM=(c,t)=>spin0*(c.sg+1.2)*t**1.83; // spin drift, metres, to the right (scaled by rho/1.225)
  const corM=(x,t)=>corK*x*t; // Coriolis deflection, metres, to the right
- // Core RK4 integrator to x = xStop. wf(x,t) = lateral wind speed (m/s, right +) or null. rec = {step,arr:{x,y,z,v,t}} records samples every step metres.
+ // Core RK4 integrator to x = xStop. wf(x,t) = lateral wind speed (m/s, right +) or null; wf.lx(x,t), when present, is the wind along the range (m/s, tailwind +). rec = {step,arr:{x,y,z,v,t}} records samples every step metres.
  function integrate(ci,theta,psi,dv0,wf,xStop,dt,rec){
   const c=calibers[ci],kk=K/(c.bc7*703.07),sp=c.v0+dv0,ct=Math.cos(theta);
   let x=0,y=0,z=0,vx=sp*ct*Math.cos(psi),vy=sp*Math.sin(theta),vz=sp*ct*Math.sin(psi),t=0,ns=0;
   const acc=(xx,tt,ux,uy,uz)=>{
-   const rz=uz-(wf?wf(xx,tt):0),vr=Math.sqrt(ux*ux+uy*uy+rz*rz),k=kk*cdFast(vr*invSnd)*vr;
-   A[0]=-k*ux;A[1]=-k*uy-gravity;A[2]=-k*rz;
+   const rz=uz-(wf?wf(xx,tt):0),rx=wf&&wf.lx?ux-wf.lx(xx,tt):ux,vr=Math.sqrt(rx*rx+uy*uy+rz*rz),k=kk*cdFast(vr*invSnd)*vr;
+   A[0]=-k*rx;A[1]=-k*uy-gravity;A[2]=-k*rz;
   };
   const put=(i,f,px,py,pz,pvx,pvy,pvz,pt)=>{
    const a=rec.arr;
@@ -107,21 +127,26 @@ export function makeBallistics({world=WORLDS.earth,sightHeight=.05,zeroRange=100
  const mkWind=(D,w)=>{
   if(!w)return null;
   if(w.fn)return w.fn;
-  const p=prof(D,w.flags||[0,0,0]),g=w.gust,r=w.res||0;
-  return g?(x,t)=>p(x)+r+g(t):(x,t)=>p(x)+r;
+  const p=prof(D,w.flags||[0,0,0]),g=w.gust,r=w.res||0,kz=w.kz??1,kx=w.kx??0;
+  const S=g?(x,t)=>p(x)+r+g(t):(x,t)=>p(x)+r; // wind speed along its direction (kx, kz)
+  const f=kz===1?S:(x,t)=>kz*S(x,t);
+  if(kx)f.lx=(x,t)=>kx*S(x,t);
+  return f;
  };
  const cache=new Map();
  function table(ci,D){
   const key=ci+'|'+D;let T=cache.get(key);if(T)return T;
   const th=solveAngle(ci,D,zeros[ci]+ (D>zeroRange?.0005*D/1000:0)),base=integrate(ci,th,0,0,null,D,TD),c=calibers[ci];
   const sens=[0,1,2].map(i=>{const f=[0,0,0];f[i]=1;return integrate(ci,th,0,0,mkWind(D,{flags:f}),D,TD).z/D*1000});
+  const sensX=[0,1,2].map(i=>{const f=[0,0,0];f[i]=1;return(base.y-integrate(ci,th,0,0,mkWind(D,{flags:f,kx:-1,kz:0}),D,TD).y)/D*1000}); // mil of extra elevation per 1 m/s of headwind over flag zone i (tailwind: negative)
   const drift1=sens[0]+sens[1]+sens[2],weights=Math.abs(drift1)<1e-9?[1/3,1/3,1/3]:sens.map(s=>s/drift1); // no air: no wind effect, weights are moot
   const dvy=(integrate(ci,th,0,1,null,D,TD).y-base.y)/D*1000; // mil per +1 m/s of muzzle velocity
   const spin=spinM(c,base.t)/D*1000,coriolis=1000*corK*base.t;
-  T={elev:(th-zeros[ci])*1000,theta:th,drift1,sens,weights,spin,coriolis,sc:spin+coriolis,tof:base.t,vImpact:base.v,mach:sound?base.v*invSnd:null,dvy,D};
+  T={elev:(th-zeros[ci])*1000,theta:th,drift1,sens,sensX,ht:sensX[0]+sensX[1]+sensX[2],weights,spin,coriolis,sc:spin+coriolis,tof:base.t,vImpact:base.v,mach:sound?base.v*invSnd:null,dvy,D};
   cache.set(key,T);return T;
  }
  // Full trajectory. opts: elevMil / windMil = turret dial plus any angular error (mil, from the zero), dv0, wind {flags:[3 signed m/s],gust:t=>m/s,res} or {fn:(x,t)=>m/s},
+ // wind may carry kx / kz (the unit vector the air moves along: kx tailwind +, kz right +; default pure crosswind kz = 1, flags/gust/res then are speeds along it).
  // spinOn / coriolisOn (default true), beyond (extra metres to sample past D), dx (sample spacing), dt.
  function trajectory(ci,D,opts={}){
   const {elevMil=0,windMil=0,dv0=0,spinOn=true,coriolisOn=true,beyond=0,dx=5,dt=.001,wind=null}=opts,c=calibers[ci];

@@ -1,6 +1,6 @@
 import './sniper-flight.css';
 import {buildWorld,moundOf,targetY} from './sniper-world.js';
-import {ballistics as BAL} from './sniper-ballistics.js';
+import {ballistics as BAL,clockDir} from './sniper-ballistics.js';
 
 const sm=t=>(t=t<0?0:t>1?1:t,t*t*(3-2*t)),mix=(a,b,t)=>a+(b-a)*t,rnd=(a=0,b=1)=>a+Math.random()*(b-a),clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
 const sg=v=>{const r=Math.round(v*10)/10;return(r<0?'−':'+')+Math.abs(r).toFixed(1)};
@@ -11,8 +11,8 @@ const hit=o=>!!o.hit;
 // World: +z downrange, +y up, world x = -(lateral right) so a camera looking +z sees +lateral on screen right.
 function modelOf(o){
  const D=o.distance,R1=o.targetRadiusMil*D/1000,Y0=1.5,Ty=targetY(R1),W=o.wind||{};
- const wdir=typeof W.east==='number'?Math.sign(W.east):W.east?1:-1;
- const path=o.path||BAL.trajectory(o.ci??1,D,{elevMil:o.aimMil.y,windMil:o.aimMil.x,wind:{flags:(W.flags||[0,0,0]).map(f=>wdir*2*f)},beyond:60});
+ const wv=clockDir(W.clock||9),wm=(W.flags||[0,0,0]).map(f=>f?BAL.world.flagMs[f-1]:0);
+ const path=o.path||BAL.trajectory(o.ci??1,D,{elevMil:o.aimMil.y,windMil:o.aimMil.x,wind:{flags:wm,kx:wv.kx,kz:wv.kz},beyond:60});
  const tOf=x=>BAL.at(path,'t',x),xOf=t=>BAL.xAt(path,t),vOf=x=>BAL.at(path,'v',x),H0=x=>BAL.at(path,'y',x),L0=x=>BAL.at(path,'z',x);
  const th=Math.atan2(path.y[1]-path.y[0],path.step),ps=Math.atan2(path.z[1]-path.z[0],path.step);
  const ix=o.impactMil.x*D/1000,iy=o.impactMil.y*D/1000,TD=tOf(D),ay=(Ty-Y0+iy-H0(D))/D,ax=(ix-L0(D))/D;

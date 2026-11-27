@@ -25,23 +25,23 @@ function nudge(items,dx=46,gap=12){
 
 // Per-shot model: path functions and error components (all angular components in mil).
 export function prepShots(shots,M){
- const {B,calibers,distances,weather,tolerance,tabOf,dirOf,flagMs}=M;
+ const {B,calibers,distances,tolerance,tabOf,clockDir,flagMs}=M;
  return shots.flatMap((s,i)=>{
   const p=s.p,d=s.disp;
   if(!p||!d)return[];
-  const c=calibers[p.ci],D=distances[p.di],w=weather[p.wi],dir=dirOf(w),T=tabOf(p.ci,p.di),flags=flagMs(w).map(v=>dir*v),ex=s.dx/10,ey=s.dy/10,gf=pathFn(d.gp,GUST_DT);
+  const c=calibers[p.ci],D=distances[p.di],w=p.wind,{kx,kz}=clockDir(w.clock),T=tabOf(p.ci,p.di),flags=flagMs(w),ex=s.dx/10,ey=s.dy/10,gf=pathFn(d.gp,GUST_DT);
   // Re-integrate with the dial, the rifle and hold angles, the muzzle velocity and the shot's own gust path; the aim offset is not saved, so any remainder is spread linearly over the range to end exactly at the recorded impact.
-  const ang={elevMil:p.y/10+d.rand.y+d.hold.y,windMil:p.x/10+d.rand.x+d.hold.x},act=B.trajectory(p.ci,D,{...ang,dv0:d.dv0,wind:{flags,gust:t=>dir*gf(t),res:dir*d.res},dx:D/60,dt:.002});
-  const exp=B.trajectory(p.ci,D,{elevMil:p.y/10,windMil:p.x/10,wind:{flags},dx:D/60,dt:.002}); // what the dialled solution expects in the mean wind
+  const ang={elevMil:p.y/10+d.rand.y+d.hold.y,windMil:p.x/10+d.rand.x+d.hold.x},act=B.trajectory(p.ci,D,{...ang,dv0:d.dv0,wind:{flags,kx,kz,gust:gf,res:d.res},dx:D/60,dt:.002}); // the wind's full vector; its crosswind part moves the bullet sideways
+  const exp=B.trajectory(p.ci,D,{elevMil:p.y/10,windMil:p.x/10,wind:{flags,kx,kz},dx:D/60,dt:.002}); // what the dialled solution expects in the mean wind (the sideways drift in the top view is its crosswind component)
   const rx=ex-act.impact.x,ry=ey-act.impact.y,gx=d.gx,gr=Number.isFinite(d.gustRead)?d.gustRead:null,gxR=gr===null?0:d.gxR,vy=d.vy;
-  const px=ex-(gx+d.rand.x+d.hold.x),py=ey-(vy+d.rand.y+d.hold.y);
-  return[{i,s,c,ci:p.ci,D,dir,ex,ey,color:shotColors[i%shotColors.length],
+  const gy=d.gy||0,px=ex-(gx+d.rand.x+d.hold.x),py=ey-(vy+gy+d.rand.y+d.hold.y);
+  return[{i,s,c,ci:p.ci,D,kz,ex,ey,color:shotColors[i%shotColors.length],
    h:x=>B.at(act,'y',x)-act.sight+x*ry/1000, // height above the line of sight, m; ends exactly at the recorded vertical impact
    lat:x=>B.at(act,'z',x)+x*rx/1000, // actual lateral path with the gust, spin drift and Coriolis, m
    exp:x=>B.at(exp,'z',x), // dialled windage in the mean wind only, m
    tof:act.tof,vD:act.vImpact,r:D*tolerance[p.di]/10000, // plate radius, m
    sc:T.sc,spin:T.spin,cor:T.coriolis,gxR,hasRead:gr!==null,px,
-   comp:{gustR:[gxR,0],gustU:[gx-gxR,0],vel:[0,vy],rifle:[d.rand.x,d.rand.y],hold:[d.hold.x,d.hold.y],you:[px,py]}}];
+   comp:{gustR:[gxR,0],gustU:[gx-gxR,gy],vel:[0,vy],rifle:[d.rand.x,d.rand.y],hold:[d.hold.x,d.hold.y],you:[px,py]}}];
  });
 }
 

@@ -1,7 +1,7 @@
 import {changeSide,languageButton,read,write} from './factions.js';
 import {tr} from './language.js';
 import {analysisHtml,shotColors} from './sniper-analysis.js';
-import {ballisticsFor,WORLDS,WORLD_IDS,validWorld,ouPath,pathFn,GUST_DT} from './sniper-ballistics.js';
+import {ballisticsFor,WORLDS,WORLD_IDS,validWorld,ouPath,pathFn,GUST_DT,GUST_SCALE,clockDir,validWind,windMs,randomWind} from './sniper-ballistics.js';
 import {createShotAudio,soundMuted,setSoundMuted} from './sniper-audio.js';
 import './sniper.css';
 
@@ -33,37 +33,43 @@ const breathPhase=h=>h<.8?'settle':h<=4?'steady':h<=7?'strain':'hard';
 const sgn=(v,d)=>(v<0?'−':v>0?'+':'')+Math.abs(v).toFixed(d);
 const distLabel=d=>d<1000?d+' '+tr('м','m'):d/1000+' '+tr('км','km');
 // TODO(hard mode): humidity → air density → velocity decay and drift.
-const weather=[
- {humidity:36,east:true,flags:[1,2,1]},
- {humidity:72,east:false,flags:[3,2,3]},
- {humidity:48,east:true,flags:[2,3,2]},
- {humidity:64,east:false,flags:[1,2,1]},
- {humidity:82,east:true,flags:[3,2,1]},
- {humidity:27,east:false,flags:[2,1,2]},
+const weather=[ // humidity per series (the wind itself is state.wind: regime, clock direction and flag strengths)
+ {humidity:36},
+ {humidity:72},
+ {humidity:48},
+ {humidity:64},
+ {humidity:82},
+ {humidity:27},
 ];
-const setWorld=id=>{worldId=validWorld(id)?id:'earth';sigma.gust=WLD().gust;sigma.res=WLD().gust/5}; // gust / residual wind follow the world (Moon and Mercury: none)
+let windNow=null; // the series' wind {regime, clock, flags}; sets how strong the gust is (calm none, steady ×0.15, gusty full)
+const applySigma=()=>{sigma.gust=WLD().gust*(GUST_SCALE[windNow?.regime]??1);sigma.res=sigma.gust/5};
+const setWorld=id=>{worldId=validWorld(id)?id:'earth';applySigma()}; // gust / residual wind follow the world (Moon and Mercury: none) and the regime
 const tabOf=(ci,di)=>Bw().table(ci,distances[di]); // {elev,drift1,sens,weights,spin,coriolis,sc,tof,vImpact,mach} from the G7 solver
-const dirOf=w=>w.east?1:-1; // +1 = wind pushes the bullet right
-const flagMs=(w,id=worldId)=>w.flags.map(f=>WORLDS[id].flagMs[f-1]); // m/s; Earth: flag strength 1/2/3 = 2/4/6 m/s, Mars 8/16/25, no wind on the Moon and Mercury
-const calm=()=>!WLD().flagMs[0];
+const kzOf=w=>clockDir(w.clock).kz; // +1 = wind pushes the bullet right (from 9 o'clock), -1 = pushes it left (from 3 o'clock)
+const flagMs=(w,id=worldId)=>windMs(w,WORLDS[id]); // m/s; Earth: flag strength 1/2/3 = 2/4/6 m/s, Mars 8/16/25, no wind on the Moon and Mercury; calm: 0
+const noWind=()=>!WLD().flagMs[0]; // a world without air: no wind at all
+const isCalm=w=>w.regime==='calm'; // a still day in a world that has wind
+const regimeName=w=>w.regime==='calm'?tr('штиль','calm'):w.regime==='steady'?tr('рівний','steady'):tr('поривчастий','gusty');
+const clockText=w=>tr('з ','from ')+w.clock+tr(' год',' o\'clock');
 const weightsShown=T=>{const r=T.weights.map(v=>Math.round(v*100)/100),k=r.indexOf(Math.max(...r));r[k]=Math.round((r[k]+1-r.reduce((a,b)=>a+b,0))*100)/100;return r}; // 2 decimals, summing to exactly 1.00
-const windEff=(w,wt)=>flagMs(w).reduce((a,v,i)=>a+v*wt[i],0); // weighted wind, m/s
+const windEff=(w,wt)=>flagMs(w).reduce((a,v,i)=>a+v*wt[i],0); // weighted wind speed, m/s
+const HI=3; // strongest flag mark
 const rangeCache={};
 const ranges=(id=worldId)=>rangeCache[id]||(rangeCache[id]=(B=>({ // dial ranges per world, tenths of a mil
- xMax:Math.ceil(Math.max(...calibers.flatMap((c,ci)=>distances.flatMap((d,di)=>weather.map(w=>{const T=B.table(ci,d);return Math.abs(T.sens.reduce((a,s,i)=>a+s*flagMs(w,id)[i],0)+T.sc)}))))/5)*50,
- yMax:Math.ceil(Math.max(...calibers.flatMap((c,ci)=>distances.map(d=>B.table(ci,d).elev)))/5)*50}))(ballisticsFor(id)));
+ xMax:Math.ceil(Math.max(...calibers.flatMap(c=>distances.map(d=>{const T=B.table(calibers.indexOf(c),d);return Math.abs(T.drift1*WORLDS[id].flagMs[HI-1])+T.sc})))/5)*50, // worst case: all three flags at the top mark, wind straight across
+ yMax:Math.ceil(Math.max(...calibers.flatMap((c,ci)=>distances.map(d=>{const T=B.table(ci,d);return T.elev+Math.max(0,T.ht)*WORLDS[id].flagMs[HI-1]})))/5)*50}))(ballisticsFor(id)));
 const xMaxOf=()=>ranges().xMax,yMaxOf=()=>ranges().yMax;
-const model={get B(){return Bw()},get world(){return WLD()},calibers,distances,tolerance,weather,tabOf,dirOf,flagMs};
-const marksPlain=()=>WLD().flagMs.map((v,i)=>'›'.repeat(i+1)+' = '+v).join(', ');
+const model={get B(){return Bw()},get world(){return WLD()},calibers,distances,tolerance,weather,tabOf,clockDir,flagMs};
+const marksPlain=()=>WLD().flagMs.map((v,i)=>'▮'.repeat(i+1)+' = '+v).join(', ');
 const worldCap=()=>adaptLine()+(WLD().sound?', '+tr('швидкість звуку ','speed of sound ')+WLD().sound+' '+tr('м/с',' m/s').trim():'')+'. ';
 const worldHint=()=>worldId==='pyrrus'?tr('Піррус: густе повітря (≈1,3 атм), подвійне тяжіння (2 g) і штормові пориви — куля падає сильно, швидко гальмується, а вітер її зносить дужче. ','Pyrrus: dense air (about 1.3 atm), double gravity (2 g) and stormy gusts — the bullet drops hard, sheds speed quickly and the wind pushes it further. '):worldId==='mesklin'?tr('Месклін: тяжіння залежить від широти — близько 3 g на екваторі й сотні g на полюсах, бо планета обертається за ≈18 хвилин. Наш полігон на широті 40°, де воно ≈ 5,5 g. Така швидка доба дає величезний Коріоліс: куля помітно йде вбік, і це видно в колонці «Деривація + Коріоліс». ','Mesklin: gravity depends on latitude — about 3 g at the equator and hundreds of g at the poles, because the planet turns in ≈18 minutes. Our range is at latitude 40°, where it is ≈ 5.5 g. A day that short gives a huge Coriolis: the bullet visibly veers sideways, shown in the “Spin + Coriolis” column. '):'';
 const adaptLine=()=>tr('Балістику адаптовано під світ гри: ','Ballistics adapted to the game world: ')+worldName()+' (g '+gTxt(worldId)+', '+(WLD().rho?'ρ '+WLD().rho+' '+tr('кг/м³','kg/m³'):tr('вакуум','vacuum'))+')';
 const saved=read(saveKey),prefsKey='pop-sniper-prefs',prefs=read(prefsKey); // player preferences live apart from the series save: they survive a new game
 const validIndex=(value,length)=>Number.isInteger(value)&&value>=0&&value<length;
-const validDisp=d=>d===undefined||!!d&&[d.gust,d.gustRead,d.res,d.gx,d.gxR,d.vy,d.dv0,d.rand?.x,d.rand?.y,d.hold?.x,d.hold?.y].every(Number.isFinite)&&Array.isArray(d.gp)&&d.gp.length>=2&&d.gp.length<=200&&d.gp.every(Number.isFinite); // saves from before the G7 solver lack gp/gx/vy and restart the series
-const validP=p=>p===undefined||!!p&&validIndex(p.di,distances.length)&&validIndex(p.ci,calibers.length)&&validIndex(p.wi,weather.length)&&Number.isFinite(p.x)&&Number.isFinite(p.y);
+const validDisp=d=>d===undefined||!!d&&(d.gy===undefined||Number.isFinite(d.gy))&&[d.gust,d.gustRead,d.res,d.gx,d.gxR,d.vy,d.dv0,d.rand?.x,d.rand?.y,d.hold?.x,d.hold?.y].every(Number.isFinite)&&Array.isArray(d.gp)&&d.gp.length>=2&&d.gp.length<=200&&d.gp.every(Number.isFinite); // saves from before the G7 solver lack gp/gx/vy and restart the series
+const validP=p=>p===undefined||!!p&&validIndex(p.di,distances.length)&&validIndex(p.ci,calibers.length)&&validIndex(p.wi,weather.length)&&validWind(p.wind)&&Number.isFinite(p.x)&&Number.isFinite(p.y);
 const validShot=s=>!!s&&typeof s==='object'&&validDisp(s.disp)&&validP(s.p)&&Number.isInteger(s.ring)&&s.ring>=0&&s.ring<=10&&typeof s.hit==='boolean'&&Number.isFinite(s.dx)&&Number.isFinite(s.dy)&&Number.isFinite(s.ms)&&s.ms>=0;
-const validSeries=s=>!!s&&typeof s==='object'&&s.v===2&&Array.isArray(s.rounds)&&s.rounds.length===seriesSize&&s.rounds.every(i=>validIndex(i,weather.length)&&i===s.rounds[0])&&
+const validSeries=s=>!!s&&typeof s==='object'&&s.v===2&&validWind(s.wind)&&Array.isArray(s.rounds)&&s.rounds.length===seriesSize&&s.rounds.every(i=>validIndex(i,weather.length)&&i===s.rounds[0])&&
  Array.isArray(s.unassisted)&&s.unassisted.length<=seriesSize&&s.unassisted.every(v=>typeof v==='boolean')&&typeof s.usedCode==='boolean'&&
  Array.isArray(s.scores)&&s.scores.length<=seriesSize&&s.scores.every(v=>Number.isInteger(v)&&v>=0&&v<=10)&&
  s.unassisted.length===s.scores.length&&Array.isArray(s.shots)&&s.shots.length===s.scores.length&&s.shots.every(validShot)&&
@@ -82,19 +88,20 @@ const clock1=ms=>{const t=Math.floor(ms/1000);return String(Math.floor(t/60)).pa
 const maxScore=seriesSize*10;
 const clampAxis=(axis,value)=>axis==='x'?Math.max(-xMaxOf(),Math.min(xMaxOf(),value)):Math.max(0,Math.min(yMaxOf(),value));
 const apSpeeds=[0.5,1,1.5,2],speedLabel=v=>v+'×';
-const initial=()=>({apSpeed:1,world:'earth',mode:defaultMode,modeV:3,plane:'ffp',distance:2,optic:0,profile:0,weather:0,x:0,y:0,aim:randomAim(),zoom:zoomMin});
+const initial=()=>({apSpeed:1,world:'earth',mode:defaultMode,modeV:3,plane:'ffp',distance:2,optic:0,profile:0,weather:0,wind:randomWind(),x:0,y:0,aim:randomAim(),zoom:zoomMin});
 const mil=value=>(Math.abs(value)/10).toFixed(1);
 const signedMil=value=>value<0?'−'+mil(value):value>0?'+'+mil(value):mil(0);
 
-const compass=conditions=>calm()?'—':conditions.east?'W → E':'E → W';
-const flagPattern=conditions=>calm()?tr('вітру немає','no wind'):conditions.flags.map(flag=>(conditions.east?'›':'‹').repeat(flag)).join(' / ');
+const compass=w=>noWind()?'—':isCalm(w)?tr('штиль','calm'):clockText(w)+' · '+regimeName(w);
+const flagPattern=w=>noWind()?tr('вітру немає','no wind'):isCalm(w)?'—':w.flags.map(flag=>'▮'.repeat(flag)).join(' / ');
+const hudWind=w=>noWind()?'—':isCalm(w)?tr('штиль','calm'):w.clock+tr(' год',' h')+' · '+w.flags.map(flag=>'▮'.repeat(flag)).join('/');
 
-// Exact (unrounded) solution in tenths of a mil: X = −(wind drift + spin drift + Coriolis), all rightward; Y = elevation from the 100 m zero.
-function solutionExact(state,weatherIndex=state.weather){
- const w=weather[weatherIndex],T=tabOf(state.profile,state.distance),wd=dirOf(w)*T.sens.reduce((a,v,i)=>a+v*flagMs(w)[i],0);
- return [-(wd+T.sc)*10,T.elev*10];
+// Exact (unrounded) solution in tenths of a mil with the full wind vector: X = −(crosswind drift + spin drift + Coriolis), all rightward; Y = elevation from the 100 m zero + the head/tail wind tweak (a headwind adds drop).
+function solutionExact(state){
+ const w=state.wind,T=tabOf(state.profile,state.distance),ms=flagMs(w),{kx,kz}=clockDir(w.clock),wd=kz*T.sens.reduce((a,v,i)=>a+v*ms[i],0),ht=-kx*T.sensX.reduce((a,v,i)=>a+v*ms[i],0);
+ return [-(wd+T.sc)*10,(T.elev+ht)*10];
 }
-const solution=(state,weatherIndex)=>solutionExact(state,weatherIndex).map(v=>Math.round(v)+0); // what the dials show (0.1 mil resolution)
+const solution=state=>solutionExact(state).map(v=>Math.round(v)+0); // what the dials show (0.1 mil resolution)
 
 export function startSniper(){
   setWorld(saved&&validWorld(saved.world)?saved.world:'earth'); // an unknown saved world falls back to Earth
@@ -150,6 +157,10 @@ export function startSniper(){
  };
  const gustAt=ms=>{let v=gp.h[0][1];for(const [t,g] of gp.h){if(t<=ms)v=g;else break}return v};
  const flagGusts=()=>[0,1,2].map(i=>gustAt(gp.t-500*i)); // each flag further down the range shows the gust ~0.5 s later
+ if(state.tutorialDone===true&&validSeries(state.series))state.wind=state.series.wind; // the series owns its wind; an old save without one restarts the series below
+ if(!validWind(state.wind))state.wind=randomWind();
+ windNow=state.wind;applySigma();
+ const putWind=w=>{state.wind=w;windNow=w;applySigma()}; // a new series: new wind and gust strength
  gustSeed();
  let rt=null,analysisModal=null,gl=null,glLoop=0,scopeRO=null,dragging=false,pendingRender=false,flying=false,notice='',miss=null,mark=0,tabPick=null; // tabPick: reference tab chosen by the player or autoplay (not persisted)
  const hasResults=()=>state.tutorialDone===true&&!!state.series&&state.series.scores.length===seriesSize;
@@ -214,20 +225,21 @@ export function startSniper(){
  const airOf=()=>WLD().rho>0?(WLD().rho<.1?'thin':worldId==='mesklin'?'hydrogen':'air'):'vacuum';
  const hold=text=>Math.max(1200,Math.min(9000,Math.max(3500,1800+45*text.length))/state.apSpeed); // reading time ÷ commentary speed
  const spd=ms=>Math.max(8,Math.round(ms/state.apSpeed)); // animation tick intervals ÷ speed
- const marksText=()=>WLD().flagMs.map((v,i)=>'›'.repeat(i+1)+' = '+v).join(', ')+tr(' м/с',' m/s');
+ const marksText=()=>WLD().flagMs.map((v,i)=>'▮'.repeat(i+1)+' = '+v).join(', ')+tr(' м/с',' m/s');
  const apSteps=()=>{
-  const w=weather[state.weather],c=calibers[state.profile],dk=distances[state.distance],T=tabOf(state.profile,state.distance),sp=flagMs(w),wt=weightsShown(T),wind=windEff(w,wt),
-   e=T.elev,k=T.drift1,[sx,sy]=solution(state),last=finalNow(),dir=dirOf(w),again=state.tutorialDone===true?state.round>0:state.misses>0;
+  const w=state.wind,c=calibers[state.profile],dk=distances[state.distance],T=tabOf(state.profile,state.distance),sp=flagMs(w),wt=weightsShown(T),wind=windEff(w,wt),
+   e=T.elev,k=T.drift1,[sx,sy]=solution(state),last=finalNow(),{kx,kz}=clockDir(w.clock),cw=kz*wind,hw=-kx*wind,cross=Math.abs(cw),still=isCalm(w),again=state.tutorialDone===true?state.round>0:state.misses>0;
   return [
-   {mark:'zoom',zoom:true,text:tr('Ставлю кратність 4×, щоб знайти мішень. Для пострілу ставлю ','Setting 4× to find the target. For the shot I set ')+workZoom()+tr('× — так мішень добре видно.','× — the target is clearly visible.')+(state.plane==='sfp'?tr(' У SFP-прицілі поділки сітки точні лише на 10×, але я цілюсь у центр сітки з повною поправкою на маховиках, тож це не заважає.',' In an SFP scope the marks are true only at 10×, but I aim at the reticle center with the full dial, so it does not matter.'):'')},
-   {mark:'weather',text:calm()?tr('У світі «'+worldName()+'» немає повітря: прапорці висять на жорстких штангах, вітру немає — поправка на вітер нульова.','In the world “'+worldName()+'” there is no air: the flags hang on rigid rods and there is no wind — the windage correction is zero.'):tr('Читаю прапорці: ','Reading the flags: ')+flagPattern(w)+'. '+tr('Риски: ','Marks: ')+marksText()+tr('. Тут це ','. Here that is ')+sp.join(', ')+tr(' м/с.',' m/s.')},
-   {mark:'weather',text:calm()?tr('Без вітру вагові коефіцієнти прапорців не потрібні.','With no wind the flag weights are not needed.'):tr('Вітер уздовж траси різний, і ближній вітер діє на кулю довше й сильніше, тож беру зважене середнє з вагами з таблиці ','Wind varies along the range, and the near wind acts on the bullet longer and harder, so I take the weighted average with the table weights ')+wt.map(v=>v.toFixed(2)).join(' / ')+': '+wt.map((v,i)=>v.toFixed(2)+'·'+sp[i]).join(' + ')+' = '+wind.toFixed(1)+tr(' м/с.',' m/s.')},
-   {mark:'weather',text:calm()?tr('Напрямок вітру не має значення: його немає.','The wind direction does not matter: there is none.'):w.east?tr('Вітер дме W → E і зносить кулю праворуч. Щоб компенсувати, X має бути від’ємним — ціль лівіше.','The wind blows W → E and pushes the bullet right. To compensate, X must be negative — aim left.'):
-    tr('Вітер дме E → W і зносить кулю ліворуч. Щоб компенсувати, X має бути додатним — ціль правіше.','The wind blows E → W and pushes the bullet left. To compensate, X must be positive — aim right.')},
-   {mark:'table',text:tr('Таблиця для ','Table for ')+c.name+', '+distLabel(dk)+tr(': підйом ',': elevation ')+e.toFixed(1)+(calm()?tr(' міл, деривація + Коріоліс ',' mil, spin + Coriolis ')+T.sc.toFixed(3)+tr(' міл.',' mil.'):tr(' міл, знос ',' mil, drift ')+k.toFixed(2)+tr(' міл на кожен 1 м/с бокового вітру, деривація + Коріоліс ',' mil per 1 m/s of crosswind, spin + Coriolis ')+T.sc.toFixed(2)+tr(' міл.',' mil.'))},
-   {mark:'y',text:adaptLine()+'. '+worldHint()+(calm()?(worldId==='moon'?tr('На Місяці немає повітря — куля не гальмує й вітру немає, тож лише гравітація. ','No air on the Moon — the bullet doesn\'t slow down and there\'s no wind, only gravity. '):tr('На Меркурії немає повітря — куля не гальмує й вітру немає, тож лише гравітація (g '+WLD().g+' м/с²). ','No air on Mercury — the bullet doesn\'t slow down and there\'s no wind, only gravity (g '+WLD().g+' m/s²). ')):tr('Куля падає під дією тяжіння цього світу (g '+WLD().g+' м/с²)'+(worldId==='mars'?', а повітря дуже розріджене: куля майже не гальмує, і вітер її ледь зносить. ':', тому ствол піднімаємо. '),'The bullet drops under the gravity of this world (g '+WLD().g+' m/s²)'+(worldId==='mars'?', and the air is very thin: the bullet barely slows and the wind hardly moves it. ':', so we raise the barrel. ')))+tr('Y = ','Y = ')+mil(sy)+tr(' міл.',' mil.')},
-   {mark:'table',text:calm()?tr('Повітря немає, тож деривації кулі нема. Лишається лише Коріоліс від повільного обертання світу (широта '+latOf()+'° N, стрільба на північ): ','There is no air, so no spin drift. Only Coriolis remains, from the slow rotation of the world (latitude '+latOf()+'° N, shooting north): ')+T.coriolis.toFixed(3)+tr(' міл праворуч, тому в X додаємо мінус ці ',' mil to the right, so X gets minus these ')+T.sc.toFixed(3)+tr(' міл.',' mil.'):tr('Є ще дві поправки, які завжди зносять кулю праворуч, хоч би який вітер. Деривація: обертання кулі за правою нарізкою зміщує її вправо, ≈ ','Two more corrections always push the bullet right, whatever the wind. Spin drift: a right-hand twist moves the bullet right, ≈ ')+T.spin.toFixed(2)+(worldId==='earth'?tr(' міл. Коріоліс: обертання Землі на широті 48° N (стрільба на північ) — ще ',' mil. Coriolis: the Earth\'s rotation at 48° N (shooting north) adds '):tr(' міл. Коріоліс: обертання світу «'+worldName()+'» (широта '+latOf()+'° N, стрільба на північ) — ще ',' mil. Coriolis: the rotation of the world “'+worldName()+'” ('+latOf()+'° N, shooting north) adds '))+T.coriolis.toFixed(2)+tr(' міл. Разом ',' mil. Together ')+T.sc.toFixed(2)+tr(' міл праворуч, тому в X додаємо мінус ці ',' mil to the right, so X gets minus these ')+T.sc.toFixed(2)+tr(' міл.',' mil.')},
-   {mark:'x',text:(calm()?'X = −('+T.sc.toFixed(3)+') ≈ ':'X = −('+(dir*k).toFixed(2)+' × '+wind.toFixed(1)+' + '+T.sc.toFixed(2)+') ≈ ')+signedMil(sx)+tr(' міл. Чим довше куля летить, тим більше її зносить.',' mil. The longer the flight, the more the wind carries it.')+(calm()?'':tr(' Порив не враховую — він видно лише по тому, як зараз тріпочуть прапорці.',' I ignore the current gust — it shows only in how the flags are flapping right now.'))},
+   {mark:'zoom',zoom:true,text:(windNote?windNote+tr('. Перевіряю розрахунок: поправку змінюю лише якщо треба. ','. I recheck the solution and re-dial only if needed. '):'')+tr('Ставлю кратність 4×, щоб знайти мішень. Для пострілу ставлю ','Setting 4× to find the target. For the shot I set ')+workZoom()+tr('× — так мішень добре видно.','× — the target is clearly visible.')+(state.plane==='sfp'?tr(' У SFP-прицілі поділки сітки точні лише на 10×, але я цілюсь у центр сітки з повною поправкою на маховиках, тож це не заважає.',' In an SFP scope the marks are true only at 10×, but I aim at the reticle center with the full dial, so it does not matter.'):'')},
+   {mark:'weather',text:noWind()?tr('У світі «'+worldName()+'» немає повітря: прапорці висять на жорстких штангах, вітру немає — поправка на вітер нульова.','In the world “'+worldName()+'” there is no air: the flags hang on rigid rods and there is no wind — the windage correction is zero.'):still?tr('Читаю прапорці: усі три обвисли — штиль, вітру немає (0 м/с). Поправка на вітер нульова.','Reading the flags: all three hang limp — a calm day, no wind (0 m/s). The wind correction is zero.'):tr('Читаю прапорці: ','Reading the flags: ')+flagPattern(w)+'. '+tr('Риски: ','Marks: ')+marksText()+tr('. Тут це ','. Here that is ')+sp.join(', ')+tr(' м/с.',' m/s.')+(w.regime==='steady'?tr(' Усі прапорці однакові — рівний вітер, поривів майже немає.',' All flags are the same — a steady wind, hardly any gusts.'):tr(' Прапорці різні — вітер поривчастий.',' The flags differ — a gusty wind.'))},
+   {mark:'weather',text:noWind()||still?tr('Без вітру вагові коефіцієнти прапорців не потрібні.','With no wind the flag weights are not needed.'):tr('Вітер уздовж траси різний, і ближній вітер діє на кулю довше й сильніше, тож беру зважене середнє з вагами з таблиці ','Wind varies along the range, and the near wind acts on the bullet longer and harder, so I take the weighted average with the table weights ')+wt.map(v=>v.toFixed(2)).join(' / ')+': '+wt.map((v,i)=>v.toFixed(2)+'·'+sp[i]).join(' + ')+' = '+wind.toFixed(1)+tr(' м/с.',' m/s.')},
+   {mark:'weather',text:noWind()?tr('Напрямок вітру не має значення: його немає.','The wind direction does not matter: there is none.'):still?tr('Напрямок вітру не має значення: штиль.','The wind direction does not matter: it is calm.'):
+    tr('Вітер дме з '+w.clock+' год (я дивлюсь на 12), тобто під кутом '+w.clock*30+'° до лінії пострілу. Бічна складова = вітер × sin = '+wind.toFixed(1)+' × '+Math.abs(kz).toFixed(2)+' = '+cross.toFixed(1)+' м/с, поздовжня = вітер × cos = '+wind.toFixed(1)+' × '+Math.abs(kx).toFixed(2)+' = '+Math.abs(hw).toFixed(1)+' м/с'+(Math.abs(kx)<.01?'. ':kx<0?' (зустрічна). ':' (попутна). ')+(Math.abs(kz)<.01?'Бокової складової немає — X лише від деривації та Коріоліса.':kz<0?'Бічний вітер справа зносить кулю ліворуч: X має бути додатним — ціль правіше.':'Бічний вітер зліва зносить кулю праворуч: X має бути від’ємним — ціль лівіше.'),
+     'The wind blows from '+w.clock+' o\'clock (I face 12), an angle of '+w.clock*30+'° to the line of fire. Crosswind = wind × sin = '+wind.toFixed(1)+' × '+Math.abs(kz).toFixed(2)+' = '+cross.toFixed(1)+' m/s, head/tail = wind × cos = '+wind.toFixed(1)+' × '+Math.abs(kx).toFixed(2)+' = '+Math.abs(hw).toFixed(1)+' m/s'+(Math.abs(kx)<.01?'. ':kx<0?' (headwind). ':' (tailwind). ')+(Math.abs(kz)<.01?'No crosswind — X is only spin drift and Coriolis.':kz<0?'A crosswind from the right pushes the bullet left: X must be positive — aim right.':'A crosswind from the left pushes the bullet right: X must be negative — aim left.'))},
+   {mark:'table',text:tr('Таблиця для ','Table for ')+c.name+', '+distLabel(dk)+tr(': підйом ',': elevation ')+e.toFixed(1)+(noWind()?tr(' міл, деривація + Коріоліс ',' mil, spin + Coriolis ')+T.sc.toFixed(3)+tr(' міл.',' mil.'):tr(' міл, знос ',' mil, drift ')+k.toFixed(2)+tr(' міл на кожен 1 м/с бокового вітру, зустрічний/попутний ',' mil per 1 m/s of crosswind, head/tail ')+T.ht.toFixed(3)+tr(' міл на 1 м/с, деривація + Коріоліс ',' mil per 1 m/s, spin + Coriolis ')+T.sc.toFixed(2)+tr(' міл.',' mil.'))},
+   {mark:'y',text:adaptLine()+'. '+worldHint()+(noWind()?(worldId==='moon'?tr('На Місяці немає повітря — куля не гальмує й вітру немає, тож лише гравітація. ','No air on the Moon — the bullet doesn\'t slow down and there\'s no wind, only gravity. '):tr('На Меркурії немає повітря — куля не гальмує й вітру немає, тож лише гравітація (g '+WLD().g+' м/с²). ','No air on Mercury — the bullet doesn\'t slow down and there\'s no wind, only gravity (g '+WLD().g+' m/s²). ')):tr('Куля падає під дією тяжіння цього світу (g '+WLD().g+' м/с²)'+(worldId==='mars'?', а повітря дуже розріджене: куля майже не гальмує, і вітер її ледь зносить. ':', тому ствол піднімаємо. '),'The bullet drops under the gravity of this world (g '+WLD().g+' m/s²)'+(worldId==='mars'?', and the air is very thin: the bullet barely slows and the wind hardly moves it. ':', so we raise the barrel. ')))+(noWind()||still||Math.abs(kx)<.01?'':tr('Вітер уздовж траси: ','Wind along the range: ')+sgn(hw,1)+' × '+T.ht.toFixed(3)+' = '+sgn(hw*T.ht,2)+tr(' міл (зустрічний +, попутний −). ',' mil (head +, tail −). '))+tr('Y = ','Y = ')+mil(sy)+tr(' міл.',' mil.')},
+   {mark:'table',text:noWind()?tr('Повітря немає, тож деривації кулі нема. Лишається лише Коріоліс від повільного обертання світу (широта '+latOf()+'° N, стрільба на північ): ','There is no air, so no spin drift. Only Coriolis remains, from the slow rotation of the world (latitude '+latOf()+'° N, shooting north): ')+T.coriolis.toFixed(3)+tr(' міл праворуч, тому в X додаємо мінус ці ',' mil to the right, so X gets minus these ')+T.sc.toFixed(3)+tr(' міл.',' mil.'):tr('Є ще дві поправки, які завжди зносять кулю праворуч, хоч би який вітер. Деривація: обертання кулі за правою нарізкою зміщує її вправо, ≈ ','Two more corrections always push the bullet right, whatever the wind. Spin drift: a right-hand twist moves the bullet right, ≈ ')+T.spin.toFixed(2)+(worldId==='earth'?tr(' міл. Коріоліс: обертання Землі на широті 48° N (стрільба на північ) — ще ',' mil. Coriolis: the Earth\'s rotation at 48° N (shooting north) adds '):tr(' міл. Коріоліс: обертання світу «'+worldName()+'» (широта '+latOf()+'° N, стрільба на північ) — ще ',' mil. Coriolis: the rotation of the world “'+worldName()+'” ('+latOf()+'° N, shooting north) adds '))+T.coriolis.toFixed(2)+tr(' міл. Разом ',' mil. Together ')+T.sc.toFixed(2)+tr(' міл праворуч, тому в X додаємо мінус ці ',' mil to the right, so X gets minus these ')+T.sc.toFixed(2)+tr(' міл.',' mil.')},
+   {mark:'x',text:(noWind()||still?'X = −('+T.sc.toFixed(3)+') ≈ ':'X = −('+k.toFixed(2)+' × '+(cw<0?'(−'+cross.toFixed(1)+')':cw.toFixed(1))+' + '+T.sc.toFixed(2)+') ≈ ')+signedMil(sx)+tr(' міл. Чим довше куля летить, тим більше її зносить.',' mil. The longer the flight, the more the wind carries it.')+(noWind()||still?'':tr(' Порив не враховую — він видно лише по тому, як зараз тріпочуть прапорці.',' I ignore the current gust — it shows only in how the flags are flapping right now.'))},
    {mark:'y',dial:'y',text:tr('Кручу маховик вертикальних поправок до ','Dialing elevation to ')+mil(sy)+tr(' міл.',' mil.')},
    {mark:'x',dial:'x',text:tr('Кручу маховик бокових поправок до ','Dialing windage to ')+signedMil(sx)+tr(' міл.',' mil.')},
    {mark:'aim',aim:true,text:(again?tr('Маховики залишаю як є — поправка та сама, умови ті самі. Після віддачі лише заново наводжу мішень у центр сітки. Порив змінився — слідкую за прапорцями.','I keep the dial as it is — same correction, same conditions. After the recoil I only re-aim, target to the reticle center. The gust has moved on — I watch the flags.'):tr('Наводжу гвинтівку: ставлю мішень у центр сітки, бо поправки виставлені маховиками повністю.','Aiming the rifle: target to the reticle center, since the turrets carry the full correction.'))+tr(' Кратність ставлю ',' Magnification — ')+workZoom()+'×.'},
@@ -290,32 +302,41 @@ export function startSniper(){
  const takeover=()=>{if(ap.on)stopAutoplay();begin()};
 
  // Ballistic calculator: pure arithmetic on what the player types; never reads game state, never affects scoring.
- const calc={open:false,f:['','',''],w:'',dir:'',drift:'',sc:'',elev:'',status:''};
+ const calc={open:false,f:['','',''],w:'',clock:'',drift:'',sc:'',ht:'',elev:'',status:''};
  const num=text=>{const t=text.trim().replace(/\s+/g,'').replace(/[−–—]/g,'-').replace(',','.');return /^-?(\d+\.?\d*|\.\d+)$/.test(t)?Number(t):NaN};
- const calcFlag=text=>{const v=num(text);return Number.isInteger(v)&&v>=1&&v<=3?v:NaN};
+ const calcFlag=text=>{const v=num(text);return Number.isInteger(v)&&v>=0&&v<=3?v:NaN}; // 0 = limp flag (calm)
  const calcWeights=text=>{const a=text.trim().split(/[\s/;]+/).filter(Boolean).map(num);return a.length===3&&a.every(v=>v>=0&&v<=1)?a:null}; // three flag weights from the table, e.g. 0,46 0,33 0,21
  function calcResult(){
-  const f=calc.f.map(calcFlag),wt=calcWeights(calc.w),drift=num(calc.drift),sc=num(calc.sc),elev=num(calc.elev),dash='—';
-  const out={bad:f.map((v,i)=>calc.f[i].trim()!==''&&Number.isNaN(v)),badW:calc.w.trim()!==''&&!wt,wind:dash,x:dash,y:dash,xt:null,yt:null};
+  const f=calc.f.map(calcFlag),wt=calcWeights(calc.w),drift=num(calc.drift),sc=num(calc.sc),elev=num(calc.elev),ht=calc.ht.trim()===''?0:num(calc.ht),dash='—'; // blank head/tail column = 0
+  const out={bad:f.map((v,i)=>calc.f[i].trim()!==''&&Number.isNaN(v)),badW:calc.w.trim()!==''&&!wt,badH:Number.isNaN(ht),wind:dash,cross:dash,head:dash,x:dash,y:dash,xt:null,yt:null};
+  let cwr=null,hw=0;
   if(f.every(v=>!Number.isNaN(v))&&wt){
-   const fm=WLD().flagMs,wind=Number(f.reduce((a,v,i)=>a+fm[v-1]*wt[i],0).toFixed(1));
-   out.wind=f.map((v,i)=>wt[i]+'·'+fm[v-1]).join(' + ')+' = '+wind.toFixed(1)+tr(' м/с',' m/s');
-   if(calc.dir&&!Number.isNaN(drift)&&!Number.isNaN(sc)){
-    const sign=calc.dir==='we'?1:-1;
-    out.xt=Math.round(-(sign*drift*wind+sc)*10)+0;
-    out.x='−('+sgn(sign*drift,2).replace('+','')+' × '+wind.toFixed(1)+' + '+sc+') = '+signedMil(out.xt)+tr(' міл',' mil');
+   const fm=WLD().flagMs,wind=Number(f.reduce((a,v,i)=>a+(v?fm[v-1]:0)*wt[i],0).toFixed(1));
+   out.wind=f.map((v,i)=>wt[i]+'·'+(v?fm[v-1]:0)).join(' + ')+' = '+wind.toFixed(1)+tr(' м/с',' m/s');
+   if(calc.clock){
+    const {kx,kz}=clockDir(Number(calc.clock)),deg=calc.clock*30;
+    cwr=kz*wind;hw=-kx*wind; // cwr: + pushes the bullet right; hw: + headwind
+    out.cross=wind.toFixed(1)+' × sin '+deg+'° = '+Math.abs(cwr).toFixed(1)+tr(' м/с',' m/s')+(Math.abs(kz)<.01?'':kz<0?tr(' (зносить ліворуч)',' (pushes left)'):tr(' (зносить праворуч)',' (pushes right)'));
+    out.head=wind.toFixed(1)+' × cos '+deg+'° = '+Math.abs(hw).toFixed(1)+tr(' м/с',' m/s')+(Math.abs(kx)<.01?'':kx<0?tr(' (зустрічний)',' (headwind)'):tr(' (попутний)',' (tailwind)'));
    }
   }
-  if(!Number.isNaN(elev)){out.yt=Math.round(elev*10)+0;out.y=(out.yt/10).toFixed(1)+tr(' міл',' mil')}
+  if(cwr!==null&&!Number.isNaN(drift)&&!Number.isNaN(sc)){
+   out.xt=Math.round(-(drift*cwr+sc)*10)+0;
+   out.x='−('+drift+' × '+(cwr<0?'(−'+Math.abs(cwr).toFixed(1)+')':cwr.toFixed(1))+' + '+sc+') = '+signedMil(out.xt)+tr(' міл',' mil');
+  }
+  if(!Number.isNaN(elev)&&!Number.isNaN(ht)){out.yt=Math.round((elev+hw*ht)*10)+0;out.y=(hw&&ht?elev+' + '+hw.toFixed(1)+' × '+ht+' = ':'')+(out.yt/10).toFixed(1)+tr(' міл',' mil')}
   return out;
  }
  function paintCalc(){
   const r=calcResult();
   root.querySelector('[data-calc-out="wind"]').value=r.wind;
+  root.querySelector('[data-calc-out="cross"]').value=r.cross;
+  root.querySelector('[data-calc-out="head"]').value=r.head;
   root.querySelector('[data-calc-out="x"]').value=r.x;
   root.querySelector('[data-calc-out="y"]').value=r.y;
   root.querySelectorAll('[data-calc^="f"]').forEach((el,i)=>el.setAttribute('aria-invalid',String(r.bad[i])));
   root.querySelector('[data-calc="w"]').setAttribute('aria-invalid',String(r.badW));
+  root.querySelector('[data-calc="ht"]').setAttribute('aria-invalid',String(r.badH));
   root.querySelector('[data-calc-apply]').disabled=r.xt===null||r.yt===null||state.roundDone;
   root.querySelector('[data-calc-status]').textContent=calc.status;
  }
@@ -337,7 +358,7 @@ export function startSniper(){
    if(k[0]==='f')calc.f[k[1]-1]=el.value;else calc[k]=el.value;
    calc.status='';paintCalc();
   };
-  for(const el of drawer.querySelectorAll('[name="calc-dir"]'))el.onchange=()=>{calc.dir=el.value;calc.status='';paintCalc()};
+  for(const el of drawer.querySelectorAll('[name="calc-clock"]'))el.onchange=()=>{calc.clock=el.value;calc.status='';paintCalc()};
   drawer.querySelector('[data-calc-apply]').onclick=()=>{
    const r=calcResult();
    if(r.xt===null||r.yt===null)return;
@@ -347,9 +368,9 @@ export function startSniper(){
    paintCalc();
   };
   drawer.querySelector('[data-calc-clear]').onclick=()=>{
-   Object.assign(calc,{f:['','',''],w:'',dir:'',drift:'',sc:'',elev:'',status:''});
+   Object.assign(calc,{f:['','',''],w:'',clock:'',drift:'',sc:'',ht:'',elev:'',status:''});
    for(const el of drawer.querySelectorAll('[data-calc]'))el.value='';
-   for(const el of drawer.querySelectorAll('[name="calc-dir"]'))el.checked=false;
+   for(const el of drawer.querySelectorAll('[name="calc-clock"]'))el.checked=false;
    paintCalc();drawer.querySelector('[data-calc="f1"]').focus();
   };
   paintCalc();
@@ -359,14 +380,17 @@ export function startSniper(){
   return `<aside id="sniper-calc" class="sniper-calc-drawer${calc.open?' is-open':''}" aria-label="${tr('Балістичний калькулятор','Ballistic calculator')}"${calc.open?'':' inert aria-hidden="true"'}>
    <div class="sniper-calc-head"><h2>${tr('Балістичний калькулятор','Ballistic calculator')}</h2><button type="button" data-calc-close aria-label="${tr('Закрити','Close')}">×</button></div>
    <div class="sniper-calc-flags">${[1,2,3].map(n=>`<label>${tr('Прапорець ','Flag ')}${n}${field('f'+n,calc.f[n-1])}</label>`).join('')}</div>
-   <p class="sniper-calc-hint">${tr('кількість рисок 1–3','marks, 1–3')}</p>
+   <p class="sniper-calc-hint">${tr('кількість рисок ▮ 0–3 (0 = обвис)','marks ▮ 0–3 (0 = limp)')}</p>
    <label class="sniper-calc-row">${tr('Ваги прапорців з таблиці','Flag weights from the table')}${field('w',calc.w,' placeholder="0,46 0,33 0,21"')}</label>
    <output data-calc-out="wind"></output>
-   <div class="sniper-calc-dir" role="group" aria-label="${tr('Напрям вітру','Wind direction')}">
-    ${[['we','W → E'],['ew','E → W']].map(([v,t])=>`<label><input type="radio" name="calc-dir" value="${v}"${calc.dir===v?' checked':''}>${t}</label>`).join('')}
+   <div class="sniper-calc-clock" role="radiogroup" aria-label="${tr('Вітер дме з: година, 12 — зустрічний, 6 — попутний','Wind comes from: o\'clock, 12 = headwind, 6 = tailwind')}"><span>${tr('Вітер з … год (12 — у лице, 3 — справа)','Wind from … o\'clock (12 = head-on, 3 = from the right)')}</span>
+    <div class="sniper-calc-clockpills">${[12,1,2,3,4,5,6,7,8,9,10,11].map(n=>`<label><input type="radio" name="calc-clock" value="${n}"${Number(calc.clock)===n?' checked':''}><span>${n}</span></label>`).join('')}</div>
    </div>
+   <output data-calc-out="cross" aria-label="${tr('Бічна складова','Crosswind')}"></output>
+   <output data-calc-out="head" aria-label="${tr('Зустрічна / попутна складова','Head / tail')}"></output>
    <label class="sniper-calc-row">${tr('Знос на 1 м/с, міл','Drift per 1 m/s, mil')}${field('drift',calc.drift)}</label>
    <label class="sniper-calc-row">${tr('Деривація+Коріоліс з таблиці, міл','Spin + Coriolis from table, mil')}${field('sc',calc.sc)}</label>
+   <label class="sniper-calc-row">${tr('Зустр./попутний 1 м/с, міл','Head/tail 1 m/s, mil')}${field('ht',calc.ht)}</label>
    <label class="sniper-calc-row">${tr('Підйом з таблиці, міл','Elevation from table, mil')}${field('elev',calc.elev)}</label>
    <div class="sniper-calc-result"><span>X</span><output data-calc-out="x" class="is-x"></output><span>Y</span><output data-calc-out="y" class="is-y"></output></div>
    <div class="sniper-hints"><button type="button" data-calc-apply>${tr('Виставити на маховики','Set on turrets')}</button><button type="button" data-calc-clear>${tr('Очистити','Clear')}</button></div>
@@ -441,12 +465,13 @@ export function startSniper(){
   state.misses=0;state.roundDone=false;delete state.lastShot;notice='';miss=null;state.aim=next?recoilOf(state.aim):randomAim();
  }
  function startSeries(){
-  const wi=Math.floor(Math.random()*weather.length); // one weather (mean wind and flags) for all five shots; only the gust keeps changing
+  const wi=Math.floor(Math.random()*weather.length),wind=randomWind(); // one weather (humidity) and one wind (regime, clock direction, flag strengths) for all five shots; only the gust keeps changing
   if(state.pendingMode!==undefined){state.mode=state.pendingMode;delete state.pendingMode}
   if(state.pendingProfile!==undefined){state.profile=state.pendingProfile;delete state.pendingProfile}
   if(state.pendingWorld!==undefined){setWorld(state.pendingWorld);state.world=worldId;delete state.pendingWorld}
   holes.length=0;gl?.reset();
-  state.series={v:2,rounds:Array(seriesSize).fill(wi),unassisted:[],scores:[],shots:[],usedCode:false,time:0,started:false};
+  putWind(wind);
+  state.series={v:2,wind,rounds:Array(seriesSize).fill(wi),unassisted:[],scores:[],shots:[],usedCode:false,time:0,started:false};
   resetShot();
   state.round=0;
   state.distance=modeDistances[state.mode][0];
@@ -562,18 +587,18 @@ export function startSniper(){
   if(state.roundDone||flying||rt||!fireGate())return;
   begin();
   if(ap.on){clearTimeout(ap.timer);ap.fn=null}
-  const tol=tolerance[state.distance],w=weather[state.weather],tutorial=state.tutorialDone!==true;
+  const tol=tolerance[state.distance],w=state.wind,tutorial=state.tutorialDone!==true;
   gustStep(performance.now());
-  const B=Bw(),h=o.h||0,k=breathK(h),ci=state.profile,D=distances[state.distance],T=tabOf(ci,state.distance),dir=dirOf(w),sw=swayNow(h),gustRead=gp.g,flagG=flagGusts(),dv0=gauss()*sigma.dv0,hs=(reduced()?sigma.holdReduced:sigma.hold)*k;
+  const B=Bw(),h=o.h||0,k=breathK(h),ci=state.profile,D=distances[state.distance],T=tabOf(ci,state.distance),{kx,kz}=clockDir(w.clock),sw=swayNow(h),gustRead=gp.g,flagG=flagGusts(),dv0=gauss()*sigma.dv0,hs=(reduced()?sigma.holdReduced:sigma.hold)*k;
   // The gust keeps evolving (Ornstein–Uhlenbeck, from the value the flags show now) while the bullet flies; the solver integrates the time-varying wind it actually meets.
   const gp2=ouPath(gustRead,sigma.gust,sigma.tau,gustDt,Math.ceil((T.tof+1.5)/gustDt)+2,gauss),res=gauss()*sigma.res,gf=pathFn(gp2,gustDt);
-  const disp={gust:0,gustRead,res,gp:gp2.map(v=>+v.toFixed(3)),gx:0,gxR:dir*T.drift1*gustRead,vy:0,dv0,rand:{x:gauss()*sigma.rand,y:gauss()*sigma.rand},hold:{x:gauss()*hs-sw.x,y:gauss()*hs-sw.y}}; // mil; hold is the impact error from the sway at the trigger pull (sway and hs already scaled by the breath factor k)
-  const flags=flagMs(w).map(v=>dir*v),mean={flags},full={flags,gust:t=>dir*gf(t),res:dir*res};
+  const disp={gust:0,gustRead,res,gp:gp2.map(v=>+v.toFixed(3)),gx:0,gxR:kz*T.drift1*gustRead,gy:0,vy:0,dv0,rand:{x:gauss()*sigma.rand,y:gauss()*sigma.rand},hold:{x:gauss()*hs-sw.x,y:gauss()*hs-sw.y}}; // mil; hold is the impact error from the sway at the trigger pull (sway and hs already scaled by the breath factor k)
+  const flags=flagMs(w),mean={flags,kx,kz},full={flags,kx,kz,gust:gf,res}; // wind speeds along the wind's own direction; the solver splits them into crosswind and head/tail
   // Dial and pointing errors are all angles: the bore points (dial − aim offset + rifle + hold) from the zero.
   const ang={elevMil:(state.y-state.aim.y)/10+disp.rand.y+disp.hold.y,windMil:(state.x-state.aim.x)/10+disp.rand.x+disp.hold.x};
   const path=B.trajectory(ci,D,{...ang,dv0,wind:full,beyond:60});
   const noGust=B.trajectory(ci,D,{...ang,dv0,wind:mean,dx:D}),noV=B.trajectory(ci,D,{...ang,dv0:0,wind:mean,dx:D});
-  disp.gx=path.impact.x-noGust.impact.x;disp.vy=noGust.impact.y-noV.impact.y;disp.gust=Math.abs(T.drift1)>1e-9?disp.gx/(dir*T.drift1):0; // gust: effective along-wind m/s equivalent
+  disp.gx=path.impact.x-noGust.impact.x;disp.gy=path.impact.y-noGust.impact.y;disp.vy=noGust.impact.y-noV.impact.y;disp.gust=Math.abs(kz)>.25&&Math.abs(T.drift1)>1e-9?disp.gx/(kz*T.drift1):gustRead; // gust: effective along-wind m/s equivalent (from the crosswind part; a head/tail wind shows the gust speed itself)
   const dx=10*path.impact.x,dy=10*path.impact.y,err=Math.hypot(dx,dy),ring=ringOf(err,state.distance),tof=path.tof;
   const useFpv=state.fpv==='always'||(state.fpv==='auto'&&(ring===10||ring===0)); // Auto: slow-motion flight only for a 10 or a complete miss, otherwise real time
   { // sound: muzzle blast now; the steel ting arrives after the flight plus the sound's travel time (FPV replay: at the impact of the replay, quieter)
@@ -593,7 +618,7 @@ export function startSniper(){
      await playFlight(root,{
       distance:D,caliber:calibers[ci],gravity:WLD().g,world:worldId,path,
       aimMil:{x:state.x/10,y:state.y/10},holes:holes.filter(v=>v.D===D),impactMil:{x:dx/10,y:dy/10},targetRadiusMil:tol/10,ring10:ringFrac(state.distance),note,ring,hit:ring>0,
-      wind:{east:w.east,flags:w.flags,gust:flagG},
+      wind:{regime:w.regime,clock:w.clock,flags:w.flags,gust:flagG},
       autoClose:0,tr,
      });
     }catch(error){console.warn(error)}
@@ -609,7 +634,7 @@ export function startSniper(){
    if(useFpv)series.time+=1000*tof; // real time of flight replaces the animation time (in real-time mode it already elapsed)
    series.scores=[...series.scores,ring];
    series.unassisted=[...series.unassisted,!series.usedCode];
-   series.shots=[...series.shots,{ring,hit:ring>0,dx,dy,ms:Math.max(0,series.time-before),disp,p:{di:state.distance,ci:state.profile,wi:state.weather,x:state.x,y:state.y}}];
+   series.shots=[...series.shots,{ring,hit:ring>0,dx,dy,ms:Math.max(0,series.time-before),disp,p:{di:state.distance,ci:state.profile,wi:state.weather,wind:{regime:w.regime,clock:w.clock,flags:[...w.flags]},x:state.x,y:state.y}}];
    state.roundDone=true;state.lastShot={ring,score:ring};state.misses=0;notice='';miss=null;
    if(state.round===seriesSize-1){
     const total=series.scores.reduce((a,b)=>a+b,0),hits=series.shots.filter(v=>v.hit).length,hpm=series.time>0?hits/(series.time/60000):0;
@@ -666,6 +691,26 @@ export function startSniper(){
    const b=el.querySelector('[data-rt-go]');b.onclick=()=>rt?.go?.();b.focus({preventScroll:true});
   }
  }
+ // Between shots the wind may shift, rarely and gently (~20% per shot): the clock moves one hour and/or the flags one step; steady stays steady, calm and a 1-step steady wind can swap (~10%).
+ let windNote='';
+ function driftWind(){
+  const w=state.wind;
+  if(Math.random()>=.2)return;
+  const hour=()=>(w.clock-1+(Math.random()<.5?-1:1)+12)%12+1,step=()=>Math.random()<.5?-1:1,cl=v=>Math.max(1,Math.min(3,v));
+  let n;
+  if(w.regime==='calm'){if(Math.random()>=.1)return;n={regime:'steady',clock:Math.random()<.5?hour():w.clock,flags:[1,1,1]}}
+  else if(w.regime==='steady'&&w.flags[0]===1&&Math.random()<.1)n={regime:'calm',clock:w.clock,flags:[0,0,0]};
+  else{
+   let clock=Math.random()<.5?hour():w.clock,flags=[...w.flags];
+   if(w.regime==='steady'){if(Math.random()<.6||clock===w.clock){const f=cl(flags[0]+step());flags=[f,f,f]}}
+   else if(Math.random()<.6||clock===w.clock){const i=Math.floor(Math.random()*3);flags=flags.map((v,j)=>j===i||Math.random()<.4?cl(v+step()):v)}
+   n={regime:w.regime,clock,flags};
+  }
+  if(!validWind(n)||(n.clock===w.clock&&n.flags.join()===w.flags.join()&&n.regime===w.regime))return;
+  const regimeChanged=n.regime!==w.regime;
+  state.series.wind=n;putWind(n);if(regimeChanged)gustSeed();
+  windNote=tr('Вітер змінився: ','Wind changed: ')+compass(n)+' · '+flagPattern(n);
+ }
  function nextRound(){
   if(tabPick==='results')tabPick=null;
   if(state.tutorialDone!==true||state.round===seriesSize-1){
@@ -677,21 +722,23 @@ export function startSniper(){
    state.round++;
    state.distance=modeDistances[state.mode][state.round];
    state.weather=state.series.rounds[state.round]; // same conditions; the turrets and zoom stay as the player left them
+   windNote='';driftWind();if(windNote)notice=windNote;
   }
   clock();
   save();render();scopeTop();
  }
  function methodSteps(){
  const d1=(ci,di)=>tabOf(ci,di).drift1,row=ci=>[2,3,4].map(di=>d1(ci,di).toFixed(2)).join(' / '),T=tabOf(state.profile,state.distance),W=weightsShown(T).map(v=>v.toFixed(2)).join(' / '),
-  g=di=>(sigma.gust*d1(1,di)).toFixed(2);
+  g=di=>(WLD().gust*d1(1,di)).toFixed(2);
  return `<li>${adaptLine()}.</li>
   <li>${tr('Спершу підберіть кратність: на 4× видно всю трасу, щоб знайти мішень; потім збільште, щоб точно навестися.','First set magnification: at 4× you see the whole range to find the target; then zoom in to aim precisely.')}</li>
-  ${calm()?`<li>${tr('У цьому світі немає повітря, а отже й вітру: прапорці висять на жорстких штангах, поправка на вітер нульова. X — лише Коріоліс.','This world has no air and so no wind: the flags hang on rigid rods and the windage correction is zero. X is Coriolis only.')}</li>`:`<li>${tr('Кожен прапорець: '+marksPlain()+' м/с. Вітер на трасі різний, і чим ближче до стрільця, тим довше він діє на кулю, тож середнє зважене: вага прапорців з таблиці (ближній / середній / дальній), для вашої дистанції ','Each flag: '+marksPlain()+' m/s. Wind differs along the range, and the nearer it is to the shooter the longer it acts on the bullet, so use the weighted average with the table weights (near / middle / far), for your distance ')}<b>${W}</b>${tr(': вітер = сума (вага × швидкість прапорця).',': wind = sum of (weight × flag speed).')}</li>`}
-  <li>${tr('Y = підйом з таблиці для вашої дистанції (нуль на 100 м).','Y = elevation from the table for your distance (100 m zero).')}</li>
-  ${worldId!=='earth'?`<li>${calm()?tr('Деривації немає (повітря немає). Коріоліс від обертання світу «'+worldName()+'» (широта '+latOf()+'° N, стрільба на північ) зносить кулю праворуч: див. колонку «Деривація + Коріоліс».','No spin drift (no air). Coriolis from the rotation of the world “'+worldName()+'” ('+latOf()+'° N, shooting north) pushes the bullet right: see the “Spin + Coriolis” column.'):(WLD().rho<.1?tr('Деривація (мала в розрідженому повітрі) й Коріоліс від обертання світу «'+worldName()+'» зносять кулю праворуч, і не залежать від вітру: колонка «Деривація + Коріоліс».','Spin drift (tiny in thin air) and Coriolis from the rotation of the world “'+worldName()+'” push the bullet right regardless of wind: the “Spin + Coriolis” column.'):tr('Деривація й Коріоліс від обертання світу «'+worldName()+'» (широта '+latOf()+'° N, стрільба на північ) зносять кулю праворуч, і не залежать від вітру: колонка «Деривація + Коріоліс».','Spin drift and Coriolis from the rotation of the world “'+worldName()+'” (latitude '+latOf()+'° N, shooting north) push the bullet right regardless of wind: the “Spin + Coriolis” column.'))}</li>`:`<li>${tr('Деривація й Коріоліс: куля з правою нарізкою завжди йде праворуч, і обертання Землі (широта 48° N, стрільба на північ) теж зносить її праворуч. Обидві поправки — у колонці «Деривація + Коріоліс» таблиці, і не залежать від вітру.','Spin drift and Coriolis: a right-hand twist always carries the bullet right, and the Earth\'s rotation (latitude 48° N, shooting north) also pushes it right. Both are in the “Spin + Coriolis” table column and do not depend on the wind.')}</li>`}
-  <li>${tr('X = −(знос на 1 м/с × зважений вітер + деривація + Коріоліс). Вітер W → E зносить праворуч — його частина від’ємна; E → W — ліворуч, додатна; деривація й Коріоліс завжди дають від’ємний внесок.','X = −(drift per 1 m/s × weighted wind + spin + Coriolis). A W → E wind pushes right, so its part is negative; E → W pushes left, positive; spin and Coriolis always contribute a negative part.')}</li>
-  ${worldId==='earth'?`<li>${tr('Навіть ідеальний розрахунок не гарантує 10: реальний розкид — порив і залишок вітру (≈±0,5 м/с), розкид швидкості кулі ±2 м/с (≈7 фут/с), кучність гвинтівки ≈0,5 MOA, дихання стрільця й округлення маховиків до 0,1 міл — дає випадкове відхилення. За симуляцією ідеальний постріл дає 10 приблизно у 70% випадків на 300 м, 55% на 500 м, 20–32% на 1 км, 4–13% на 2 км і 2–4% на 3 км. Мішені на 2 і 3 км великі (сталева плита ⌀ 1,9 і 4,0 м): ідеальний постріл влучає в плиту приблизно у 60–90% (2 км) і 55–85% (3 км) випадків залежно від калібру — найкраще для .416 Barrett і .50 BMG, найгірше для .338 Lapua, яка на 2 км вже майже дозвукова.','Even a perfect solution doesn\'t guarantee a 10. Realistic error adds up: gust plus the unreadable part of the wind (about ±0.5 m/s), muzzle velocity varies by ±2 m/s (~7 fps), the rifle shoots about 0.5 MOA, the shooter\'s breathing moves the hold, and the turrets round to 0.1 mil. In simulation a perfect shot is a 10 about 70% of the time at 300 m, 55% at 500 m, 20–32% at 1 km, 4–13% at 2 km and 2–4% at 3 km. The 2 km and 3 km targets are large steel plates (1.9 m and 4.0 m across): a perfect shot still hits the plate about 60–90% of the time at 2 km and 55–85% at 3 km, depending on the caliber — best for the .416 Barrett and .50 BMG, worst for the .338 Lapua, which is nearly subsonic at 2 km.')}</li>`:`<li>${tr('Навіть ідеальний розрахунок не гарантує 10: розкид швидкості кулі ±2 м/с, кучність гвинтівки ≈0,5 MOA, дихання стрільця, округлення маховиків до 0,1 міл'+(calm()?'':' і порив вітру (σ '+WLD().gust+' м/с)')+' дають випадкове відхилення. Відсотки в цьому розділі — для світу «Майже Земля»; '+(WLD().rho<.1?'тут куля майже не гальмує, тож влучати легше.':'тут тяжіння, повітря й вітер інші, тож результат відрізняється: куля падає сильніше й довше летить.'),'Even a perfect solution doesn\'t guarantee a 10: muzzle velocity spread of ±2 m/s, rifle grouping about 0.5 MOA, breathing, and the turrets rounding to 0.1 mil'+(calm()?'':' and wind gusts (σ '+WLD().gust+' m/s)')+' add random error. The percentages in this section are for the Almost Earth world; here '+(WLD().rho<.1?'the bullet barely slows, so hitting is easier.':'gravity, air and wind differ, so the result differs: the bullet drops more and flies longer.'))}</li>`}
-  ${worldId==='earth'?`<li>${tr('Вітер не постійний: порив повільно «дихає» (приблизно ±0,5 м/с, з часом ≈4 с), і його видно лише по прапорцях. Але куля летить кілька секунд, а порив за цей час змінюється: чим довший політ, тим менше допомагає зчитаний порив (на 1 км він прибирає ≈60% розкиду від вітру, на 3 км лише ≈20%). Прапорці випрямляються — вітер сильнішає: додайте поправку в бік вітру; обвисли — слабшає: додайте проти вітру або зачекайте затишшя. Скільки міл на кожен +1 м/с: .375 CheyTac — '+row(1)+' на 1 / 2 / 3 км; .338 Lapua — '+row(0)+'; .416 Barrett — '+row(2)+'; .50 BMG — '+row(3)+'. Тож порив ±0,5 м/с — це ≈±'+g(2)+' міл на 1 км і ≈±'+g(4)+' міл на 3 км для .375. Невидима частина вітру (≈0,1 м/с по трасі та майбутня зміна пориву) лишається випадковою.','The wind is not constant: the gust slowly breathes (about ±0.5 m/s, time constant about 4 s) and is visible only in the flags. But the bullet flies for several seconds and the gust keeps changing: the longer the flight, the less a gust you have read helps (at 1 km it removes about 60% of the wind scatter, at 3 km only about 20%). Flags straighten out = stronger wind: add windage toward the wind side; flags droop = weaker wind: add against the wind, or wait for a lull. Mil per extra +1 m/s: .375 CheyTac '+row(1)+' at 1 / 2 / 3 km; .338 Lapua '+row(0)+'; .416 Barrett '+row(2)+'; .50 BMG '+row(3)+'. So a ±0.5 m/s gust is about ±'+g(2)+' mil at 1 km and ±'+g(4)+' mil at 3 km for the .375. The unreadable part (about 0.1 m/s along the range and the future change of the gust) stays random.')}</li>`:calm()?'':`<li>${WLD().rho<.1?tr('Вітер не постійний: порив повільно «дихає» (σ '+WLD().gust+' м/с, час ≈4 с), і його видно по прапорцях. Але в розрідженому повітрі куля майже не гальмує, тож знос від вітру малий: '+row(1)+' міл на 1 м/с (.375 CheyTac, 1 / 2 / 3 км).','The wind is not constant: the gust slowly breathes (σ '+WLD().gust+' m/s, about 4 s), visible in the flags. But in thin air the bullet barely slows, so wind drift is small: '+row(1)+' mil per 1 m/s (.375 CheyTac, 1 / 2 / 3 km).'):tr('Вітер не постійний: порив повільно «дихає» (σ '+WLD().gust+' м/с, час ≈4 с), і його видно по прапорцях. Куля летить довго, тож порив за цей час змінюється. Знос від вітру: '+row(1)+' міл на 1 м/с (.375 CheyTac, 1 / 2 / 3 км).','The wind is not constant: the gust slowly breathes (σ '+WLD().gust+' m/s, about 4 s), visible in the flags. The bullet flies for a long time and the gust changes meanwhile. Wind drift: '+row(1)+' mil per 1 m/s (.375 CheyTac, 1 / 2 / 3 km).')}</li>`}
+  ${noWind()?`<li>${tr('У цьому світі немає повітря, а отже й вітру: прапорці висять на жорстких штангах, поправка на вітер нульова. X — лише Коріоліс.','This world has no air and so no wind: the flags hang on rigid rods and the windage correction is zero. X is Coriolis only.')}</li>`:`<li>${tr('Кожен прапорець: '+marksPlain()+' м/с (обвислий прапорець — штиль, 0). Режим вітру серії видно по прапорцях: штиль — усі обвисли, поправки на вітер немає; рівний — усі три однакові, вітер майже не «дихає»; поривчастий — прапорці різні, і порив змінюється. Вітер на трасі різний, і чим ближче до стрільця, тим довше він діє на кулю, тож середнє зважене: вага прапорців з таблиці (ближній / середній / дальній), для вашої дистанції ','Each flag: '+marksPlain()+' m/s (a limp flag = calm, 0). The regime of the series shows in the flags: calm — all hang limp and there is no wind correction; steady — all three the same, the wind hardly breathes; gusty — the flags differ and the gust keeps changing. Wind differs along the range, and the nearer it is to the shooter the longer it acts on the bullet, so use the weighted average with the table weights (near / middle / far), for your distance ')}<b>${W}</b>${tr(': вітер = сума (вага × швидкість прапорця).',': wind = sum of (weight × flag speed).')}</li>
+  <li>${tr('Напрям вітру — як годинник: ви дивитесь на 12 (мішень), вітер дме З вказаної години. 12 — зустрічний, 6 — попутний, 3 — справа (зносить кулю ліворуч), 9 — зліва (зносить праворуч). Розкладіть вітер: бічна складова = вітер × sin(кут), поздовжня = вітер × cos(кут), кут = година × 30°. Бічна: повне значення з 3 і 9 год, ≈0,87 з 2, 4, 8, 10 год, 0,5 з 1, 5, 7, 11 год, 0 з 12 і 6 год. Поздовжня — навпаки: 1 з 12 і 6, ≈0,87 з 1, 5, 7, 11, 0,5 з 2, 4, 8, 10, 0 з 3 і 9.','Wind direction works like a clock: you face 12 (the target) and the wind blows FROM the given hour. 12 = headwind, 6 = tailwind, 3 = from the right (pushes the bullet left), 9 = from the left (pushes it right). Split the wind: crosswind = wind × sin(angle), head/tail = wind × cos(angle), angle = hour × 30°. Crosswind: full at 3 and 9 o\'clock, ≈0.87 at 2, 4, 8, 10, 0.5 at 1, 5, 7, 11, 0 at 12 and 6. Head/tail is the opposite: 1 at 12 and 6, ≈0.87 at 1, 5, 7, 11, 0.5 at 2, 4, 8, 10, 0 at 3 and 9.')}</li>`}
+  <li>${tr('Y = підйом з таблиці'+(noWind()?'':' + зустрічна складова × колонка «Зустр./попутний 1 м/с» (попутна віднімається: перед нею мінус)')+' для вашої дистанції (нуль на 100 м).','Y = elevation from the table'+(noWind()?'':' + head/tail component × the “Head/tail 1 m/s” column (a tailwind subtracts)')+' for your distance (100 m zero).')}${noWind()?'':tr(' Зустрічний вітер подовжує політ і додає падіння: ≈'+tabOf(state.profile,state.distance).ht.toFixed(3)+' міл на 1 м/с на вашій дистанції — на 300–1000 м це майже непомітно, а на 3 км уже понад пів-міл на кілька м/с.',' A headwind lengthens the flight and adds drop: about '+tabOf(state.profile,state.distance).ht.toFixed(3)+' mil per 1 m/s at your distance — barely visible at 300–1000 m, but at 3 km a few m/s already add over half a mil.')}</li>
+  ${worldId!=='earth'?`<li>${noWind()?tr('Деривації немає (повітря немає). Коріоліс від обертання світу «'+worldName()+'» (широта '+latOf()+'° N, стрільба на північ) зносить кулю праворуч: див. колонку «Деривація + Коріоліс».','No spin drift (no air). Coriolis from the rotation of the world “'+worldName()+'” ('+latOf()+'° N, shooting north) pushes the bullet right: see the “Spin + Coriolis” column.'):(WLD().rho<.1?tr('Деривація (мала в розрідженому повітрі) й Коріоліс від обертання світу «'+worldName()+'» зносять кулю праворуч, і не залежать від вітру: колонка «Деривація + Коріоліс».','Spin drift (tiny in thin air) and Coriolis from the rotation of the world “'+worldName()+'” push the bullet right regardless of wind: the “Spin + Coriolis” column.'):tr('Деривація й Коріоліс від обертання світу «'+worldName()+'» (широта '+latOf()+'° N, стрільба на північ) зносять кулю праворуч, і не залежать від вітру: колонка «Деривація + Коріоліс».','Spin drift and Coriolis from the rotation of the world “'+worldName()+'” (latitude '+latOf()+'° N, shooting north) push the bullet right regardless of wind: the “Spin + Coriolis” column.'))}</li>`:`<li>${tr('Деривація й Коріоліс: куля з правою нарізкою завжди йде праворуч, і обертання Землі (широта 48° N, стрільба на північ) теж зносить її праворуч. Обидві поправки — у колонці «Деривація + Коріоліс» таблиці, і не залежать від вітру.','Spin drift and Coriolis: a right-hand twist always carries the bullet right, and the Earth\'s rotation (latitude 48° N, shooting north) also pushes it right. Both are in the “Spin + Coriolis” table column and do not depend on the wind.')}</li>`}
+  <li>${tr('X = −(знос на 1 м/с × бічна складова + деривація + Коріоліс), де бічна складова з плюсом, якщо вітер дме вправо (з 7–11 год), і з мінусом, якщо вліво (з 1–5 год). Отже вітер справа дає додатну частину X, вітер зліва — від’ємну; деривація й Коріоліс завжди дають від’ємний внесок.','X = −(drift per 1 m/s × crosswind + spin + Coriolis), where the crosswind is positive if the wind blows right (from 7–11 o\'clock) and negative if it blows left (from 1–5). So a wind from the right gives a positive part of X, a wind from the left a negative one; spin and Coriolis always contribute a negative part.')}</li>
+  ${worldId==='earth'?`<li>${tr('Навіть ідеальний розрахунок не гарантує 10: реальний розкид — порив і залишок вітру (≈±0,5 м/с), розкид швидкості кулі ±2 м/с (≈7 фут/с), кучність гвинтівки ≈0,5 MOA, дихання стрільця й округлення маховиків до 0,1 міл — дає випадкове відхилення. За симуляцією ідеальний постріл дає 10 приблизно у 70% випадків на 300 м, 55% на 500 м, 20–32% на 1 км, 4–13% на 2 км і 2–4% на 3 км. Мішені на 2 і 3 км великі (сталева плита ⌀ 1,9 і 4,0 м): ідеальний постріл влучає в плиту приблизно у 60–90% (2 км) і 55–85% (3 км) випадків залежно від калібру — найкраще для .416 Barrett і .50 BMG, найгірше для .338 Lapua, яка на 2 км вже майже дозвукова.','Even a perfect solution doesn\'t guarantee a 10. Realistic error adds up: gust plus the unreadable part of the wind (about ±0.5 m/s), muzzle velocity varies by ±2 m/s (~7 fps), the rifle shoots about 0.5 MOA, the shooter\'s breathing moves the hold, and the turrets round to 0.1 mil. In simulation a perfect shot is a 10 about 70% of the time at 300 m, 55% at 500 m, 20–32% at 1 km, 4–13% at 2 km and 2–4% at 3 km. The 2 km and 3 km targets are large steel plates (1.9 m and 4.0 m across): a perfect shot still hits the plate about 60–90% of the time at 2 km and 55–85% at 3 km, depending on the caliber — best for the .416 Barrett and .50 BMG, worst for the .338 Lapua, which is nearly subsonic at 2 km.')}</li>`:`<li>${tr('Навіть ідеальний розрахунок не гарантує 10: розкид швидкості кулі ±2 м/с, кучність гвинтівки ≈0,5 MOA, дихання стрільця, округлення маховиків до 0,1 міл'+(noWind()?'':' і порив вітру (σ '+WLD().gust+' м/с)')+' дають випадкове відхилення. Відсотки в цьому розділі — для світу «Майже Земля»; '+(WLD().rho<.1?'тут куля майже не гальмує, тож влучати легше.':'тут тяжіння, повітря й вітер інші, тож результат відрізняється: куля падає сильніше й довше летить.'),'Even a perfect solution doesn\'t guarantee a 10: muzzle velocity spread of ±2 m/s, rifle grouping about 0.5 MOA, breathing, and the turrets rounding to 0.1 mil'+(noWind()?'':' and wind gusts (σ '+WLD().gust+' m/s)')+' add random error. The percentages in this section are for the Almost Earth world; here '+(WLD().rho<.1?'the bullet barely slows, so hitting is easier.':'gravity, air and wind differ, so the result differs: the bullet drops more and flies longer.'))}</li>`}
+  ${worldId==='earth'?`<li>${tr('Режими: штиль (20% серій) — порива немає; рівний вітер (30%) — порив у ≈7 разів слабший; поривчастий (50%) — повний порив. Ідеальний постріл дає 10 для .375 на 1 / 2 / 3 км приблизно: штиль 43 / 31 / 16%, рівний 47 / 28 / 13%, поривчастий 33 / 15 / 6%. ','Regimes: calm (20% of series) — no gust; steady (30%) — the gust is about 7 times weaker; gusty (50%) — the full gust. A perfect shot is a 10 for the .375 at 1 / 2 / 3 km about: calm 43 / 31 / 16%, steady 47 / 28 / 13%, gusty 33 / 15 / 6%. ')+tr('Вітер не постійний: порив повільно «дихає» (приблизно ±0,5 м/с, з часом ≈4 с), і його видно лише по прапорцях. Але куля летить кілька секунд, а порив за цей час змінюється: чим довший політ, тим менше допомагає зчитаний порив (на 1 км він прибирає ≈60% розкиду від вітру, на 3 км лише ≈20%). Прапорці випрямляються — вітер сильнішає: додайте поправку в бік вітру; обвисли — слабшає: додайте проти вітру або зачекайте затишшя. Скільки міл на кожен +1 м/с: .375 CheyTac — '+row(1)+' на 1 / 2 / 3 км; .338 Lapua — '+row(0)+'; .416 Barrett — '+row(2)+'; .50 BMG — '+row(3)+'. Тож порив ±0,5 м/с — це ≈±'+g(2)+' міл на 1 км і ≈±'+g(4)+' міл на 3 км для .375. Невидима частина вітру (≈0,1 м/с по трасі та майбутня зміна пориву) лишається випадковою.','The wind is not constant: the gust slowly breathes (about ±0.5 m/s, time constant about 4 s) and is visible only in the flags. But the bullet flies for several seconds and the gust keeps changing: the longer the flight, the less a gust you have read helps (at 1 km it removes about 60% of the wind scatter, at 3 km only about 20%). Flags straighten out = stronger wind: add windage toward the wind side; flags droop = weaker wind: add against the wind, or wait for a lull. Mil per extra +1 m/s: .375 CheyTac '+row(1)+' at 1 / 2 / 3 km; .338 Lapua '+row(0)+'; .416 Barrett '+row(2)+'; .50 BMG '+row(3)+'. So a ±0.5 m/s gust is about ±'+g(2)+' mil at 1 km and ±'+g(4)+' mil at 3 km for the .375. The unreadable part (about 0.1 m/s along the range and the future change of the gust) stays random.')}</li>`:noWind()?'':`<li>${WLD().rho<.1?tr('Вітер не постійний: порив повільно «дихає» (σ '+WLD().gust+' м/с, час ≈4 с), і його видно по прапорцях. Але в розрідженому повітрі куля майже не гальмує, тож знос від вітру малий: '+row(1)+' міл на 1 м/с (.375 CheyTac, 1 / 2 / 3 км).','The wind is not constant: the gust slowly breathes (σ '+WLD().gust+' m/s, about 4 s), visible in the flags. But in thin air the bullet barely slows, so wind drift is small: '+row(1)+' mil per 1 m/s (.375 CheyTac, 1 / 2 / 3 km).'):tr('Вітер не постійний: порив повільно «дихає» (σ '+WLD().gust+' м/с, час ≈4 с), і його видно по прапорцях. Куля летить довго, тож порив за цей час змінюється. Знос від вітру: '+row(1)+' міл на 1 м/с (.375 CheyTac, 1 / 2 / 3 км).','The wind is not constant: the gust slowly breathes (σ '+WLD().gust+' m/s, about 4 s), visible in the flags. The bullet flies for a long time and the gust changes meanwhile. Wind drift: '+row(1)+' mil per 1 m/s (.375 CheyTac, 1 / 2 / 3 km).')}</li>`}
   <li>${tr('Сітка: у FFP (перша фокальна площина) сітка росте разом з кратністю, тож 1 поділка = 1 міл на будь-якому збільшенні. У SFP (друга фокальна площина) сітка має незмінний розмір і калібрована на 10×: на іншій кратності одна поділка — це 10/кратність міл, тож винос у поділках множте на 10/кратність. Точні поділки в SFP лише на 10×.','Reticle: in an FFP (first focal plane) scope the reticle grows with magnification, so 1 mark = 1 mil at any zoom. In an SFP (second focal plane) scope the reticle stays a fixed size and is calibrated at 10×: at any other magnification one mark is 10/zoom mil, so multiply your holdover in marks by 10/zoom. SFP marks are true only at 10×.')}</li>
   <li>${tr('Затримка дихання: натисніть і тримайте «Постріл» (або пробіл) — відпускання робить постріл. Дихальна пауза гасить гойдання прицілу до 25% приблизно за 0,8 с; «тихе вікно» (зелена смуга) триває до ≈4 с. Далі кисневий борг: гойдання наростає (амбер до 7 с, червоне далі) і з’являється тремор. Через 12 с треба видихнути — затримка скасовується. Поки тримаєте, прапорці рухаються: чекайте на потрібний порив. Мікрокорекції: рухайте мишею (25 пікселів ≈ 1 піксель перетягування прицілу, до ±0,3 міл) або стрілками під час утримання пробілу (±0,01 міл).','Breath hold: press and hold Fire (or Space); releasing takes the shot. The respiratory pause cuts the sway to 25% in about 0.8 s, and the steady window (green bar) lasts until about 4 s. After that oxygen debt builds: the sway grows (amber to 7 s, red beyond) and a tremor appears. At 12 s you must breathe — the hold is cancelled. The flags keep moving while you hold, so wait for the right gust. Micro-corrections: move the mouse (25 px ≈ 1 px of scope drag, up to ±0.3 mil) or use the arrow keys while holding Space (±0.01 mil).')}</li>
   ${worldId==='earth'?`<li>${tr('Вологість на код не впливає.','Humidity does not affect the code.')}</li>`:''}
@@ -730,11 +777,11 @@ export function startSniper(){
  }
  function render(){
   if(breath.on)cancelHold(false); // the button is about to be rebuilt
-  const conditions=weather[state.weather];
+  const conditions=weather[state.weather],wnd=state.wind;
   const tutorial=state.tutorialDone!==true;
   const finalRound=!tutorial&&state.round===seriesSize-1;
   const caliber=calibers[state.profile];
-  const tableRows=distances.map((d,i)=>{const T=tabOf(state.profile,i);return '<tr'+(i===state.distance?' class="is-current"':'')+'><td>'+distLabel(d)+'</td><td>'+T.elev.toFixed(1)+'</td><td>'+T.drift1.toFixed(2)+'</td><td>'+T.sc.toFixed(2)+'</td></tr>'}).join('');
+  const tableRows=distances.map((d,i)=>{const T=tabOf(state.profile,i);return '<tr'+(i===state.distance?' class="is-current"':'')+'><td>'+distLabel(d)+'</td><td>'+T.elev.toFixed(1)+'</td><td>'+T.drift1.toFixed(2)+'</td><td>'+T.ht.toFixed(3)+'</td><td>'+T.sc.toFixed(2)+'</td></tr>'}).join('');
   const curT=tabOf(state.profile,state.distance),curW=weightsShown(curT).map(v=>v.toFixed(2)).join(' / ');
   const cur=curTab(),dragHint=tr('Перетягніть зображення, щоб навести мішень на сітку; колесо миші — кратність.','Drag the view to aim at the target; mouse wheel zooms.');
   const roundTitle=tutorial?tr('Навчальний раунд — спробуйте без балів','Tutorial round — practice, no score'):tr('Раунд ','Round ')+(state.round+1)+'/'+seriesSize;
@@ -762,7 +809,7 @@ export function startSniper(){
     <section class="sniper-scene" aria-label="${tr('Вид в оптику','Scope view')}">
      <div class="sniper-stage">
       <div class="sniper-scope"><canvas width="${Math.round(viewSize*canvasScale())}" height="${Math.round(viewSize*canvasScale())}" aria-hidden="true" title="${dragHint}" aria-describedby="sniper-drag-desc"></canvas></div>
-      <div class="sniper-hud sniper-hud-wind" aria-hidden="true">${compass(conditions).replace(/ /g,'')} ${flagPattern(conditions).replace(/ \/ /g,'/')}</div>
+      <div class="sniper-hud sniper-hud-wind" aria-hidden="true">${hudWind(wnd)}</div>
       <div class="sniper-hud sniper-hud-turret" aria-hidden="true"></div>
       <div class="sniper-hud sniper-hud-plane" aria-hidden="true" hidden></div>
       <div class="sniper-hud sniper-breath" aria-hidden="true" hidden><span data-breath-label></span><i class="sniper-breath-bar"><b data-breath-fill></b></i></div>
@@ -792,8 +839,8 @@ export function startSniper(){
      <section class="sniper-conditions">
       <h2 class="sniper-label">${tr('Умови','Conditions')}</h2>
       <dl class="sniper-weather">
-       <div><dt>${tr('Компас','Compass')}</dt><dd>${compass(conditions)}</dd></div>
-       <div><dt>${tr('Вітер · прапорці','Wind · flags')}</dt><dd>${flagPattern(conditions)}</dd></div>
+       <div><dt>${tr('Вітер','Wind')}</dt><dd>${compass(wnd)}</dd></div>
+       <div><dt>${tr('Прапорці','Flags')}</dt><dd>${flagPattern(wnd)}</dd></div>
        <div>${worldId==='earth'?`<dt>${tr('Вологість','Humidity')}</dt><dd>${conditions.humidity}%</dd>`:worldId==='mars'?`<dt>${tr('Тиск','Pressure')}</dt><dd>${tr('0,6 кПа','0.6 kPa')}</dd>`:worldId==='pyrrus'?`<dt>${tr('Тиск','Pressure')}</dt><dd>${tr('1,3 атм','1.3 atm')}</dd>`:worldId==='mesklin'?`<dt>${tr('Тиск','Pressure')}</dt><dd style="font-size:10px">${tr('водень, кілька атм','hydrogen, several atm')}</dd>`:`<dt>${tr('Атмосфера','Atmosphere')}</dt><dd>${tr('вакуум','vacuum')}</dd>`}</div>
       </dl>
      </section>
@@ -816,7 +863,7 @@ export function startSniper(){
       ${results?`<div class="sniper-results sniper-tabpanel" ${panelAttrs('results')}>${resultsHtml()}</div>`:''}
       <div class="sniper-field-table sniper-tabpanel" ${panelAttrs('table')}>
        <table aria-label="${tr('Балістична таблиця','Ballistic table')}">
-        <thead><tr><th scope="col">${tr('Дистанція','Distance')}</th><th scope="col">${tr('Підйом, міл','Elevation, mil')}</th><th scope="col">${tr('Знос на 1 м/с, міл','Drift per 1 m/s, mil')}</th><th scope="col" title="${tr('Знос праворуч, тож поправка — від’ємний X: X = −(вітер + деривація + Коріоліс)','Both push the bullet right, so the correction is negative X: X = −(wind + spin + Coriolis)')}">${tr('Деривація + Коріоліс, міл','Spin + Coriolis, mil')}</th></tr></thead>
+        <thead><tr><th scope="col">${tr('Дистанція','Distance')}</th><th scope="col">${tr('Підйом, міл','Elevation, mil')}</th><th scope="col" title="${tr('Знос від 1 м/с повного бічного вітру (з 3 або 9 год)','Drift from 1 m/s of full crosswind (from 3 or 9 o\'clock)')}">${tr('Знос на 1 м/с, міл','Drift per 1 m/s, mil')}</th><th scope="col" title="${tr('Додатковий підйом на 1 м/с зустрічного вітру (з 12 год); попутний — з мінусом','Extra elevation for 1 m/s of headwind (from 12 o\'clock); a tailwind is negative')}">${tr('Зустр./попутний 1 м/с, міл','Head/tail 1 m/s, mil')}</th><th scope="col" title="${tr('Знос праворуч, тож поправка — від’ємний X: X = −(вітер + деривація + Коріоліс)','Both push the bullet right, so the correction is negative X: X = −(wind + spin + Coriolis)')}">${tr('Деривація + Коріоліс, міл','Spin + Coriolis, mil')}</th></tr></thead>
         <tbody>${tableRows}</tbody>
        </table>
        <p>${tr('Таблиця для вибраного калібру (балістика G7). Деривація й Коріоліс зносять кулю праворуч, тож X = −(вітер + деривація + Коріоліс). ','Table for the selected caliber (G7 ballistics). Spin drift and Coriolis both push the bullet right, so X = −(wind + spin + Coriolis). ')+worldCap()}<b>${tr('Вага прапорців для '+distLabel(distances[state.distance])+' (ближній / середній / дальній): ','Flag weights for '+distLabel(distances[state.distance])+' (near / middle / far): ')}${curW}</b></p>
@@ -1171,11 +1218,12 @@ function drawFallback(c,state,conditions,size,center,u){
   c.beginPath();c.moveTo(313-i*29,y);c.lineTo(384+i*29,y);c.stroke();
  }
 
- conditions.flags.forEach((strength,i)=>{
-  const x=185+i*165,y=415+(i%2)*55,dir=conditions.east?1:-1;
+ const wnd=state.wind,wdir=clockDir(wnd.clock);
+ wnd.flags.forEach((strength,i)=>{ // sideways part of the wind sets the length (a head/tail wind is foreshortened); calm: limp cloth
+  const x=185+i*165,y=415+(i%2)*55,dir=wdir.kz>=0?1:-1,ext=strength?(8+strength*8)*(.25+.75*Math.abs(wdir.kz)):4,hang=strength?3*(3-strength):16;
   c.strokeStyle='#292e22';c.lineWidth=3;
   c.beginPath();c.moveTo(x,y);c.lineTo(x,y-55);c.stroke();
-  polygon('#f5ad53',[[x,y-55],[x+dir*(14+strength*10),y-53+3*(3-strength)],[x,y-37]]);
+  polygon('#f5ad53',[[x,y-55],[x+dir*ext,y-53+hang],[x,y-37]]);
  });
  c.restore();
  // The target keeps its true angular size: ring 1 = hit tolerance in mil.
@@ -1377,10 +1425,10 @@ function createGL(T,buildWorld,holes){
  return{canvas,
   size(w,h){if(w>0&&h>0)renderer.setSize(w,h,false)},
   draw(state){
-   const D=distances[state.distance],w=weather[state.weather],tol=tolerance[state.distance],next=worldId+'|'+D+'|'+state.weather+'|'+tol+'|'+ring10[state.distance];
+   const D=distances[state.distance],w=state.wind,tol=tolerance[state.distance],next=worldId+'|'+D+'|'+w.regime+w.clock+w.flags.join('')+'|'+tol+'|'+ring10[state.distance];
    if(next!==key){ // distance, weather or target size changed
     world?.dispose();world=null;
-    world=buildWorld(T,{distance:D,wind:{east:w.east,flags:w.flags},targetRadiusM:tol/10*D/1000,ring10:ringFrac(state.distance),world:worldId});key=next;
+    world=buildWorld(T,{distance:D,wind:{regime:w.regime,clock:w.clock,flags:w.flags},targetRadiusM:tol/10*D/1000,ring10:ringFrac(state.distance),world:worldId});key=next;
     renderer.setClearColor(world.clearColor);world.setWind(wind);for(const h of holes)if(h.D===D)world.addHole(h);
    }
    camera.fov=2*Math.atan(viewSize/2/uOf(state.zoom)/1000)*180/Math.PI;camera.updateProjectionMatrix();

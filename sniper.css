@@ -164,7 +164,7 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-field-table p, .sniper-hint-note { margin: 8px 0 0; color: var(--sniper-muted); font-size: 13px; }
 .sniper-field-table table { width: 100%; border-collapse: collapse; font: 13px/1.3 var(--mono, monospace); }
 .sniper-field-table th, .sniper-field-table td { padding: 4px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--sniper-line); }
-.sniper-field-table th { color: var(--sniper-muted); font: 600 12px var(--body, system-ui); }
+.sniper-field-table th { color: var(--sniper-muted); font: 600 12px var(--body, system-ui); white-space: normal; vertical-align: bottom; }
 .sniper-field-table tbody tr:last-child td { border-bottom: 0; }
 .sniper-field-table tr.is-current td { color: var(--sniper-accent); font-weight: 700; }
 .sniper-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 8px; }
@@ -259,9 +259,13 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-calc-drawer input[type="text"] { width: 100%; min-width: 0; box-sizing: border-box; background: #18211b; border: 1px solid #596750; color: var(--sniper-ink); border-radius: 6px; padding: 6px 8px; font: 15px var(--mono, monospace); text-align: right; }
 .sniper-calc-drawer input[aria-invalid="true"] { border-color: #d87249; }
 .sniper-calc-hint { margin: -6px 0 0; color: var(--sniper-muted); font-size: 13px; }
-.sniper-calc-dir { display: flex; flex-wrap: wrap; gap: 8px 18px; }
-.sniper-calc-dir label { display: flex; align-items: center; gap: 6px; font: 15px var(--mono, monospace); }
-.sniper-calc-dir input { accent-color: var(--sniper-accent); }
+.sniper-calc-clock { display: grid; gap: 4px; font-size: 14px; color: var(--sniper-muted); }
+.sniper-calc-clockpills { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+.sniper-calc-clockpills label { position: relative; display: block; }
+.sniper-calc-clockpills input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.sniper-calc-clockpills span { display: block; padding: 5px 0; text-align: center; border: 1px solid #596750; border-radius: 6px; background: #18211b; color: var(--sniper-ink); font: 14px var(--mono, monospace); }
+.sniper-calc-clockpills input:checked + span { background: var(--sniper-accent); border-color: var(--sniper-accent); color: #10170c; font-weight: 700; }
+.sniper-calc-clockpills input:focus-visible + span { outline: 2px solid var(--sniper-accent); outline-offset: 2px; }
 .sniper-calc-drawer output { display: block; font: 15px var(--mono, monospace); overflow-wrap: anywhere; }
 .sniper-calc-result { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px 9px; font: 15px var(--mono, monospace); }
 .sniper-calc-result output { color: var(--sniper-accent); }
@@ -442,8 +446,9 @@ main.sniper-board.sniper-board { grid-template-columns: minmax(0, 1fr); grid-tem
 .sniper-board .sniper-worlds button.sniper-world-btn { width: 22px; height: 22px; min-height: 22px; }
 .sniper-world-btn .wi { width: 16px; height: 16px; }
 .sniper-weather { flex-wrap: nowrap; gap: 4px; }
-.sniper-weather > div { flex: 1 1 0; min-width: 0; padding: 1px 6px; }
-.sniper-weather dd { font-size: 13px; }
+.sniper-weather > div { flex: 1 1 auto; min-width: 0; padding: 1px 6px; }
+.sniper-weather > div:first-child { flex-grow: 1.6; }
+.sniper-weather dd { font-size: 12px; white-space: pre-wrap; text-align: center; }
 .sniper-weather dt { font-size: 10px; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .sniper-conditions .sniper-label { margin-bottom: 2px; }
 .sniper-result { margin-top: 2px; }

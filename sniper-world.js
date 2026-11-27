@@ -1,7 +1,7 @@
 // Shared 3D range world for the Sniper scope view and the bullet-flight replay.
 // World: shooter at the origin, +z downrange, +y up, world x = -(lateral right) so a camera looking +z sees +lateral on screen right.
 const clamp=(v,a,b)=>Math.min(b,Math.max(a,v)),rnd=(a=0,b=1)=>a+Math.random()*(b-a),TAU=Math.PI*2;
-import {WORLDS} from './sniper-ballistics.js';
+import {WORLDS,clockDir} from './sniper-ballistics.js';
 export const Y0=1.5;
 export const targetY=R1=>Math.max(Y0,1.1*R1+.3); // plate centre height: backer (2.2x plate) bottom edge stays >=0.3 m above ground
 export const moundOf=(D,R1)=>({a:Math.max(2.5,2.4*R1+2),b:3.5,h:Math.max(3.5,targetY(R1)+1.1*R1+.5),cz:D+5});
@@ -168,12 +168,13 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1,ring10:f10=.
   }
  }
  // ---- wind flags ----
- const wd=W.east===0?0:(typeof W.east==='number'?Math.sign(W.east):W.east?1:-1);
+ // Wind direction on the ground plane: the wind comes FROM W.clock (shooter faces 12), so the air moves along (wdx, wdz); world x = -(lateral right), +z downrange: headwind (12) moves toward the camera.
+ const cd=clockDir(W.clock||9),wdx=-cd.kz,wdz=cd.kx,calmR=W.regime==='calm',steadyR=W.regime==='steady',ff=calmR?.25:steadyR?.3:1,wrap=(v,lo,hi)=>v>hi?v-(hi-lo):v<lo?v+(hi-lo):v; // ff: flutter amount
  const flags=[.25,.5,.75].map((f,i)=>{
-  const st=clamp(fl[i]||1,1,3),x=i%2?4.5:-4.5,z=D*f,grp=new T.Group();grp.position.set(x,0,z);scene.add(grp);
+  const st=clamp(fl[i]??1,0,3),x=i%2?4.5:-4.5,z=D*f,grp=new T.Group();grp.position.set(x,0,z);scene.add(grp);
   const poleH=mesk?1.5:pyr?3.8:3.4,topY=poleH-.1,Lf=v=>mesk?.28+.09*v:pyr?Math.min(.7+.275*v,2.2):.7+.275*v,Af=v=>mesk?.012+.008*v:pyr?Math.min(.03+.03*v,.3):.02+.025*v; // stubby rigid poles with a small heavy cloth on Mesklin, tall storm-whipped flags on Pyrrus
   add(grp,mesk?new T.CylinderGeometry(.05,.07,poleH,6):new T.CylinderGeometry(.03,.04,poleH,6),lam(0x292e22),0,poleH/2,0);
-  const N=10,pos=new Float32Array((N+1)*6),idx=[],base=WD.flagMs[st-1]; // base: mean flag speed, m/s (Earth: 1/2/3 marks = 2/4/6)
+  const N=10,pos=new Float32Array((N+1)*6),idx=[],base=st?WD.flagMs[st-1]:0; // base: mean flag speed, m/s (Earth: 1/2/3 marks = 2/4/6; 0 = limp)
   for(let j=0;j<N;j++){const a=j*2;idx.push(a,a+1,a+2,a+1,a+3,a+2)}
   const geo=new T.BufferGeometry();geo.setAttribute('position',new T.BufferAttribute(pos,3));geo.setIndex(idx);
   const m=add(grp,geo,lam(mesk?0xd98a3a:0xf5ad53,{side:T.DoubleSide}),0,topY,0);m.frustumCulled=false;
@@ -181,23 +182,23 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1,ring10:f10=.
   // effective speed = mean + shared gust; droop angle from the pole 25° at 1 m/s, +13° per m/s, saturating near 88°, flap frequency and cloth length grow with speed
   q.base=base;
   if(airless){ // no air: a rigid horizontal rod holds the cloth out, like the Apollo flags; nothing moves
-   const d=wd||1,L=1.1;
+   const d=wdx>0?-1:1,L=1.1;
    add(grp,new T.CylinderGeometry(.015,.015,L,6).rotateZ(Math.PI/2),lam(0xb8bcc0),-d*L/2,topY,0);
    q.upd=()=>{if(q.set)return;q.set=1;for(let j=0;j<=N;j++){const px=-d*L*j/N;pos.set([px,0,0,px,-.72,0],j*6)}geo.attributes.position.needsUpdate=true;geo.computeVertexNormals()};
    q.upd(0);return q;
   }
   q.upd=t=>{const dt=Math.min(.2,Math.max(0,t-q.last));q.last=t;
    if(mars){ // thin air: strong wind holds the cloth almost straight and level; only a small ripple. Strength shows in the cloth length, not the droop.
-    const s=Math.max(.3,base+q.gust),th=(s<4?25+16*(s-1):86+3*(1-Math.exp(-(s-4)/4)))*Math.PI/180,L=.9+.03*s,A=.006+.0012*s;
-    q.ph+=dt*(1.5+.12*s);
+    const s=Math.max(0,base+q.gust),th=(s<1?5+20*s:s<4?25+16*(s-1):86+3*(1-Math.exp(-(s-4)/4)))*Math.PI/180,L=.9+.03*s,A=(.006+.0012*s)*ff;
+    q.ph+=dt*(1.5+.12*s)*(steadyR?.6:1);
     const sn=Math.sin(th),cs=Math.cos(th);
-    for(let j=0;j<=N;j++){const u=j/N,px=-wd*L*u*sn,py=-L*u*cs-.03*u*u*L+A*.4*Math.sin(q.ph-u*7)*u,pz=A*Math.sin(q.ph*.89-u*6)*u*L,w=.42*(1-.5*u);pos.set([px,py,pz,px,py-w,pz],j*6)}
+    for(let j=0;j<=N;j++){const u=j/N,al=L*u*sn,py=-L*u*cs-.03*u*u*L+A*.4*Math.sin(q.ph-u*7)*u,rp=A*Math.sin(q.ph*.89-u*6)*u*L,w=.42*(1-.5*u),px=wdx*al-wdz*rp,pz=wdz*al+wdx*rp;pos.set([px,py,pz,px,py-w,pz],j*6)}
     geo.attributes.position.needsUpdate=true;geo.computeVertexNormals();return;
    }
-   const s=Math.max(.3,base+q.gust),th=(s<5.5?25+13*(s-1):84+4*(1-Math.exp(-(s-5.5)/2)))*Math.PI/180*(mesk?.8:1),L=Lf(s),A=Af(s);
-   q.ph+=dt*(2+1.7*Math.min(s,pyr?8:s))*(mesk?.65:1);
+   const s=Math.max(0,base+q.gust),th=(s<1?5+20*s:s<5.5?25+13*(s-1):84+4*(1-Math.exp(-(s-5.5)/2)))*Math.PI/180*(mesk?.8:1),L=Lf(s),A=Af(s)*ff; // limp (calm): hangs almost straight down; steady: full extension with little flutter
+   q.ph+=dt*(2+1.7*Math.min(s,pyr?8:s))*(mesk?.65:1)*(steadyR?.6:1);
    const sn=Math.sin(th),cs=Math.cos(th);
-   for(let j=0;j<=N;j++){const u=j/N,px=-wd*L*u*sn,py=-L*u*cs-.12*u*u*L+A*.4*Math.sin(q.ph-u*7)*u,pz=A*Math.sin(q.ph*.89-u*6)*u*L,w=(mesk?.3:.42)*(1-.85*u);pos.set([px,py,pz,px,py-w,pz],j*6)}
+   for(let j=0;j<=N;j++){const u=j/N,al=L*u*sn,py=-L*u*cs-.12*u*u*L+A*.4*Math.sin(q.ph-u*7)*u,rp=A*Math.sin(q.ph*.89-u*6)*u*L,w=(mesk?.3:.42)*(1-.85*u),px=wdx*al-wdz*rp,pz=wdz*al+wdx*rp;pos.set([px,py,pz,px,py-w,pz],j*6)}
    geo.attributes.position.needsUpdate=true;geo.computeVertexNormals()};
   q.upd(0);return q;
  });
@@ -215,14 +216,14 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1,ring10:f10=.
   const pm=new T.PointsMaterial({color:0xf0d0a8,size:2.2,sizeAttenuation:false,transparent:true,opacity:.35,depthWrite:false}),specks=new T.Points(pg,pm);specks.frustumCulled=false;scene.add(specks);
   const spd=z=>{const u=z/D,a=flags[0].base+flags[0].gust,b=flags[1].base+flags[1].gust,c=flags[2].base+flags[2].gust;return Math.max(0,u<=.25?a:u<=.5?a+(b-a)*(u-.25)/.25:u<=.75?b+(c-b)*(u-.5)/.25:c)};
   dustUpd=dt=>{
-   const avg=(spd(D*.25)+spd(D*.5)+spd(D*.75))/3,k=clamp(avg/25,.1,1),nS=Math.round(NS*clamp(.2+k,.2,1)),dirx=-(wd||1);
+   const avg=(spd(D*.25)+spd(D*.5)+spd(D*.75))/3,k=clamp(avg/25,.1,1),nS=Math.round(NS*clamp(.2+k,.2,1));
    lm.opacity=.15+.4*k;pm.opacity=.15+.3*k;
    for(let i=0;i<nS;i++){
-    const v=spd(sz[i]);sx[i]+=dirx*v*dt;if(sx[i]>XR)sx[i]-=2*XR;else if(sx[i]<-XR)sx[i]+=2*XR;
-    const len=clamp(v*.05*(1+sz[i]/150),.25,9)*sl[i];lp.set([sx[i],sy[i],sz[i],sx[i]-dirx*len,sy[i]-len*.03,sz[i]],i*6);
+    const v=spd(sz[i]);sx[i]=wrap(sx[i]+wdx*v*dt,-XR,XR);sz[i]=wrap(sz[i]+wdz*v*dt,4,D+34);
+    const len=clamp(v*.05*(1+sz[i]/150),.25,9)*sl[i];lp.set([sx[i],sy[i],sz[i],sx[i]-wdx*len,sy[i]-len*.03,sz[i]-wdz*len],i*6);
    }
    lg.setDrawRange(0,nS*2);lg.attributes.position.needsUpdate=true;
-   for(let i=0;i<NP;i++){const v=spd(pz[i]);px[i]+=dirx*v*dt*.9;if(px[i]>XR)px[i]-=2*XR;else if(px[i]<-XR)px[i]+=2*XR;pp.set([px[i],py[i],pz[i]],i*3)}
+   for(let i=0;i<NP;i++){const v=spd(pz[i]);px[i]=wrap(px[i]+wdx*v*dt*.9,-XR,XR);pz[i]=wrap(pz[i]+wdz*v*dt*.9,3,Math.min(D,320));pp.set([px[i],py[i],pz[i]],i*3)}
    pg.attributes.position.needsUpdate=true;
   };
   dustUpd(0);
@@ -236,8 +237,8 @@ export function buildWorld(T,{distance:D,wind:W={},targetRadiusM:R1,ring10:f10=.
   pg.setAttribute('position',new T.BufferAttribute(pp,3));
   const pts=new T.Points(pg,new T.PointsMaterial({color:0xe6eeff,size:2.4,sizeAttenuation:false,transparent:true,opacity:.6,depthWrite:false}));pts.frustumCulled=false;scene.add(pts);
   const spd=z=>{const u=z/D,a=flags[0].base+flags[0].gust,b=flags[1].base+flags[1].gust,c=flags[2].base+flags[2].gust;return Math.max(0,u<=.25?a:u<=.5?a+(b-a)*(u-.25)/.25:u<=.75?b+(c-b)*(u-.5)/.25:c)};
-  snowUpd=dt=>{const dirx=-(wd||1);
-   for(let i=0;i<NP;i++){px[i]+=dirx*spd(pz[i])*dt*.8;py[i]-=.7*dt;if(py[i]<.1)py[i]+=9;if(px[i]>XR)px[i]-=2*XR;else if(px[i]<-XR)px[i]+=2*XR;pp.set([px[i],py[i],pz[i]],i*3)}
+  snowUpd=dt=>{
+   for(let i=0;i<NP;i++){const v=spd(pz[i]);px[i]=wrap(px[i]+wdx*v*dt*.8,-XR,XR);pz[i]=wrap(pz[i]+wdz*v*dt*.8,3,Math.min(D+60,500));py[i]-=.7*dt;if(py[i]<.1)py[i]+=9;pp.set([px[i],py[i],pz[i]],i*3)}
    pg.attributes.position.needsUpdate=true};
   snowUpd(0);
  }
